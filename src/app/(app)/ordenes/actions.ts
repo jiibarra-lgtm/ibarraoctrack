@@ -55,17 +55,20 @@ export async function setPurchaseOrderStatus(id: string, status: string, reason:
 }
 
 /** URL firmada de corta duración para ver/descargar un documento privado. */
-export async function getDocumentUrl(documentId: string, download = false) {
+export async function getDocumentUrl(documentId: string, download = false, ttl = 120) {
   const s = await requireOrg();
   if (!isUuid(documentId)) return { ok: false as const, error: "Documento inválido" };
   const { data: doc } = await s.supabase.from("documents").select("storage_path, title").eq("id", documentId).maybeSingle();
   if (!doc) return { ok: false as const, error: "Documento no encontrado" };
   const { data, error } = await s.supabase.storage
     .from("documents")
-    .createSignedUrl(doc.storage_path, 120, download ? { download: doc.title } : undefined);
+    .createSignedUrl(doc.storage_path, Math.min(Math.max(ttl, 60), 1800), download ? { download: doc.title } : undefined);
   if (error || !data) return { ok: false as const, error: "No se pudo generar el enlace" };
   return { ok: true as const, url: data.signedUrl };
 }
+
+const DOC_TYPES = ["orden_compra", "cotizacion", "factura_proveedor", "factura_emitida", "remito", "remito_oficial", "remito_provisorio", "prd",
+  "constancia_recepcion", "conformidad", "comprobante_pago", "nota_credito", "contrato", "otro"] as const;
 
 const docSchema = z.object({
   purchaseOrderId: z.string().uuid(),
@@ -74,8 +77,7 @@ const docSchema = z.object({
   mimeType: z.enum(["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"]),
   size: z.number().int().positive().max(25 * 1024 * 1024),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
-  docType: z.enum(["orden_compra", "cotizacion", "factura_proveedor", "factura_emitida", "remito", "constancia_recepcion",
-    "conformidad", "comprobante_pago", "nota_credito", "contrato", "otro"]).default("otro"),
+  docType: z.enum(DOC_TYPES).default("otro"),
   deliveryId: z.string().uuid().optional(),
 });
 
@@ -97,5 +99,17 @@ export async function attachDocument(input: z.input<typeof docSchema>) {
     return { ok: false as const, error: friendlyDbError(error) };
   }
   revalidatePath(`/ordenes/${d.purchaseOrderId}`);
+  return { ok: true as const };
+}
+
+/** Cambia el tipo de un documento de la orden (remito oficial, PRD, factura…). */
+export async function setDocumentType(documentId: string, docType: string) {
+  const s = await requireOrg();
+  if (!(canWrite(s.org.role) || s.org.role === "logistica")) return { ok: false as const, error: "Tu rol no permite modificar documentos." };
+  const t = z.enum(DOC_TYPES).safeParse(docType);
+  if (!isUuid(documentId) || !t.success) return { ok: false as const, error: "Datos inválidos" };
+  const { data, error } = await s.supabase.from("documents").update({ doc_type: t.data }).eq("id", documentId).eq("org_id", s.org.org_id).select("purchase_order_id").maybeSingle();
+  if (error || !data) return { ok: false as const, error: error ? friendlyDbError(error) : "Documento no encontrado" };
+  if (data.purchase_order_id) revalidatePath(`/ordenes/${data.purchase_order_id}`);
   return { ok: true as const };
 }

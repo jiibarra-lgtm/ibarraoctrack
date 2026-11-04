@@ -1,17 +1,13 @@
 "use client";
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { Lock, FileText, ImageIcon, Paperclip, History, GitCommitHorizontal, ArrowRight, Upload } from "lucide-react";
+import { Lock, History, GitCommitHorizontal, ArrowRight } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/overlays";
 import { Badge, Card, CardBody, CardHeader, EmptyState } from "@/components/ui/primitives";
-import { Button } from "@/components/ui/button";
-import { formatBytes, formatDate, formatDateTime, formatMoney, formatQty } from "@/lib/format";
+import { formatDate, formatDateTime, formatMoney, formatQty } from "@/lib/format";
 import { PO_STATUS_LABEL, type PoStatus } from "@/lib/po/schema";
 import { sum } from "@/lib/money";
-import { uploadPrivate } from "@/lib/upload";
-import { attachDocument } from "../actions";
-import { DocumentButton } from "./document-button";
+import { OrderDocuments } from "./order-documents";
 import { ProfitSummary, PurchasesTab, CostsTab, type ItemProfit, type AllocationRow, type CostAllocRow } from "./order-finance";
 import type { ProfitRow } from "@/lib/profitability";
 import type { OrderOption } from "@/app/(app)/costos/cost-dialog";
@@ -53,11 +49,6 @@ const TABS = [
   { id: "historial", label: "Historial" },
 ] as const;
 
-const DOC_LABEL: Record<string, string> = {
-  orden_compra: "Orden de compra", cotizacion: "Cotización", contrato: "Contrato", otro: "Otro",
-  remito: "Remito", factura_proveedor: "Factura proveedor", factura_emitida: "Factura emitida",
-};
-
 export function OrderTabs(p: Props) {
   const router = useRouter();
   const pathname = usePathname();
@@ -90,7 +81,7 @@ export function OrderTabs(p: Props) {
       <TabsContent value="compras" className="mt-5"><PurchasesTab items={p.itemProfit} allocations={p.allocations} cur={cur} canWrite={p.canWrite} /></TabsContent>
       <TabsContent value="costos" className="mt-5"><CostsTab rows={p.costAllocs} cur={cur} categories={p.categories} order={p.orderOption} canWrite={p.canWrite} /></TabsContent>
       <TabsContent value="entregas" className="mt-5"><DeliveriesPanel poId={p.po.id} orgId={p.orgId} items={p.deliveryItems} deliveries={p.deliveries} defaultPlace={p.po.delivery_place ?? ""} canEdit={p.canDeliver} /></TabsContent>
-      <TabsContent value="documentos" className="mt-5"><Documents {...p} /></TabsContent>
+      <TabsContent value="documentos" className="mt-5"><OrderDocuments documents={p.documents as never} poId={String(p.po.id)} orgId={p.orgId} canWrite={p.canWrite || p.canDeliver} /></TabsContent>
       <TabsContent value="historial" className="mt-5"><Timeline {...p} /></TabsContent>
     </Tabs>
   );
@@ -242,65 +233,6 @@ function ExpandableText({ text }: { text: string }) {
       <p className={open || !long ? "whitespace-pre-wrap" : "line-clamp-2"}>{text}</p>
       {long && <button className="mt-1 text-xs text-primary hover:underline" onClick={() => setOpen(!open)}>{open ? "Ver menos" : "Ver más"}</button>}
     </div>
-  );
-}
-
-function Documents({ documents, po, orgId, canWrite }: Props) {
-  const router = useRouter();
-  const input = React.useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = React.useState(false);
-
-  const onFiles = async (files: FileList | null) => {
-    if (!files?.length) return;
-    setBusy(true);
-    for (const file of Array.from(files)) {
-      try {
-        const up = await uploadPrivate(file, orgId, `ordenes/${po.id}`);
-        const res = await attachDocument({ purchaseOrderId: po.id, storagePath: up.path, title: up.title, mimeType: up.mimeType as never, size: up.size, sha256: up.sha256 });
-        if (!res.ok) toast.error(`${file.name}: ${res.error}`); else toast.success(`${file.name} adjuntado`);
-      } catch (e) {
-        toast.error(`${file.name}: ${(e as Error).message}`);
-      }
-    }
-    setBusy(false);
-    if (input.current) input.current.value = "";
-    router.refresh();
-  };
-
-  return (
-    <Card>
-      <CardHeader
-        title="Documentos de la orden"
-        description="Almacenamiento privado; los enlaces se generan firmados y vencen en 2 minutos."
-        action={canWrite && (
-          <>
-            <input ref={input} type="file" multiple hidden accept="application/pdf,image/*" onChange={(e) => onFiles(e.target.files)} />
-            <Button size="sm" variant="secondary" loading={busy} onClick={() => input.current?.click()}><Upload /> Adjuntar</Button>
-          </>
-        )}
-      />
-      {documents.length === 0 ? (
-        <EmptyState icon={<Paperclip />} title="Sin documentos" description="Adjuntá el PDF o la captura de la OC, cotizaciones o contratos." />
-      ) : (
-        <ul className="divide-y divide-border">
-          {documents.map((d) => (
-            <li key={d.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
-              <div className="grid size-9 shrink-0 place-items-center rounded-md bg-surface-2 text-fg-muted">
-                {String(d.mime_type).startsWith("image/") ? <ImageIcon className="size-4" /> : <FileText className="size-4" />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{String(d.title)}</p>
-                <p className="truncate text-xs text-fg-subtle">
-                  {DOC_LABEL[String(d.doc_type)] ?? String(d.doc_type)} · {formatBytes(Number(d.size_bytes))} · {formatDateTime(String(d.created_at))}{d.uploader ? ` · ${d.uploader}` : ""}
-                </p>
-              </div>
-              <DocumentButton documentId={d.id} variant="ghost" size="icon-sm" />
-              <DocumentButton documentId={d.id} download variant="ghost" size="icon-sm" />
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
   );
 }
 

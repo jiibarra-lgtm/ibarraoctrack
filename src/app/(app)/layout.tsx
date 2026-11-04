@@ -9,10 +9,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <aside className="sticky top-3 hidden h-[calc(100dvh-1.5rem)] w-60 shrink-0 flex-col gap-6 overflow-y-auto rounded-2xl border border-side-border bg-side px-3 py-4 text-side-fg shadow-[var(--glass-shadow)] backdrop-blur-2xl lg:flex">
         <Brand orgName={s.org.org_name} />
         <SidebarNav />
-        <div className="mt-auto rounded-xl border border-side-border bg-white/5 px-3 py-2.5">
-          <p className="text-[11px] text-side-muted">Fases 1 a 3 activas</p>
-          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/15"><div className="h-full w-1/2 rounded-full bg-brand" /></div>
-        </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <Header

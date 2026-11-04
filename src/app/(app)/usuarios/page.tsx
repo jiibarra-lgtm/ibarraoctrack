@@ -46,7 +46,7 @@ export default async function UsersPage() {
         <div className="flex flex-col gap-5">
           {isAdmin && (
             <Card>
-              <CardHeader title="Sumar usuario" description="La persona tiene que haberse registrado antes en la app." />
+              <CardHeader title="Sumar usuario" description="La cuenta tiene que existir antes (se crea desde Supabase; el registro público está deshabilitado)." />
               <CardBody><AddMemberForm /></CardBody>
             </Card>
           )}

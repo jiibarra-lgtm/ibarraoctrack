@@ -61,7 +61,7 @@ Entrada: captura (PNG/JPG) o PDF de la pantalla **“Ver documento contractual�
 
 ## Fases
 
-1. ✅ Fundamentos
+1. ✅ Fundamentos (acceso privado: sin registro público; cuentas creadas por el administrador)
 2. Productos, proveedores, compras, costos, asignaciones, motor de rentabilidad, ranking
 3. Entregas parciales, remitos desde el celular, lectura de remitos, expediente digital
 4. Facturas de proveedores (IA), facturación, cobranzas, retenciones, flujo de caja

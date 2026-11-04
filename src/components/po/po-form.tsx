@@ -75,7 +75,19 @@ export function PoForm({ defaultValues, onSave, submitLabel = "Guardar orden", c
   });
 
   const pendingReview = review.filter((p) => !isDirty(p)).length;
-  const [showAll, setShowAll] = React.useState(!compact || review.some((p) => p === "items" || p.startsWith("items.")));
+  const [showAll, setShowAll] = React.useState(!compact);
+  const currency = useWatch({ control, name: "currency" }) || "ARS";
+
+  if (compact && !showAll) {
+    return (
+      <form onSubmit={onSubmit} noValidate className="grid grid-cols-[minmax(0,1fr)] gap-4 xl:h-[calc(100dvh-220px)] xl:min-h-[520px] xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <QuickPanel control={control} register={register} err={err} needsReview={needsReview} setValue={setValue}
+          items={items} warnings={warnings} customers={customers} currency={currency} submitLabel={submitLabel}
+          submitting={isSubmitting} onShowAll={() => setShowAll(true)} onCancel={cancelHref ? () => router.push(cancelHref) : undefined} />
+        {aside && <div className="min-h-0 xl:h-full">{aside}</div>}
+      </form>
+    );
+  }
 
   const T = (name: F, label: string, opts: { className?: string; placeholder?: string; type?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]; hint?: string } = {}) => (
     <Field label={label} error={err(name)} review={needsReview(name)} className={opts.className} htmlFor={name} hint={opts.hint}>
@@ -107,10 +119,11 @@ export function PoForm({ defaultValues, onSave, submitLabel = "Guardar orden", c
       <div className={cn("grid gap-5", aside && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
         <div className="flex min-w-0 flex-col gap-5">
           {compact && (
-            <CompactSummary control={control} register={register} err={err} needsReview={needsReview} setValue={setValue}
-              review={review} showAll={showAll} onToggle={() => setShowAll((v) => !v)} />
+            <button type="button" onClick={() => setShowAll(false)} className="inline-flex items-center gap-1 self-start text-sm text-fg-muted hover:text-fg">
+              <ChevronDown className="size-4 rotate-90" /> Volver a la vista rápida
+            </button>
           )}
-          <div className={cn("flex flex-col gap-5", !showAll && "hidden")}>
+          <div className="flex flex-col gap-5">
           <Card>
             <CardHeader title="Orden de compra" description="Datos de la OC según BAC" />
             <CardBody className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -182,7 +195,7 @@ export function PoForm({ defaultValues, onSave, submitLabel = "Guardar orden", c
 
           <ItemsSection
             control={control} register={register} items={items} err={err} needsReview={needsReview}
-            setValue={setValue} currency={useWatch({ control, name: "currency" }) || "ARS"}
+            setValue={setValue} currency={currency}
           />
 
           <Card>
@@ -394,59 +407,131 @@ function AuthorizersSection({ control, register }: Pick<Helpers, "control" | "re
   );
 }
 
-const REVIEW_LABEL: Record<string, string> = {
-  bac_number: "Número de OC", customer_name: "Organismo comprador", total_amount: "Importe total", issue_date: "Fecha autorización",
-  awardee_cuit: "CUIT adjudicatario", net_amount: "Importe neto", perfected_date: "Fecha perfeccionamiento", due_date: "Fecha límite de entrega",
-};
-const DATE_FIELDS = new Set(["issue_date", "perfected_date", "due_date", "received_date"]);
 
-/** Resumen de una importación: lo leído en una tarjeta y, editables, sólo los campos dudosos. */
-function CompactSummary({ control, register, err, needsReview, setValue, review, showAll, onToggle }: Helpers & { review: string[]; showAll: boolean; onToggle: () => void }) {
+/**
+ * Vista rápida de una importación: todo en una pantalla, sin scroll de página.
+ * Datos clave y renglones editables en línea; el formulario completo queda a un clic.
+ */
+function QuickPanel({ control, register, err, needsReview, setValue, items, warnings, customers, currency, submitLabel, submitting, onShowAll, onCancel }: Helpers & {
+  items: ReturnType<typeof useFieldArray<PurchaseOrderInput, "items">>; warnings: ExtractionWarning[]; customers: { id: string; name: string }[];
+  currency: string; submitLabel: string; submitting: boolean; onShowAll: () => void; onCancel?: () => void;
+}) {
   const v = useWatch({ control });
-  const cur = v.currency || "ARS";
-  const items = v.items ?? [];
-  const fieldsToFix = review.filter((p) => REVIEW_LABEL[p] && needsReview(p));
-  const itemIssues = review.some((p) => p === "items" || p.startsWith("items.")) ;
-  const fmtDate = (iso?: string) => (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.split("-").reverse().join("/") : "—");
-  const money = (x: unknown) => { const n = parseArNumber(String(x ?? "")); return n ? formatMoney(n, cur) : "—"; };
+  const rows = v.items ?? [];
+  const money = (x: unknown) => { const n = parseArNumber(String(x ?? "")); return n && isValidDecimal(n) ? formatMoney(n, currency) : "—"; };
+  const totals = rows.map((it) => parseArNumber(String(it?.total_amount ?? "")) ?? "");
+  const itemsSum = totals.length && totals.every(isValidDecimal) ? sum(totals) : null;
+  const declared = parseArNumber(String(v.total_amount ?? "")) ?? "";
+  const mismatch = itemsSum && isValidDecimal(declared) && differs(itemsSum, declared);
+  const alerts = warnings.filter((w) => w.level !== "info");
+
+  // Completa solo lo que se puede calcular sin adivinar: total del renglón = cantidad × precio,
+  // y el importe total = suma de renglones cuando no se leyó.
+  React.useEffect(() => {
+    const its = control._formValues.items ?? [];
+    const line: string[] = [];
+    its.forEach((it: PurchaseOrderInput["items"][number], i: number) => {
+      const q = parseArNumber(String(it?.quantity ?? "")) ?? "", pr = parseArNumber(String(it?.unit_price ?? "")) ?? "";
+      let t = parseArNumber(String(it?.total_amount ?? "")) ?? "";
+      if (!t && isValidDecimal(q) && isValidDecimal(pr)) {
+        t = lineTotal(q, pr);
+        setValue(`items.${i}.total_amount` as F, t, { shouldDirty: true });
+      }
+      line.push(t);
+    });
+    const tot = parseArNumber(String(control._formValues.total_amount ?? "")) ?? "";
+    if (!tot && line.length && line.every(isValidDecimal)) setValue("total_amount", sum(line), { shouldDirty: true });
+  }, [control, setValue]);
+
+  const Q = (name: F, label: string, opts: { type?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]; list?: string; className?: string } = {}) => (
+    <Field label={label} error={err(name)} review={needsReview(name)} htmlFor={`q-${name}`} className={opts.className}>
+      <Input id={`q-${name}`} {...register(name)} type={opts.type} inputMode={opts.inputMode} list={opts.list} className="h-8 text-sm"
+        invalid={!!err(name)} review={needsReview(name)}
+        onPaste={opts.type === "date" ? (e) => { const iso = parseArDate(e.clipboardData.getData("text")); if (iso) { e.preventDefault(); setValue(name, iso, { shouldDirty: true, shouldValidate: true }); } } : undefined} />
+    </Field>
+  );
+  const cell = "h-8 px-2 text-sm";
 
   return (
-    <Card>
-      <CardHeader title={v.bac_number || "Orden sin número"} description={v.customer_name || "Organismo sin detectar"}
-        action={<span className="text-lg font-semibold tabular">{money(v.total_amount)}</span>} />
-      <CardBody className="flex flex-col gap-4">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
-          {[["Autorización", fmtDate(v.issue_date)], ["Perfeccionamiento", fmtDate(v.perfected_date)], ["Entrega", v.delivery_term_text || fmtDate(v.due_date)], ["Proceso", v.process_number || "—"]].map(([k, val]) => (
-            <div key={k} className="min-w-0"><dt className="text-xs text-fg-subtle">{k}</dt><dd className="truncate">{val}</dd></div>
-          ))}
-        </dl>
-        <ul className="divide-y divide-border rounded-md border border-border">
-          {items.map((it, i) => (
-            <li key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-              <span className="min-w-0 truncate"><span className="text-fg-subtle tabular">R{String(it?.line_number ?? "")}</span> {it?.description_original || <em className="text-warn">sin descripción</em>}</span>
-              <span className="shrink-0 tabular text-fg-muted">{it?.quantity || "?"} × {money(it?.unit_price)} = <span className="font-medium text-fg">{money(it?.total_amount)}</span></span>
-            </li>
-          ))}
-        </ul>
-        {fieldsToFix.length > 0 && (
-          <div className="flex flex-col gap-3 rounded-md border border-warn/40 bg-warn-soft/30 p-3">
-            <p className="flex items-center gap-2 text-sm font-medium"><AlertTriangle className="size-4 text-warn" />Confirmá {fieldsToFix.length === 1 ? "este dato" : "estos datos"}</p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {fieldsToFix.map((p) => (
-                <Field key={p} label={REVIEW_LABEL[p]} error={err(p)} review htmlFor={`c-${p}`}>
-                  <Input id={`c-${p}`} type={DATE_FIELDS.has(p) ? "date" : undefined} {...register(p as F)} review invalid={!!err(p)}
-                    onPaste={DATE_FIELDS.has(p) ? (e) => { const iso = parseArDate(e.clipboardData.getData("text")); if (iso) { e.preventDefault(); setValue(p as F, iso, { shouldDirty: true }); } } : undefined} />
-                </Field>
-              ))}
-            </div>
+    <Card className="flex min-h-0 flex-col">
+      <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold">{v.bac_number || "Orden sin número"}</p>
+          <p className="truncate text-xs text-fg-muted">{v.customer_name || "Organismo sin detectar"}</p>
+        </div>
+        <p className="shrink-0 text-lg font-semibold tabular">{money(v.total_amount)}</p>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
+        {alerts.map((w, i) => (
+          <p key={i} className={cn("flex items-start gap-1.5 text-xs", w.level === "error" ? "text-danger" : "text-warn")}>
+            <CircleAlert className="mt-px size-3.5 shrink-0" />{w.message}
+          </p>
+        ))}
+
+        <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3">
+          {Q("bac_number", "Número de OC")}
+          {Q("issue_date", "Fecha autorización", { type: "date" })}
+          {Q("total_amount", "Importe total", { inputMode: "decimal" })}
+          {Q("customer_name", "Organismo", { list: "q-customers", className: "col-span-2" })}
+          {Q("due_date", "Entrega límite", { type: "date" })}
+        </div>
+        <datalist id="q-customers">{customers.map((c) => <option key={c.id} value={c.name} />)}</datalist>
+
+        <div className="rounded-md border border-border">
+          <div className="flex items-center justify-between border-b border-border px-2 py-1.5">
+            <span className="text-xs font-medium text-fg-muted">Renglones ({items.fields.length})</span>
+            <button type="button" className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              onClick={() => items.append(emptyItem(Math.max(0, ...rows.map((r) => Number(r?.line_number) || 0)) + 1))}>
+              <Plus className="size-3" /> Renglón
+            </button>
           </div>
-        )}
-        {itemIssues && <p className="flex items-center gap-2 text-sm text-warn"><AlertTriangle className="size-4" />Algún renglón no se leyó completo: abrí todos los datos para revisarlo.</p>}
-        <button type="button" onClick={onToggle} className="inline-flex items-center gap-1 self-start text-sm text-fg-muted hover:text-fg">
-          <ChevronDown className={cn("size-4 transition-transform", showAll && "rotate-180")} />
-          {showAll ? "Ocultar todos los datos" : "Ver / editar todos los datos"}
-        </button>
-      </CardBody>
+          <div className="hidden grid-cols-[40px_minmax(0,1fr)_64px_92px_100px_24px] gap-1 px-2 pt-1.5 text-[11px] text-fg-subtle sm:grid">
+            <span>R</span><span>Descripción</span><span className="text-right">Cant.</span><span className="text-right">Precio</span><span className="text-right">Total</span><span />
+          </div>
+          <div className="flex flex-col gap-1 p-2">
+            {items.fields.map((f, i) => {
+              const it = rows[i];
+              const q = parseArNumber(String(it?.quantity ?? "")) ?? "", pr = parseArNumber(String(it?.unit_price ?? "")) ?? "", t = parseArNumber(String(it?.total_amount ?? "")) ?? "";
+              const expected = isValidDecimal(q) && isValidDecimal(pr) ? lineTotal(q, pr) : null;
+              const bad = expected && isValidDecimal(t) && differs(expected, t);
+              const P = (k: string) => `items.${i}.${k}` as F;
+              const rv = (k: string) => needsReview(P(k)) || !!err(P(k));
+              return (
+                <div key={f.id} className="grid grid-cols-[36px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_20px] items-center gap-1 border-b border-border pb-2 last:border-0 last:pb-0 sm:grid-cols-[40px_minmax(0,1fr)_64px_92px_100px_24px] sm:border-0 sm:pb-0">
+                  <Input {...register(P("line_number"))} inputMode="numeric" className={cn(cell, "text-center")} aria-label="Renglón" />
+                  <Input {...register(P("description_original"))} className={cn(cell, "col-span-5 -order-1 sm:order-none sm:col-span-1")} placeholder="Descripción" review={rv("description_original")} title={String(it?.description_original ?? "")} />
+                  <Input {...register(P("quantity"))} inputMode="decimal" className={cn(cell, "text-right tabular")} review={rv("quantity")} placeholder="Cant." aria-label="Cantidad" />
+                  <Input {...register(P("unit_price"))} inputMode="decimal" className={cn(cell, "text-right tabular")} review={rv("unit_price")} placeholder="Precio" aria-label="Precio unitario" />
+                  <Input {...register(P("total_amount"))} inputMode="decimal" className={cn(cell, "text-right tabular", bad && "border-warn")} review={rv("total_amount")} placeholder="Total" aria-label="Total"
+                    onFocus={() => { if (!t && expected) setValue(P("total_amount"), expected, { shouldDirty: true }); }} />
+                  {items.fields.length > 1
+                    ? <button type="button" onClick={() => items.remove(i)} className="text-fg-subtle hover:text-danger" aria-label="Quitar renglón"><Trash2 className="size-3.5" /></button>
+                    : <span />}
+                  {bad && (
+                    <button type="button" className="col-span-5 inline-flex sm:col-start-2 sm:col-end-6 items-center gap-1 text-left text-[11px] text-warn"
+                      onClick={() => setValue(P("total_amount"), expected!, { shouldDirty: true, shouldValidate: true })}>
+                      <Wand2 className="size-3" /> {q} × {formatMoney(pr, currency)} = {formatMoney(expected, currency)} · usar este total
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-end gap-2 border-t border-border px-2 py-1.5 text-xs">
+            <span className="text-fg-muted">Suma</span><span className="font-medium tabular">{itemsSum ? formatMoney(itemsSum, currency) : "—"}</span>
+            {mismatch && <span className="flex items-center gap-1 text-warn"><AlertTriangle className="size-3.5" />no coincide con el total</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-3">
+        <button type="button" onClick={onShowAll} className="whitespace-nowrap text-sm text-fg-muted hover:text-fg">Todos los datos</button>
+        <div className="flex gap-2">
+          {onCancel && <Button type="button" variant="ghost" onClick={onCancel}>Cancelar</Button>}
+          <Button type="submit" loading={submitting}>{submitLabel}</Button>
+        </div>
+      </div>
     </Card>
   );
 }

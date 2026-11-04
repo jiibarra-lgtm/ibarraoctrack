@@ -43,7 +43,7 @@ export function ImportReview(p: Props) {
 
   const isImage = p.mimeType.startsWith("image/");
   const aside = (
-    <Card className="overflow-hidden">
+    <Card className="flex h-full min-h-0 flex-col overflow-hidden">
       <CardHeader
         title="Documento original"
         description={p.extractor ? EXTRACTOR_LABEL[p.extractor] ?? p.extractor : undefined}
@@ -59,14 +59,14 @@ export function ImportReview(p: Props) {
           </div>
         }
       />
-      <div className="max-h-[50vh] overflow-auto bg-surface-2 xl:max-h-[calc(100dvh-180px)]">
+      <div className="max-h-[55vh] min-h-0 flex-1 overflow-auto bg-surface-2 xl:max-h-none">
         {!p.documentUrl ? (
           <p className="p-6 text-sm text-fg-muted">No se pudo cargar la vista previa.</p>
         ) : isImage ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={p.documentUrl} alt="Orden de compra original" style={{ width: `${zoom * 100}%`, maxWidth: "none" }} className="block" />
         ) : (
-          <iframe src={p.documentUrl} title="PDF original" className="h-[70vh] w-full" />
+          <iframe src={p.documentUrl} title="PDF original" className="h-[55vh] w-full xl:h-full" />
         )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2.5">

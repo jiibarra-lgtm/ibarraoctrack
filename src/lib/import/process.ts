@@ -7,7 +7,7 @@ import { aiAvailable, extractWithAi } from "@/lib/bac/ai";
 import { ocrImage } from "@/lib/bac/ocr";
 import { pdfToImage } from "@/lib/bac/pdf-images";
 import { mergeExtractions } from "@/lib/bac/merge";
-import { validateOrderMath } from "@/lib/bac/validate";
+import { fillMissingLineTotals, validateOrderMath } from "@/lib/bac/validate";
 import type { ExtractedOrder, ExtractionWarning } from "@/lib/bac/types";
 import { emptyPurchaseOrder, purchaseOrderSchema } from "@/lib/po/schema";
 import { processInvoiceJob, processRemitoJob } from "./process-docs";
@@ -120,6 +120,7 @@ export async function processImportJob(supabase: SupabaseClient, jobId: string, 
 
     const warnings: ExtractionWarning[] = [...notes, ...extracted.warnings];
     if (org) reconcileAwardee(extracted, org, warnings);
+    fillMissingLineTotals(extracted.order, extracted.review, warnings);
     const math = validateOrderMath(extracted.order);
     warnings.push(...math.warnings);
     const review = [...new Set([...extracted.review, ...math.review])];

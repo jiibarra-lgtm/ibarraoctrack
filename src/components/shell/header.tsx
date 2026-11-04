@@ -28,14 +28,14 @@ export function Header(p: Props) {
   const initials = (p.fullName || p.email).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join("");
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-bg/85 px-3 backdrop-blur sm:gap-3 sm:px-5">
+    <header className="glass sticky top-0 z-30 flex h-14 items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:top-3 lg:rounded-2xl">
       <DialogPrimitive.Root open={mobileOpen} onOpenChange={setMobileOpen}>
         <DialogPrimitive.Trigger asChild>
           <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Abrir menú"><MenuIcon /></Button>
         </DialogPrimitive.Trigger>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 lg:hidden" />
-          <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col gap-5 overflow-y-auto border-r border-border bg-surface p-3 pt-4 lg:hidden">
+          <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col gap-5 overflow-y-auto border-r border-side-border bg-[var(--bg)] bg-[image:var(--bg-image)] p-3 pt-4 text-side-fg lg:hidden">
             <DialogPrimitive.Title className="sr-only">Navegación</DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">Menú principal</DialogPrimitive.Description>
             <div className="flex items-center justify-between">

@@ -5,13 +5,16 @@ import { Brand, SidebarNav } from "@/components/shell/sidebar";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const s = await requireOrg();
   return (
-    <div className="flex min-h-dvh">
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-6 overflow-y-auto border-r border-border bg-surface px-3 py-4 lg:flex">
+    <div className="flex min-h-dvh gap-3 p-0 lg:p-3">
+      <aside className="sticky top-3 hidden h-[calc(100dvh-1.5rem)] w-60 shrink-0 flex-col gap-6 overflow-y-auto rounded-2xl border border-side-border bg-side px-3 py-4 text-side-fg shadow-[var(--glass-shadow)] backdrop-blur-2xl lg:flex">
         <Brand orgName={s.org.org_name} />
         <SidebarNav />
-        <p className="mt-auto px-2.5 text-[11px] text-fg-subtle">Fase 1 · Fundamentos</p>
+        <div className="mt-auto rounded-xl border border-side-border bg-white/5 px-3 py-2.5">
+          <p className="text-[11px] text-side-muted">Fases 1 a 3 activas</p>
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/15"><div className="h-full w-1/2 rounded-full bg-brand" /></div>
+        </div>
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col gap-3">
         <Header
           email={s.email}
           fullName={s.fullName}
@@ -21,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           memberships={s.memberships}
           canWrite={canWrite(s.org.role)}
         />
-        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1400px] flex-1 border-panel-border bg-panel px-4 py-6 backdrop-blur-md sm:px-6 lg:rounded-3xl lg:border lg:px-8">{children}</main>
       </div>
     </div>
   );

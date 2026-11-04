@@ -19,11 +19,11 @@ export function MonthlyChart({ data, currency }: { data: Record<string, number |
           <YAxis tickFormatter={(v) => compact.format(v)} tickLine={false} axisLine={false} width={48} tick={{ fontSize: 11, fill: "var(--fg-subtle)" }} />
           <Tooltip
             cursor={{ fill: "var(--surface-2)" }}
-            contentStyle={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, color: "var(--fg)" }}
+            contentStyle={{ background: "var(--surface-solid)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, color: "var(--fg)" }}
             labelFormatter={(k) => label(String(k))}
             formatter={(v, name) => (name === "awarded" ? [full.format(Number(v)), "Adjudicado"] : [String(v), "Órdenes"])}
           />
-          <Bar dataKey="awarded" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={36} />
+          <Bar dataKey="awarded" fill="var(--chart)" radius={[6, 6, 0, 0]} maxBarSize={36} />
         </BarChart>
       </ResponsiveContainer>
     </div>

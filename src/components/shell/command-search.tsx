@@ -97,7 +97,7 @@ export function CommandSearch() {
     <>
       <button
         onClick={() => changeOpen(true)}
-        className="flex h-9 w-full max-w-md items-center gap-2 rounded-md border border-border bg-surface px-3 text-sm text-fg-subtle shadow-xs transition-colors hover:border-border-strong"
+        className="flex h-9 w-full max-w-md items-center gap-2 rounded-full border border-card-border bg-field px-4 text-sm text-fg-subtle shadow-xs transition-colors hover:border-border-strong"
       >
         <Search className="size-4" />
         <span className="flex-1 truncate text-left">

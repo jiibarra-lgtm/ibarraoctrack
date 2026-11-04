@@ -6,7 +6,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
     <input
       ref={ref}
       className={cn(
-        "h-9 w-full min-w-0 rounded-md border border-border bg-surface px-3 text-sm text-fg shadow-xs transition-colors",
+        "h-9 w-full min-w-0 rounded-lg border border-border bg-field px-3 text-sm text-fg shadow-xs transition-colors",
         "placeholder:text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:border-ring",
         "disabled:opacity-60 disabled:bg-surface-2",
         review && "border-warn bg-warn-soft/60",
@@ -24,7 +24,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTML
     <textarea
       ref={ref}
       className={cn(
-        "min-h-[72px] w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-fg shadow-xs",
+        "min-h-[72px] w-full rounded-lg border border-border bg-field px-3 py-2 text-sm text-fg shadow-xs",
         "placeholder:text-fg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:border-ring",
         review && "border-warn bg-warn-soft/60",
         invalid && "border-danger",
@@ -41,7 +41,7 @@ export const NativeSelect = React.forwardRef<HTMLSelectElement, React.SelectHTML
     <select
       ref={ref}
       className={cn(
-        "h-9 w-full rounded-md border border-border bg-surface px-2.5 text-sm text-fg shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+        "h-9 w-full rounded-lg border border-border bg-field px-2.5 text-sm text-fg shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         invalid && "border-danger",
         className,
       )}
@@ -71,7 +71,7 @@ export function Field({
 }
 
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("rounded-lg border border-border bg-surface shadow-xs", className)} {...props} />;
+  return <div className={cn("glass rounded-2xl", className)} {...props} />;
 }
 
 export function CardHeader({ title, description, action, className }: { title: React.ReactNode; description?: React.ReactNode; action?: React.ReactNode; className?: string }) {

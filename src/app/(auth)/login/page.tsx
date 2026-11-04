@@ -7,10 +7,10 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const { next, error } = await searchParams;
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
-      <section className="relative hidden overflow-hidden bg-primary text-primary-fg lg:flex lg:flex-col lg:justify-between lg:p-12">
+      <section className="relative hidden overflow-hidden bg-[oklch(0.18_0.03_235/0.55)] text-white backdrop-blur-sm lg:flex lg:flex-col lg:justify-between lg:p-12">
         <div className="absolute inset-0 opacity-[0.07] [background-image:linear-gradient(currentColor_1px,transparent_1px),linear-gradient(90deg,currentColor_1px,transparent_1px)] [background-size:32px_32px]" />
         <div className="relative flex items-center gap-2.5">
-          <div className="grid size-9 place-items-center rounded-lg bg-primary-fg/15">
+          <div className="grid size-9 place-items-center rounded-lg bg-gradient-to-br from-brand to-[oklch(0.55_0.12_240)]">
             <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
               <path d="M4 7h16M4 12h10M4 17h6" /><circle cx="18" cy="16" r="3" />
             </svg>
@@ -28,7 +28,9 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         </dl>
       </section>
       <section className="flex items-center justify-center px-5 py-12">
-        <LoginForm next={next} initialError={error} />
+        <div className="glass w-full max-w-sm rounded-3xl p-7 sm:p-8">
+          <LoginForm next={next} initialError={error} />
+        </div>
       </section>
     </div>
   );

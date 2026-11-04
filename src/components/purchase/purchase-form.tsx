@@ -130,7 +130,7 @@ export function PurchaseForm({ defaultValues, suppliers, review = [], warnings =
         </div>
         {aside && <div className="min-w-0 xl:sticky xl:top-20 xl:self-start">{aside}</div>}
       </div>
-      <div className="sticky bottom-0 z-20 -mx-4 flex justify-end gap-2 border-t border-border bg-bg/90 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      <div className="sticky bottom-0 z-20 -mx-4 flex justify-end gap-2 border-t border-card-border bg-surface-solid/85 px-4 py-3 backdrop-blur-xl lg:rounded-b-3xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <Button type="button" variant="ghost" onClick={() => router.back()}>Cancelar</Button>
         <Button type="submit" size="lg" loading={formState.isSubmitting}>{submitLabel}</Button>
       </div>
@@ -187,7 +187,7 @@ function ItemRow({ i, control, register, setValue, err, review, suggestions, onR
           {allocs.fields.map((a, k) => (
             <span key={a.id} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface py-0.5 pl-2.5 pr-1">
               <span className="font-medium">{(it?.allocations?.[k]?.label) || "Renglón"}</span>
-              <input {...register(`items.${i}.allocations.${k}.quantity` as never)} inputMode="decimal" className="w-14 rounded border border-border bg-bg px-1 text-right tabular" aria-label="Cantidad asignada" />
+              <input {...register(`items.${i}.allocations.${k}.quantity` as never)} inputMode="decimal" className="w-14 rounded border border-border bg-field px-1 text-right tabular" aria-label="Cantidad asignada" />
               <button type="button" onClick={() => allocs.remove(k)} className="rounded-full p-0.5 text-fg-subtle hover:text-danger" aria-label="Quitar vínculo"><X className="size-3" /></button>
             </span>
           ))}

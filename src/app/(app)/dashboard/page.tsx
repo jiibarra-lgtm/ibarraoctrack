@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, FileText, ScanSearch, Upload } from "lucide-react";
+import { Activity, ArrowRight, CircleCheck, FileText, Inbox, ScanSearch, Upload, Wallet } from "lucide-react";
 import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
@@ -98,10 +98,10 @@ export default async function DashboardPage() {
       ) : (
         <div className="flex flex-col gap-5">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Kpi label="Total adjudicado" value={formatMoney(awarded, main)} sub={`${nTotal} órdenes vigentes`} href="/ordenes" />
-            <Kpi label="En curso" value={formatMoney(activeAmt, main)} sub={`${nActive} órdenes activas`} href="/ordenes?estado=en_ejecucion" />
-            <Kpi label="Completadas" value={String(nDone)} sub={nTotal ? `${Math.round((nDone / nTotal) * 100)}% del total` : "—"} href="/ordenes?estado=completada" />
-            <Kpi label="Importaciones por revisar" value={String(pending.data?.filter((p) => p.status === "revision").length ?? 0)} sub={pending.data?.some((p) => p.status === "error") ? "Hay importaciones con error" : "Al día"} href="/ordenes/importar" />
+            <Kpi icon={Wallet} label="Total adjudicado" value={formatMoney(awarded, main)} sub={`${nTotal} órdenes vigentes`} href="/ordenes" />
+            <Kpi icon={Activity} label="En curso" value={formatMoney(activeAmt, main)} sub={`${nActive} órdenes activas`} href="/ordenes?estado=en_ejecucion" />
+            <Kpi icon={CircleCheck} label="Completadas" value={String(nDone)} sub={nTotal ? `${Math.round((nDone / nTotal) * 100)}% del total` : "—"} href="/ordenes?estado=completada" />
+            <Kpi icon={Inbox} label="Importaciones por revisar" value={String(pending.data?.filter((p) => p.status === "revision").length ?? 0)} sub={pending.data?.some((p) => p.status === "error") ? "Hay importaciones con error" : "Al día"} href="/ordenes/importar" />
           </div>
           {currencies.length > 1 && (
             <p className="text-xs text-fg-subtle">Importes en {main}. También hay órdenes en {currencies.slice(1).join(", ")}: no se suman sin conversión explícita.</p>
@@ -126,7 +126,7 @@ export default async function DashboardPage() {
                             <span className="shrink-0 text-sm font-medium tabular">{formatMoney(c.awarded, c.currency)}</span>
                           </div>
                           <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-2">
-                            <div className="h-full rounded-full bg-primary/70" style={{ width: `${Math.max(4, (Number(c.awarded) / max) * 100)}%` }} />
+                            <div className="h-full rounded-full bg-brand" style={{ width: `${Math.max(4, (Number(c.awarded) / max) * 100)}%` }} />
                           </div>
                           <p className="mt-1 text-xs text-fg-subtle">{c.orders} orden{Number(c.orders) === 1 ? "" : "es"}</p>
                         </Link>
@@ -204,12 +204,13 @@ function Mini({ label, value, sub, href, warn }: { label: string; value: string;
   return href ? <Link href={href} className="block hover:opacity-80">{inner}</Link> : <div>{inner}</div>;
 }
 
-function Kpi({ label, value, sub, href }: { label: string; value: string; sub?: string; href: string }) {
+function Kpi({ label, value, sub, href, icon: Icon }: { label: string; value: string; sub?: string; href: string; icon: React.ElementType }) {
   return (
-    <Link href={href} className="group rounded-lg border border-border bg-surface px-4 py-3.5 shadow-xs transition-colors hover:border-border-strong">
-      <p className="text-xs text-fg-muted">{label}</p>
-      <p className="mt-1 truncate text-lg font-semibold tabular sm:text-xl">{value}</p>
-      {sub && <p className="mt-0.5 truncate text-xs text-fg-subtle group-hover:text-fg-muted">{sub}</p>}
+    <Link href={href} className="glass group rounded-2xl px-4 py-4 transition-transform hover:-translate-y-0.5">
+      <span className="grid size-8 place-items-center rounded-full border border-card-border bg-field text-fg-muted shadow-xs group-hover:text-brand"><Icon className="size-4" /></span>
+      <p className="mt-3 truncate text-xl font-semibold tracking-tight tabular sm:text-2xl">{value}</p>
+      <p className="mt-0.5 truncate text-sm font-medium text-fg">{label}</p>
+      {sub && <p className="truncate text-xs text-fg-subtle">{sub}</p>}
     </Link>
   );
 }

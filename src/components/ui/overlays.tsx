@@ -16,7 +16,7 @@ export function DialogContent({ className, children, title, description, ...prop
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] data-[state=open]:animate-in" />
       <DialogPrimitive.Content
         className={cn(
-          "fixed left-1/2 top-[12vh] z-50 w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 rounded-xl border border-border bg-surface p-5 shadow-2xl focus:outline-none",
+          "fixed left-1/2 top-[12vh] z-50 w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 rounded-2xl border border-card-border bg-surface-solid/95 p-5 shadow-2xl backdrop-blur-xl focus:outline-none",
           className,
         )}
         {...props}
@@ -44,7 +44,7 @@ export function MenuContent({ className, align = "end", ...props }: React.Compon
       <Dropdown.Content
         align={align}
         sideOffset={6}
-        className={cn("z-50 min-w-48 rounded-lg border border-border bg-surface p-1 text-sm shadow-lg", className)}
+        className={cn("z-50 min-w-48 rounded-xl border border-card-border bg-surface-solid/95 p-1 text-sm shadow-lg backdrop-blur-xl", className)}
         {...props}
       />
     </Dropdown.Portal>

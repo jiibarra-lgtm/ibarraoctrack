@@ -42,3 +42,16 @@ export async function updateFinancialSettings(_: unknown, form: FormData): Promi
   revalidatePath("/", "layout");
   return { ok: true };
 }
+
+/** Genera (o reemplaza) la clave privada con la que el script de Gmail manda los avisos. Sólo se guarda el hash. */
+export async function generateInboundToken(): Promise<{ ok: true; token: string } | { ok: false; error: string }> {
+  const s = await requireOrg();
+  if (s.org.role !== "admin") return { ok: false, error: "Sólo administradores." };
+  const { randomBytes, createHash } = await import("node:crypto");
+  const token = `oct_${randomBytes(32).toString("base64url")}`;
+  const hash = createHash("sha256").update(token, "utf8").digest("hex");
+  const { error } = await s.supabase.from("inbound_tokens").upsert({ org_id: s.org.org_id, token_hash: hash, created_by: s.userId, created_at: new Date().toISOString() });
+  if (error) return { ok: false, error: friendlyDbError(error) };
+  revalidatePath("/configuracion");
+  return { ok: true, token };
+}

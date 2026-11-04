@@ -5,15 +5,22 @@ import { aiAvailable } from "@/lib/bac/ai";
 import { env } from "@/lib/env";
 import { OrgForm } from "./org-form";
 import { FinanceForm } from "./finance-form";
+import { GmailConnect } from "./gmail-connect";
+import { StorageUsage } from "./storage-usage";
+import { headers } from "next/headers";
 
 export const metadata: Metadata = { title: "Configuración" };
 
 export default async function SettingsPage() {
   const s = await requireOrg();
-  const [{ data: org }, { data: fs }] = await Promise.all([
+  const [{ data: org }, { data: fs }, { data: tok }, { data: usage }] = await Promise.all([
     s.supabase.from("organizations").select("id, name, legal_name, cuit").eq("id", s.org.org_id).single(),
     s.supabase.from("financial_settings").select("*").eq("org_id", s.org.org_id).maybeSingle(),
+    s.supabase.from("inbound_tokens").select("last_used_at, total_events, created_at").eq("org_id", s.org.org_id).maybeSingle(),
+    s.supabase.rpc("storage_usage", { p_org: s.org.org_id }),
   ]);
+  const hdrs = await headers();
+  const appUrl = `${hdrs.get("x-forwarded-proto") ?? "https"}://${hdrs.get("x-forwarded-host") ?? hdrs.get("host")}`;
   const ai = aiAvailable();
   return (
     <>
@@ -29,6 +36,14 @@ export default async function SettingsPage() {
             <FinanceForm editable={s.org.role === "admin" || s.org.role === "finanzas"}
               fs={fs ?? { vat_recoverable: true, sales_include_vat: true, default_vat_rate: "21", min_margin_pct: "15", default_allocation: "importe", collection_days: 30 }} />
           </CardBody>
+        </Card>
+        <Card id="gmail">
+          <CardHeader title="Conexión con Gmail" description="Avisos de BAC y SIGAF + correos con organismos, solos" />
+          <CardBody><GmailConnect status={tok} admin={s.org.role === "admin"} appUrl={appUrl} /></CardBody>
+        </Card>
+        <Card>
+          <CardHeader title="Espacio usado" description="Base de datos y archivos" />
+          <CardBody><StorageUsage u={usage as never} /></CardBody>
         </Card>
         <Card>
           <CardHeader title="Importador BAC" />

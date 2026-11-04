@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+const PUBLIC_PATHS = ["/login", "/auth", "/api/inbound"];
 
 /** Refresca la sesión de Supabase y protege todas las rutas privadas. */
 export async function proxy(request: NextRequest) {

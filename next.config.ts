@@ -11,6 +11,17 @@ const nextConfig: NextConfig = {
       "./node_modules/tesseract.js-core/*.js",
       "./node_modules/tesseract.js-core/*.wasm",
       "./node_modules/tesseract.js-core/package.json",
+      // Dependencias que el worker de Tesseract carga por ruta (el trazado automático no las ve)
+      "./node_modules/bmp-js/**/*",
+      "./node_modules/idb-keyval/**/*",
+      "./node_modules/is-url/**/*",
+      "./node_modules/node-fetch/**/*",
+      "./node_modules/whatwg-url/**/*",
+      "./node_modules/tr46/**/*",
+      "./node_modules/webidl-conversions/**/*",
+      "./node_modules/regenerator-runtime/**/*",
+      "./node_modules/wasm-feature-detect/**/*",
+      "./node_modules/zlibjs/**/*",
     ],
   },
   turbopack: {

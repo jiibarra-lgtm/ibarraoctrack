@@ -21,7 +21,10 @@ export function JobProgress({ jobId, status: initial, attempts, maxAttempts, err
   const [step, setStep] = React.useState(0);
   const started = React.useRef(false);
 
+  const inFlight = React.useRef(false);
   const run = React.useCallback(async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
       const res = await fetch(`/api/import/${jobId}/process`, { method: "POST" });
       const body = await res.json().catch(() => ({}));
@@ -33,6 +36,8 @@ export function JobProgress({ jobId, status: initial, attempts, maxAttempts, err
       if (body.status === "error") { setStatus("error"); setLastError(body.error ?? "Error al procesar"); return; }
     } catch {
       // Corte de red o timeout de la función: seguimos el estado por polling
+    } finally {
+      inFlight.current = false;
     }
   }, [jobId, router]);
 
@@ -41,7 +46,7 @@ export function JobProgress({ jobId, status: initial, attempts, maxAttempts, err
     started.current = true;
     // Dispara un proceso externo (fetch); los setState ocurren después de la respuesta.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (initial === "pendiente") run();
+    if (initial === "pendiente" || initial === "procesando") run();
   }, [initial, run]);
 
   // Polling del estado persistido (cubre otra pestaña procesando o funciones que terminan después)
@@ -56,7 +61,9 @@ export function JobProgress({ jobId, status: initial, attempts, maxAttempts, err
       else if (data.status === "pendiente") run();
     }, 3000);
     const st = setInterval(() => setStep((s) => Math.min(s + 1, STEPS.length - 1)), 2500);
-    return () => { clearInterval(iv); clearInterval(st); };
+    // Si un proceso anterior se cortó, el lock vence a los 5 min y este reintento lo retoma
+    const retry = setInterval(run, 60_000);
+    return () => { clearInterval(iv); clearInterval(st); clearInterval(retry); };
   }, [status, jobId, router, run]);
 
   const retry = async () => {

@@ -289,33 +289,33 @@ function ItemRow({ i, control, register, err, needsReview, setValue, currency, o
   const hasDelivery = it?.delivery_address || it?.delivery_term || it?.delivery_notes || it?.delivery_phone;
 
   return (
-    <div className="px-4 py-4 sm:px-5">
-      <div className="grid grid-cols-6 gap-3 lg:grid-cols-[64px_56px_150px_minmax(0,1fr)_100px_96px_120px_128px_auto]">
-        <Field label="Renglón" error={err(P("line_number"))} className="col-span-2 lg:col-span-1">
+    <div className="@container px-4 py-4 sm:px-5">
+      <div className="grid grid-cols-6 gap-3 @5xl:grid-cols-[64px_56px_150px_minmax(220px,1fr)_100px_96px_120px_128px_auto]">
+        <Field label="Renglón" error={err(P("line_number"))} className="col-span-2 @5xl:col-span-1">
           <Input {...register(P("line_number"))} inputMode="numeric" invalid={!!err(P("line_number"))} />
         </Field>
         <Field label="Opción" className="col-span-1">
           <Input {...register(P("option_number"))} inputMode="numeric" />
         </Field>
-        <Field label="Código catálogo" className="col-span-3 lg:col-span-1" review={needsReview(P("bac_code"))}>
+        <Field label="Código catálogo" className="col-span-3 @5xl:col-span-1" review={needsReview(P("bac_code"))}>
           <Input {...register(P("bac_code"))} className="font-mono text-[13px]" review={needsReview(P("bac_code"))} />
         </Field>
-        <Field label="Descripción" error={err(P("description_original"))} review={needsReview(P("description_original"))} className="col-span-6 lg:col-span-1">
+        <Field label="Descripción" error={err(P("description_original"))} review={needsReview(P("description_original"))} className="col-span-6 @5xl:col-span-1">
           <Textarea rows={2} {...register(P("description_original"))} invalid={!!err(P("description_original"))} review={needsReview(P("description_original"))} className="min-h-9 resize-y" />
         </Field>
-        <Field label="Cantidad" error={err(P("quantity"))} review={needsReview(P("quantity"))} className="col-span-2 lg:col-span-1">
+        <Field label="Cantidad" error={err(P("quantity"))} review={needsReview(P("quantity"))} className="col-span-2 @5xl:col-span-1">
           <Input {...register(P("quantity"))} inputMode="decimal" className="tabular text-right" invalid={!!err(P("quantity"))} review={needsReview(P("quantity"))} />
         </Field>
-        <Field label="Unidad" className="col-span-2 lg:col-span-1">
+        <Field label="Unidad" className="col-span-2 @5xl:col-span-1">
           <Input {...register(P("unit"))} />
         </Field>
-        <Field label="Precio unit." error={err(P("unit_price"))} review={needsReview(P("unit_price"))} className="col-span-2 lg:col-span-1">
+        <Field label="Precio unit." error={err(P("unit_price"))} review={needsReview(P("unit_price"))} className="col-span-2 @5xl:col-span-1">
           <Input {...register(P("unit_price"))} inputMode="decimal" className="tabular text-right" invalid={!!err(P("unit_price"))} review={needsReview(P("unit_price"))} />
         </Field>
-        <Field label="Total" error={err(P("total_amount"))} review={needsReview(P("total_amount"))} className="col-span-4 lg:col-span-1">
+        <Field label="Total" error={err(P("total_amount"))} review={needsReview(P("total_amount"))} className="col-span-4 @5xl:col-span-1">
           <Input {...register(P("total_amount"))} inputMode="decimal" className={cn("tabular text-right", bad && "border-warn")} invalid={!!err(P("total_amount"))} review={needsReview(P("total_amount"))} />
         </Field>
-        <div className="col-span-2 flex items-end justify-end gap-1 lg:col-span-1">
+        <div className="col-span-2 flex items-end justify-end gap-1 @5xl:col-span-1">
           <Button type="button" variant="ghost" size="icon-sm" onClick={onDuplicate} title="Duplicar como otra opción"><Copy /></Button>
           {onRemove && <Button type="button" variant="ghost" size="icon-sm" onClick={onRemove} title="Quitar renglón" className="hover:text-danger"><Trash2 /></Button>}
         </div>

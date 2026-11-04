@@ -67,9 +67,15 @@ export function parseArNumber(input: string | null | undefined): string | null {
     normalized = parts.length === 2 ? `${parts[0]}.${parts[1]}` : s.replace(/,/g, "");
   } else if (lastDot >= 0) {
     const parts = s.split(".");
-    // "132.225" o "1.234.567" → miles; "8815.00" → decimal
-    const looksThousands = parts.length > 2 || (parts.length === 2 && parts[1].length === 3);
-    normalized = looksThousands ? s.replace(/\./g, "") : s;
+    const last = parts[parts.length - 1];
+    if (parts.length > 2 && last.length === 2) {
+      // OCR suele leer la coma decimal como punto: "132.225.00" → 132225.00
+      normalized = parts.slice(0, -1).join("") + "." + last;
+    } else {
+      // "132.225" o "1.234.567" → miles; "8815.00" → decimal
+      const looksThousands = parts.length > 2 || (parts.length === 2 && last.length === 3);
+      normalized = looksThousands ? s.replace(/\./g, "") : s;
+    }
   } else {
     normalized = s;
   }

@@ -8,7 +8,7 @@ import { Card, CardBody } from "@/components/ui/primitives";
 import { createClient } from "@/lib/supabase/client";
 import { discardImport, retryImport } from "../actions";
 
-const STEPS = ["Verificando integridad del archivo", "Extrayendo texto y renglones", "Controlando cuentas y duplicados"];
+const STEPS = ["Verificando el archivo", "Leyendo la orden (OCR)", "Controlando cuentas y duplicados", "Guardando la orden"];
 
 /**
  * Dispara el procesamiento en una invocación separada y sigue el estado persistido.
@@ -25,6 +25,10 @@ export function JobProgress({ jobId, status: initial, attempts, maxAttempts, err
     try {
       const res = await fetch(`/api/import/${jobId}/process`, { method: "POST" });
       const body = await res.json().catch(() => ({}));
+      if (body.status === "confirmado" && body.purchaseOrderId) {
+        toast.success("Orden importada automáticamente");
+        return router.replace(`/ordenes/${body.purchaseOrderId}`);
+      }
       if (body.status === "revision") return router.refresh();
       if (body.status === "error") { setStatus("error"); setLastError(body.error ?? "Error al procesar"); return; }
     } catch {
@@ -93,7 +97,7 @@ export function JobProgress({ jobId, status: initial, attempts, maxAttempts, err
         <Loader2 className="size-8 animate-spin text-primary" />
         <div>
           <p className="font-medium">Leyendo la orden…</p>
-          <p className="mt-1 text-sm text-fg-muted">Puede tardar hasta un minuto con capturas largas. Podés salir: queda guardado.</p>
+          <p className="mt-1 text-sm text-fg-muted">Tarda entre 10 y 40 segundos. Si todo cierra, la orden se guarda sola. Podés salir: queda en proceso.</p>
         </div>
         <ol className="flex flex-col gap-1.5 text-left text-sm">
           {STEPS.map((s, i) => (

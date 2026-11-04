@@ -1,0 +1,88 @@
+Buenos Aires Compras Buenos Aires Ciudad
+Ver documento contractual
+Gobierno de la Ciudad Autónoma de Buenos Aires
+— 2024 - Año del 30° Aniversario de la Autonomía de la Ciudad de Buenos Aires
+Datos de la Orden de compra
+Número Orden de compra:
+412-17904-OC24
+Tipo:
+Original
+Descripción:
+Orden de compra generada por Proceso Nº 623-0216-LPU23
+Ejercicio:
+2024
+Fecha autorización:
+12/11/2024
+Fecha perfeccionamiento:
+13/11/2024
+Estado:
+Perfeccionado
+Duración del contrato:
+No definido
+Datos del proceso de compra
+Número expediente:
+EX-2023-07838510- -GCABA-DGCYC
+Número procedimiento:
+623-0216-LPU23
+Tipo:
+Bienes
+Modalidad:
+Convenio Marco
+Clase:
+Ferretería, Perfumería, Limpieza y Contenedores Comerciales e Industriales, Textil, Confección y Calzado , Maquinas y Herramientas, Reservado para GCBA
+Encuadre legal:
+Ley N° 2.095 (Texto Consolidado por Ley N° 6.347) y Decreto N° 74/21 Art. 31 y 45
+Número acto administrativo de adjudicación:
+RS-2023-33167494- -MHFGC
+Datos comprador
+Jurisdicción Solicitante:
+401 - MINISTERIO DE SALUD
+Unidad Ejecutora:
+412 - HTAL. COSME ARGERICH
+Teléfono:
+4121-0700 INTERNO 2653
+Dirección:
+ALMIRANTE BROWN 240
+Observaciones:
+ENTREGA EN DIVISION DEPOSITO - SRA CLAUDIA POMA ENTREGAR EN BIDONES DE 5 LITROS
+Datos adjudicatario
+Razón social:
+JUAN ERNESTO IBARRA
+Número ente:
+32954
+Número CUIT:
+20-04424052-2
+IVA:
+No definido
+Domicilio:
+LAGUNA 1311
+Código postal:
+1407
+Localidad:
+Ciudad Autónoma de BsAs
+Provincia:
+Ciudad Autonoma de Bs.As.
+Teléfono:
+4671-0446
+Fax:
+4671-0446
+Email:
+ibarrajuanernesto@gmail.com
+Sellos:
+No posee
+Detalle del documento contractual
+Renglón Opción Código catálogo Descripción Cantidad Unidad medida Empaquetamiento Especificaciones del proveedor Precio unitario Total
+3 1 18.10.001.0001.1 AGUA LAVANDINA (HIPOCLORITO DE SODIO) Liquido amarillento, que puede contener un ligero sedimento, utilizando en el blanqueo y desinfección de ropas y demás materiales de uso doméstico. Tendrá un contenido mínimo entre 55 g/l y 80 g/l de cloro activo y los demás componentes de acuerdo a las exigencias de la Norma IRAM Nº 41.173 parte I, II, III, IV, V y VI. 15,00 UNIDAD Ver Detalle ARS 8815,00 ARS 132225,00
+Total documento contractual
+Importe total ARS $132.225,00
+Importe bonificado ARS $0,00
+Importe neto ARS $132.225,00
+Son pesos ciento treinta y dos mil doscientos veinticinco con 00/100.-
+Detalle de entrega
+Renglón Opción Código catálogo Descripción Cantidad Dirección Teléfono Plazo Observaciones
+3 1 18.10.001.0001.1 AGUA LAVANDINA (HIPOCLORITO DE SODIO) Liquido amarillento 15,00 CORBETA PI Y MARGALL 750 41210653 Durante los 5 a partir de Días hábiles ENTREGA BIDONES DE 5 LITROS ENTREGA EN DEPOSITO SRA CLAUDIA POMA
+Ver más
+Autorizadores
+Nombre autoridad Cargo Fecha autorización
+EDUARDO NAPOLI Subdirector 12/11/2024
+Volver

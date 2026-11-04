@@ -4,12 +4,16 @@ import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui/primitiv
 import { aiAvailable } from "@/lib/bac/ai";
 import { env } from "@/lib/env";
 import { OrgForm } from "./org-form";
+import { FinanceForm } from "./finance-form";
 
 export const metadata: Metadata = { title: "Configuración" };
 
 export default async function SettingsPage() {
   const s = await requireOrg();
-  const { data: org } = await s.supabase.from("organizations").select("id, name, legal_name, cuit").eq("id", s.org.org_id).single();
+  const [{ data: org }, { data: fs }] = await Promise.all([
+    s.supabase.from("organizations").select("id, name, legal_name, cuit").eq("id", s.org.org_id).single(),
+    s.supabase.from("financial_settings").select("*").eq("org_id", s.org.org_id).maybeSingle(),
+  ]);
   const ai = aiAvailable();
   return (
     <>
@@ -20,10 +24,18 @@ export default async function SettingsPage() {
           <CardBody><OrgForm org={org!} editable={s.org.role === "admin"} /></CardBody>
         </Card>
         <Card>
+          <CardHeader title="Criterios de rentabilidad" description="Cómo se calculan ventas netas, costos y márgenes" />
+          <CardBody>
+            <FinanceForm editable={s.org.role === "admin" || s.org.role === "finanzas"}
+              fs={fs ?? { vat_recoverable: true, sales_include_vat: true, default_vat_rate: "21", min_margin_pct: "15", default_allocation: "importe" }} />
+          </CardBody>
+        </Card>
+        <Card>
           <CardHeader title="Importador BAC" />
           <CardBody className="flex flex-col gap-3 text-sm">
             <Row label="PDF con texto" value="Activo" ok />
-            <Row label="Capturas y escaneos (IA)" value={ai ? `Activo · ${env.anthropicModel}` : "Sin configurar (ANTHROPIC_API_KEY)"} ok={ai} />
+            <Row label="Capturas y fotos (OCR propio)" value="Activo" ok />
+            <Row label="Doble verificación con IA" value={ai ? `Activa · ${env.anthropicModel}` : "Opcional (ANTHROPIC_API_KEY)"} ok={ai} />
             <Row label="Almacenamiento" value="Privado · URLs firmadas" ok />
             <Row label="Zona horaria" value="America/Argentina/Buenos_Aires" ok />
             <Row label="Moneda principal" value="ARS (sin mezclar monedas)" ok />

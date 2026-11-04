@@ -20,3 +20,24 @@ export async function updateOrg(_: unknown, form: FormData): Promise<{ ok?: bool
   revalidatePath("/", "layout");
   return { ok: true };
 }
+
+export async function updateFinancialSettings(_: unknown, form: FormData): Promise<{ ok?: boolean; error?: string } | null> {
+  const s = await requireOrg();
+  if (s.org.role !== "admin" && s.org.role !== "finanzas") return { error: "Sólo administración o finanzas." };
+  const parsed = z.object({
+    vat_recoverable: z.enum(["si", "no"]),
+    sales_include_vat: z.enum(["si", "no"]),
+    default_vat_rate: z.coerce.number().min(0).max(100),
+    min_margin_pct: z.coerce.number().min(-100).max(1000),
+    default_allocation: z.enum(["importe", "unidades"]),
+  }).safeParse(Object.fromEntries(form));
+  if (!parsed.success) return { error: "Revisá los valores." };
+  const d = parsed.data;
+  const { error } = await s.supabase.from("financial_settings").upsert({
+    org_id: s.org.org_id, vat_recoverable: d.vat_recoverable === "si", sales_include_vat: d.sales_include_vat === "si",
+    default_vat_rate: d.default_vat_rate, min_margin_pct: d.min_margin_pct, default_allocation: d.default_allocation,
+  });
+  if (error) return { error: friendlyDbError(error) };
+  revalidatePath("/", "layout");
+  return { ok: true };
+}

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, FileText, ScanSearch, Upload, Lock } from "lucide-react";
+import { ArrowRight, FileText, ScanSearch, Upload } from "lucide-react";
 import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
@@ -24,14 +24,19 @@ export default async function DashboardPage() {
   const org = s.org.org_id;
   const from = monthsBack(12);
 
-  const [totals, monthly, top, recent, pending] = await Promise.all([
+  const [totals, monthly, top, recent, pending, profits, delSummary, upcoming] = await Promise.all([
     s.supabase.rpc("po_totals", { p_org: org }),
     s.supabase.rpc("po_monthly", { p_org: org, p_from: from }),
     s.supabase.rpc("top_customers", { p_org: org, p_limit: 6 }),
     s.supabase.from("purchase_orders_overview").select("id, bac_number, display_number, customer_name, issue_date, status, currency, total_amount, net_amount")
       .eq("org_id", org).order("created_at", { ascending: false }).limit(6),
-    s.supabase.from("import_jobs").select("id, status, created_at, documents(title)").eq("org_id", org).in("status", ["pendiente", "revision", "error"]).order("created_at", { ascending: false }).limit(5),
+    s.supabase.from("import_jobs").select("id, kind, status, created_at, documents(title)").eq("org_id", org).in("status", ["pendiente", "revision", "error"]).order("created_at", { ascending: false }).limit(5),
+    s.supabase.from("po_profitability").select("currency, status, direct_cost_real, direct_cost_estimated, operating_profit_estimated, operating_margin_estimated, min_margin_pct, operating_profit_realized").eq("org_id", org).not("status", "in", "(anulada,borrador)"),
+    s.supabase.from("po_delivery_summary").select("purchase_order_id, is_late").eq("org_id", org).eq("is_late", true),
+    s.supabase.from("deliveries").select("id", { count: "exact", head: true }).eq("org_id", org).in("status", ["programada", "en_preparacion", "despachada"]),
   ]);
+  type PR = { currency: string; status: string; direct_cost_real: string; direct_cost_estimated: string | null; operating_profit_estimated: string | null; operating_margin_estimated: string | null; min_margin_pct: string; operating_profit_realized: string | null };
+  const pr = ((profits.data ?? []) as PR[]);
 
   type T = { status: PoStatus; currency: string; orders: number; awarded: string };
   const rows = (totals.data ?? []) as T[];
@@ -44,6 +49,14 @@ export default async function DashboardPage() {
   const nActive = count((r) => ACTIVE.includes(r.status));
   const nDone = count((r) => r.status === "completada" || r.status === "cerrada");
   const nTotal = count((r) => r.status !== "anulada");
+  const prMain = pr.filter((p) => p.currency === main);
+  const profitEst = sum(prMain.filter((p) => ACTIVE.includes(p.status as PoStatus)).map((p) => p.operating_profit_estimated).filter((v): v is string => v !== null));
+  const profitReal = sum(prMain.map((p) => p.operating_profit_realized).filter((v): v is string => v !== null));
+  const costsCommitted = sum(prMain.filter((p) => ACTIVE.includes(p.status as PoStatus)).map((p) => p.direct_cost_estimated).filter((v): v is string => v !== null));
+  const costsReal = sum(prMain.map((p) => p.direct_cost_real));
+  const lowMargin = pr.filter((p) => p.operating_margin_estimated !== null && Number(p.operating_margin_estimated) < Number(p.min_margin_pct)).length;
+  const withoutCost = pr.filter((p) => p.direct_cost_estimated === null && ACTIVE.includes(p.status as PoStatus)).length;
+  const late = delSummary.data?.length ?? 0;
 
   const series = (() => {
     const map = new Map<string, Record<string, number | string>>();
@@ -150,7 +163,7 @@ export default async function DashboardPage() {
                   <ul className="divide-y divide-border">
                     {(pending.data ?? []).map((j) => (
                       <li key={j.id}>
-                        <Link href={`/ordenes/importar/${j.id}`} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-surface-2/60 sm:px-5">
+                        <Link href={j.kind === "factura_proveedor" ? `/compras/importar/${j.id}` : j.kind === "remito" ? `/entregas/remito/${j.id}` : `/ordenes/importar/${j.id}`} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-surface-2/60 sm:px-5">
                           <ScanSearch className="size-4 text-warn" />
                           <span className="flex-1 truncate">{(j.documents as unknown as { title: string } | null)?.title ?? "Documento"}</span>
                           <span className="text-xs text-fg-subtle">{j.status === "error" ? "Error" : j.status === "revision" ? "Revisar" : "Pendiente"}</span>
@@ -160,12 +173,16 @@ export default async function DashboardPage() {
                   </ul>
                 </Card>
               )}
-              <Card className="border-dashed">
-                <CardHeader title="Próximamente en el dashboard" description="Se activan con datos reales en cada fase" />
-                <CardBody className="grid grid-cols-2 gap-3 text-sm">
-                  {[["Costos y ganancia estimada", 2], ["Ranking de rentabilidad", 2], ["Entregas próximas y atrasadas", 3], ["Facturado, cobrado y deuda", 4]].map(([t, f]) => (
-                    <p key={t as string} className="flex items-start gap-2 text-fg-muted"><Lock className="mt-0.5 size-3.5 shrink-0" /> <span>{t} <span className="text-fg-subtle">· F{f}</span></span></p>
-                  ))}
+              <Card>
+                <CardHeader title="Ganancias y entregas" description="Ganancia contable: no es dinero cobrado" action={<Button asChild variant="ghost" size="sm"><Link href="/analitica/ranking">Ranking <ArrowRight /></Link></Button>} />
+                <CardBody className="grid grid-cols-2 gap-x-6 gap-y-4">
+                  <Mini label="Ganancia estimada (órdenes en curso)" value={formatMoney(profitEst, main)} />
+                  <Mini label="Ganancia realizada (entregado)" value={formatMoney(profitReal, main)} />
+                  <Mini label="Costos comprometidos" value={formatMoney(costsCommitted, main)} sub={`Comprado ${formatMoney(costsReal, main)}`} />
+                  <Mini label="Margen bajo el mínimo" value={String(lowMargin)} href="/analitica/ranking?vista=menor" warn={lowMargin > 0} />
+                  <Mini label="Entregas atrasadas" value={String(late)} href="/entregas" warn={late > 0} />
+                  <Mini label="Entregas programadas" value={String(upcoming.count ?? 0)} href="/entregas" />
+                  {withoutCost > 0 && <p className="col-span-2 text-xs text-fg-subtle">{withoutCost} órdenes en curso sin costo cargado: cargá compras o el costo estimado por renglón.</p>}
                 </CardBody>
               </Card>
             </div>
@@ -174,6 +191,17 @@ export default async function DashboardPage() {
       )}
     </>
   );
+}
+
+function Mini({ label, value, sub, href, warn }: { label: string; value: string; sub?: string; href?: string; warn?: boolean }) {
+  const inner = (
+    <>
+      <p className="text-xs text-fg-subtle">{label}</p>
+      <p className={`mt-0.5 text-base font-semibold tabular ${warn ? "text-warn" : ""}`}>{value}</p>
+      {sub && <p className="text-xs text-fg-subtle">{sub}</p>}
+    </>
+  );
+  return href ? <Link href={href} className="block hover:opacity-80">{inner}</Link> : <div>{inner}</div>;
 }
 
 function Kpi({ label, value, sub, href }: { label: string; value: string; sub?: string; href: string }) {

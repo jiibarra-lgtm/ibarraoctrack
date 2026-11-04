@@ -20,6 +20,8 @@ export async function checkDuplicate(sha256: string) {
 }
 
 const registerSchema = z.object({
+  kind: z.enum(["orden_bac", "factura_proveedor", "remito"]).default("orden_bac"),
+  purchaseOrderId: z.string().uuid().optional(),
   storagePath: z.string().min(10).max(500),
   title: z.string().trim().min(1).max(255),
   mimeType: z.enum(["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"]),
@@ -30,14 +32,16 @@ const registerSchema = z.object({
 /** Registra el documento subido y crea el trabajo de importación (procesamiento desacoplado). */
 export async function registerImport(input: z.input<typeof registerSchema>) {
   const s = await requireOrg();
-  if (!canWrite(s.org.role)) return { ok: false as const, error: "Tu rol no permite importar órdenes." };
   const parsed = registerSchema.safeParse(input);
+  const allowed = parsed.success && parsed.data.kind === "remito" ? canWrite(s.org.role) || s.org.role === "logistica" : canWrite(s.org.role);
+  if (!allowed) return { ok: false as const, error: "Tu rol no permite esta importación." };
   if (!parsed.success) return { ok: false as const, error: "Archivo inválido" };
   const d = parsed.data;
   if (!d.storagePath.startsWith(`${s.org.org_id}/`)) return { ok: false as const, error: "Ruta inválida" };
 
   const { data: doc, error: docErr } = await s.supabase.from("documents").insert({
-    org_id: s.org.org_id, doc_type: "orden_compra", title: d.title, storage_path: d.storagePath,
+    org_id: s.org.org_id, doc_type: d.kind === "orden_bac" ? "orden_compra" : d.kind === "remito" ? "remito" : "factura_proveedor",
+    purchase_order_id: d.purchaseOrderId ?? null, title: d.title, storage_path: d.storagePath,
     mime_type: d.mimeType, size_bytes: d.size, sha256: d.sha256, uploaded_by: s.userId,
   }).select("id").single();
   if (docErr || !doc) {
@@ -45,7 +49,7 @@ export async function registerImport(input: z.input<typeof registerSchema>) {
     return { ok: false as const, error: friendlyDbError(docErr) };
   }
   const { data: job, error: jobErr } = await s.supabase.from("import_jobs").insert({
-    org_id: s.org.org_id, kind: "orden_bac", document_id: doc.id, created_by: s.userId,
+    org_id: s.org.org_id, kind: d.kind, document_id: doc.id, created_by: s.userId,
   }).select("id").single();
   if (jobErr || !job) return { ok: false as const, error: friendlyDbError(jobErr) };
 

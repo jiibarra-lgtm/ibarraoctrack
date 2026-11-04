@@ -12,6 +12,11 @@ import { sum } from "@/lib/money";
 import { uploadPrivate } from "@/lib/upload";
 import { attachDocument } from "../actions";
 import { DocumentButton } from "./document-button";
+import { ProfitSummary, PurchasesTab, CostsTab, type ItemProfit, type AllocationRow, type CostAllocRow } from "./order-finance";
+import type { ProfitRow } from "@/lib/profitability";
+import type { OrderOption } from "@/app/(app)/costos/cost-dialog";
+import { DeliveriesPanel, type DeliveryRow } from "@/components/delivery/deliveries-panel";
+import type { DeliveryItemOption } from "@/components/delivery/delivery-form";
 
 type Row = Record<string, unknown> & { id: string };
 type Props = {
@@ -25,14 +30,23 @@ type Props = {
   createdBy: string | null;
   orgId: string;
   canWrite: boolean;
+  canDeliver: boolean;
+  profit: ProfitRow | null;
+  itemProfit: ItemProfit[];
+  allocations: AllocationRow[];
+  costAllocs: CostAllocRow[];
+  categories: { id: string; name: string; kind: string }[];
+  orderOption: OrderOption;
+  deliveryItems: DeliveryItemOption[];
+  deliveries: DeliveryRow[];
 };
 
 const TABS = [
   { id: "resumen", label: "Resumen" },
   { id: "productos", label: "Productos" },
-  { id: "compras", label: "Compras", phase: 2 },
-  { id: "costos", label: "Costos", phase: 2 },
-  { id: "entregas", label: "Entregas", phase: 3 },
+  { id: "compras", label: "Compras" },
+  { id: "costos", label: "Costos" },
+  { id: "entregas", label: "Entregas" },
   { id: "facturacion", label: "Facturación", phase: 4 },
   { id: "cobranzas", label: "Cobranzas", phase: 4 },
   { id: "documentos", label: "Documentos" },
@@ -73,6 +87,9 @@ export function OrderTabs(p: Props) {
 
       <TabsContent value="resumen" className="mt-5 flex flex-col gap-5"><Summary {...p} cur={cur} /></TabsContent>
       <TabsContent value="productos" className="mt-5"><Items items={p.items} cur={cur} /></TabsContent>
+      <TabsContent value="compras" className="mt-5"><PurchasesTab items={p.itemProfit} allocations={p.allocations} cur={cur} canWrite={p.canWrite} /></TabsContent>
+      <TabsContent value="costos" className="mt-5"><CostsTab rows={p.costAllocs} cur={cur} categories={p.categories} order={p.orderOption} canWrite={p.canWrite} /></TabsContent>
+      <TabsContent value="entregas" className="mt-5"><DeliveriesPanel poId={p.po.id} orgId={p.orgId} items={p.deliveryItems} deliveries={p.deliveries} defaultPlace={p.po.delivery_place ?? ""} canEdit={p.canDeliver} /></TabsContent>
       <TabsContent value="documentos" className="mt-5"><Documents {...p} /></TabsContent>
       <TabsContent value="historial" className="mt-5"><Timeline {...p} /></TabsContent>
     </Tabs>
@@ -99,7 +116,7 @@ function Def({ label, value, mono }: { label: string; value: unknown; mono?: boo
   );
 }
 
-function Summary({ po, items, cur }: Props & { cur: string }) {
+function Summary({ po, items, cur, profit }: Props & { cur: string }) {
   const units = items.reduce((acc, it) => acc + Number(it.quantity ?? 0), 0);
   const itemsSum = sum(items.map((i) => String(i.total_amount)));
   const declared = po.total_amount ?? po.net_amount;
@@ -112,18 +129,7 @@ function Summary({ po, items, cur }: Props & { cur: string }) {
         <Kpi label="Plazo de entrega" value={po.delivery_term_days ? `${po.delivery_term_days} días` : "—"} sub={po.delivery_term_text ?? (po.due_date ? `Límite ${formatDate(po.due_date)}` : undefined)} />
       </div>
 
-      <Card className="border-dashed">
-        <CardBody className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
-          {[
-            ["Total comprado", 2], ["Costo estimado", 2], ["Ganancia estimada", 2], ["% entregado", 3], ["% facturado", 4], ["% cobrado", 4],
-          ].map(([l, ph]) => (
-            <div key={l as string}>
-              <p className="text-xs text-fg-subtle">{l}</p>
-              <p className="mt-0.5 text-fg-subtle"><Lock className="mr-1 inline size-3" />Fase {ph}</p>
-            </div>
-          ))}
-        </CardBody>
-      </Card>
+      <ProfitSummary p={profit} cur={cur} />
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>

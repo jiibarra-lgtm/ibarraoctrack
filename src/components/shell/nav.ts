@@ -20,9 +20,9 @@ export const NAV: NavGroup[] = [
   {
     label: "Operación",
     items: [
-      { href: "/compras", label: "Compras", icon: ShoppingCart, phase: 2 },
-      { href: "/costos", label: "Costos", icon: CircleDollarSign, phase: 2 },
-      { href: "/entregas", label: "Entregas", icon: Truck, phase: 3 },
+      { href: "/compras", label: "Compras", icon: ShoppingCart },
+      { href: "/costos", label: "Costos", icon: CircleDollarSign },
+      { href: "/entregas", label: "Entregas", icon: Truck },
       { href: "/facturacion", label: "Facturación", icon: Receipt, phase: 4 },
       { href: "/cobranzas", label: "Cobranzas", icon: Wallet, phase: 4 },
       { href: "/finanzas", label: "Finanzas", icon: Landmark, phase: 4 },
@@ -32,15 +32,15 @@ export const NAV: NavGroup[] = [
     label: "Maestros",
     items: [
       { href: "/organismos", label: "Organismos", icon: Building2 },
-      { href: "/proveedores", label: "Proveedores", icon: Factory, phase: 2 },
-      { href: "/productos", label: "Productos", icon: Package, phase: 2 },
-      { href: "/documentos", label: "Documentos", icon: FolderOpen, phase: 3 },
+      { href: "/proveedores", label: "Proveedores", icon: Factory },
+      { href: "/productos", label: "Productos", icon: Package },
+      { href: "/documentos", label: "Documentos", icon: FolderOpen },
     ],
   },
   {
     label: "Análisis",
     items: [
-      { href: "/analitica/ranking", label: "Ranking", icon: Trophy, phase: 2 },
+      { href: "/analitica/ranking", label: "Ranking", icon: Trophy },
       { href: "/analitica", label: "Analítica", icon: LineChart, phase: 5 },
       { href: "/analitica/12-meses", label: "Últimos 12 meses", icon: CalendarRange, phase: 5 },
       { href: "/simulador", label: "Simulador", icon: Calculator, phase: 5 },

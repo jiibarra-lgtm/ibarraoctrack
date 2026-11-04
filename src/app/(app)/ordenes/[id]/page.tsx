@@ -11,6 +11,8 @@ import type { PoStatus } from "@/lib/po/schema";
 import { OrderTabs } from "./order-tabs";
 import { StatusDialog } from "./status-dialog";
 import { DocumentButton } from "./document-button";
+import { loadProfitability } from "@/lib/profitability";
+import { loadDeliveries, loadDeliveryItems } from "@/lib/delivery-load";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -40,6 +42,21 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   ]);
   if (!po.data) notFound();
   const o = po.data;
+
+  const [profit, itemProfit, allocations, costAllocs, categories, deliveryItems, deliveries] = await Promise.all([
+    loadProfitability(sb, s.org.org_id, [id]).then((r) => r[0] ?? null),
+    sb.from("po_item_profitability").select("*").eq("purchase_order_id", id).order("line_number").order("option_number").then((r) => r.data ?? []),
+    sb.from("purchase_allocations").select("id, quantity, unit_cost, amount, purchase_order_item_id, purchase_items(description, purchases(id, invoice_date, number, point_of_sale, status, suppliers(name)))").eq("purchase_order_id", id).then((r) => r.data ?? []),
+    sb.from("cost_allocations").select("id, amount, purchase_order_item_id, costs(id, description, cost_date, status, allocation_method, cost_categories(name, kind))").eq("purchase_order_id", id).then((r) => r.data ?? []),
+    sb.from("cost_categories").select("id, name, kind").eq("org_id", s.org.org_id).order("name").then((r) => r.data ?? []),
+    loadDeliveryItems(sb, id),
+    loadDeliveries(sb, id),
+  ]);
+  const orderOption = {
+    id, label: o.bac_number ?? o.display_number, customer: o.customer_name,
+    sales: String(o.net_amount ?? o.items_total ?? "0"),
+    units: String((items.data ?? []).reduce((a, x) => a + Number(x.quantity), 0)),
+  };
 
   const actorIds = [...new Set([...(history.data ?? []).map((h) => h.changed_by), ...(revisions.data ?? []).map((r) => r.changed_by), ...(docs.data ?? []).map((d) => d.uploaded_by), o.created_by].filter(Boolean))] as string[];
   const { data: people } = actorIds.length
@@ -85,6 +102,15 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         createdBy={o.created_by ? names[o.created_by] : null}
         orgId={s.org.org_id}
         canWrite={writable}
+        canDeliver={writable || s.org.role === "logistica"}
+        profit={profit}
+        itemProfit={itemProfit as never}
+        allocations={allocations as never}
+        costAllocs={costAllocs as never}
+        categories={categories}
+        orderOption={orderOption}
+        deliveryItems={deliveryItems}
+        deliveries={deliveries}
       />
     </>
   );

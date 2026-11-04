@@ -9,6 +9,7 @@ import { mergeExtractions } from "@/lib/bac/merge";
 import { validateOrderMath } from "@/lib/bac/validate";
 import type { ExtractedOrder, ExtractionWarning } from "@/lib/bac/types";
 import { emptyPurchaseOrder, purchaseOrderSchema } from "@/lib/po/schema";
+import { processInvoiceJob, processRemitoJob } from "./process-docs";
 
 export type ProcessOutcome = { status: string; error?: string; purchaseOrderId?: string };
 
@@ -65,6 +66,10 @@ export async function processImportJob(supabase: SupabaseClient, jobId: string, 
     // Integridad: el archivo almacenado debe coincidir con el hash registrado
     const sha = createHash("sha256").update(buffer).digest("hex");
     if (sha !== doc.sha256) throw new Error("El archivo almacenado no coincide con el hash registrado (integridad).");
+
+    // Facturas de proveedor y remitos: lectura + sugerencias, siempre con confirmación humana
+    if (job.kind === "factura_proveedor") return await processInvoiceJob(supabase, job.id, doc, org, buffer);
+    if (job.kind === "remito") return await processRemitoJob(supabase, job.id, doc, buffer);
 
     let textResult: ExtractedOrder | null = null;
     let aiResult: ExtractedOrder | null = null;

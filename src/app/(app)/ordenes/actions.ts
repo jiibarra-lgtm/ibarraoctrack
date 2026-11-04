@@ -74,19 +74,22 @@ const docSchema = z.object({
   mimeType: z.enum(["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"]),
   size: z.number().int().positive().max(25 * 1024 * 1024),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
-  docType: z.enum(["orden_compra", "cotizacion", "contrato", "otro"]).default("otro"),
+  docType: z.enum(["orden_compra", "cotizacion", "factura_proveedor", "factura_emitida", "remito", "constancia_recepcion",
+    "conformidad", "comprobante_pago", "nota_credito", "contrato", "otro"]).default("otro"),
+  deliveryId: z.string().uuid().optional(),
 });
 
 /** Registra un documento adjunto ya subido al bucket privado (ruta {org}/...). */
 export async function attachDocument(input: z.input<typeof docSchema>) {
   const s = await requireOrg();
+  if (!(canWrite(s.org.role) || s.org.role === "logistica")) return { ok: false as const, error: "Tu rol no permite adjuntar documentos." };
   const parsed = docSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Archivo inválido" };
   const d = parsed.data;
   if (!d.storagePath.startsWith(`${s.org.org_id}/`)) return { ok: false as const, error: "Ruta de archivo inválida" };
 
   const { error } = await s.supabase.from("documents").insert({
-    org_id: s.org.org_id, purchase_order_id: d.purchaseOrderId, doc_type: d.docType, title: d.title,
+    org_id: s.org.org_id, purchase_order_id: d.purchaseOrderId, delivery_id: d.deliveryId ?? null, doc_type: d.docType, title: d.title,
     storage_path: d.storagePath, mime_type: d.mimeType, size_bytes: d.size, sha256: d.sha256, uploaded_by: s.userId,
   });
   if (error) {

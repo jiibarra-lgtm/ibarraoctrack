@@ -13,6 +13,7 @@ import { StatusDialog } from "./status-dialog";
 import { DocumentButton } from "./document-button";
 import { loadProfitability } from "@/lib/profitability";
 import { loadDeliveries, loadDeliveryItems } from "@/lib/delivery-load";
+import { canBill, type CollectionRow, type InvoiceBalance, type PoBilling } from "@/lib/billing";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -43,7 +44,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   if (!po.data) notFound();
   const o = po.data;
 
-  const [profit, itemProfit, allocations, costAllocs, categories, deliveryItems, deliveries] = await Promise.all([
+  const [profit, itemProfit, allocations, costAllocs, categories, deliveryItems, deliveries, billing, invoices, collections] = await Promise.all([
     loadProfitability(sb, s.org.org_id, [id]).then((r) => r[0] ?? null),
     sb.from("po_item_profitability").select("*").eq("purchase_order_id", id).order("line_number").order("option_number").then((r) => r.data ?? []),
     sb.from("purchase_allocations").select("id, quantity, unit_cost, amount, purchase_order_item_id, purchase_items(description, purchases(id, invoice_date, number, point_of_sale, status, suppliers(name)))").eq("purchase_order_id", id).then((r) => r.data ?? []),
@@ -51,6 +52,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     sb.from("cost_categories").select("id, name, kind").eq("org_id", s.org.org_id).order("name").then((r) => r.data ?? []),
     loadDeliveryItems(sb, id),
     loadDeliveries(sb, id),
+    sb.from("po_billing").select("*").eq("purchase_order_id", id).maybeSingle().then((r) => (r.data ?? null) as PoBilling | null),
+    sb.from("invoice_balances").select("*").eq("purchase_order_id", id).order("issue_date", { ascending: false }).then((r) => (r.data ?? []) as InvoiceBalance[]),
+    sb.from("collections").select("*").eq("purchase_order_id", id).order("payment_date", { ascending: false }).then((r) => (r.data ?? []) as CollectionRow[]),
   ]);
   const orderOption = {
     id, label: o.bac_number ?? o.display_number, customer: o.customer_name,
@@ -111,6 +115,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         orderOption={orderOption}
         deliveryItems={deliveryItems}
         deliveries={deliveries}
+        billing={billing}
+        invoices={invoices}
+        collections={collections}
+        canBill={canBill(s.org.role)}
       />
     </>
   );

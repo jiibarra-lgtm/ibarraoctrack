@@ -3,13 +3,14 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Lock, Plus, ShoppingCart, Upload, Info } from "lucide-react";
+import { Plus, ShoppingCart, Upload, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardBody, CardHeader, EmptyState, Input } from "@/components/ui/primitives";
 import { formatDate, formatMoney, formatQty } from "@/lib/format";
 import { setEstimatedCost } from "@/app/(app)/compras/actions";
 import { CostDialog, type OrderOption } from "@/app/(app)/costos/cost-dialog";
 import type { ProfitRow } from "@/lib/profitability";
+import type { PoBilling } from "@/lib/billing";
 import { cn } from "@/lib/utils";
 
 export type ItemProfit = {
@@ -35,7 +36,7 @@ function Kpi({ label, value, sub, tone }: { label: string; value: React.ReactNod
   );
 }
 
-export function ProfitSummary({ p, cur }: { p: ProfitRow | null; cur: string }) {
+export function ProfitSummary({ p, cur, billing }: { p: ProfitRow | null; cur: string; billing?: PoBilling | null }) {
   if (!p) return null;
   const min = Number(p.min_margin_pct);
   const hasCost = p.direct_cost_estimated !== null;
@@ -54,9 +55,12 @@ export function ProfitSummary({ p, cur }: { p: ProfitRow | null; cur: string }) 
         <Kpi label="Ganancia realizada" value={realized ? formatMoney(p.operating_profit_realized, cur) : "—"} tone={realized ? (Number(p.operating_profit_realized) < 0 ? "danger" : "accent") : undefined}
           sub={realized ? `Margen ${p.operating_margin_realized}% sobre lo entregado` : "sin entregas con costo"} />
       </CardBody>
-      <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-dashed border-border px-4 py-2.5 text-xs text-fg-subtle sm:px-5">
-        {["% facturado", "% cobrado", "Saldo pendiente"].map((l) => <span key={l} className="inline-flex items-center gap-1"><Lock className="size-3" />{l} · Fase 4</span>)}
-      </div>
+      <Link href="?tab=facturacion" className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border px-4 py-2.5 text-xs text-fg-muted hover:text-fg sm:px-5">
+        <span>Facturado <b className="tabular text-fg">{Number(billing?.invoiced_pct ?? 0).toFixed(0)}%</b></span>
+        <span>Cobrado <b className="tabular text-fg">{Number(billing?.collected_pct ?? 0).toFixed(0)}%</b></span>
+        <span>Saldo por cobrar <b className="tabular text-fg">{formatMoney(billing?.to_collect ?? 0, cur)}</b></span>
+        {Number(billing?.overdue_amount ?? 0) > 0 && <span className="text-danger">Vencido {formatMoney(billing?.overdue_amount, cur)}</span>}
+      </Link>
     </Card>
   );
 }

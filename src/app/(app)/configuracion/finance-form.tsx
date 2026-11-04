@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input, NativeSelect } from "@/components/ui/primitives";
 import { updateFinancialSettings } from "./actions";
 
-type FS = { vat_recoverable: boolean; sales_include_vat: boolean; default_vat_rate: string; min_margin_pct: string; default_allocation: string };
+type FS = { vat_recoverable: boolean; sales_include_vat: boolean; default_vat_rate: string; min_margin_pct: string; default_allocation: string; collection_days?: number | string };
 
 export function FinanceForm({ fs, editable }: { fs: FS; editable: boolean }) {
   const [state, action, pending] = useActionState(updateFinancialSettings, null);
@@ -27,6 +27,7 @@ export function FinanceForm({ fs, editable }: { fs: FS; editable: boolean }) {
       </Field>
       <Field label="Alícuota IVA ventas %"><Input name="default_vat_rate" defaultValue={Number(fs.default_vat_rate)} inputMode="decimal" disabled={!editable} /></Field>
       <Field label="Margen mínimo %" hint="Debajo de esto la orden se marca"><Input name="min_margin_pct" defaultValue={Number(fs.min_margin_pct)} inputMode="decimal" disabled={!editable} /></Field>
+      <Field label="Días de cobro" hint="Vencimiento de las facturas emitidas"><Input name="collection_days" defaultValue={Number(fs.collection_days ?? 30)} inputMode="numeric" disabled={!editable} /></Field>
       <Field label="Reparto de gastos compartidos" className="col-span-2">
         <NativeSelect name="default_allocation" defaultValue={fs.default_allocation} disabled={!editable}>
           <option value="importe">Proporcional al importe de cada orden</option><option value="unidades">Proporcional a las unidades</option>

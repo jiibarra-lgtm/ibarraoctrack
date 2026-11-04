@@ -11,6 +11,7 @@ import { formatBytes, formatDateTime } from "@/lib/format";
 import { uploadPrivate } from "@/lib/upload";
 import { cn } from "@/lib/utils";
 import { attachDocument, getDocumentUrl, setDocumentType } from "../actions";
+import { registerInvoiceFromDocument } from "@/app/(app)/facturacion/actions";
 
 export type OrderDoc = {
   id: string; title: string; doc_type: string; mime_type: string; size_bytes: number | string; created_at: string; uploader?: string | null;
@@ -49,7 +50,10 @@ export function OrderDocuments({ documents, poId, orgId, canWrite }: { documents
         const up = await uploadPrivate(file, orgId, `ordenes/${poId}`);
         const res = await attachDocument({ purchaseOrderId: poId, storagePath: up.path, title: up.title, mimeType: up.mimeType as never, size: up.size, sha256: up.sha256, docType: docType as never });
         if (!res.ok) toast.error(`${file.name}: ${res.error}`);
-        else toast.success(`${DOC_TYPE_LABEL[docType]} adjuntado`);
+        else if (docType === "factura_emitida") {
+          const reg = await registerInvoiceFromDocument(res.id, poId);
+          if (reg.ok && reg.data) (reg.data.registered ? toast.success : toast.message)(reg.data.message);
+        } else toast.success(`${DOC_TYPE_LABEL[docType]} adjuntado`);
       } catch (e) {
         toast.error(`${file.name}: ${(e as Error).message}`);
       }

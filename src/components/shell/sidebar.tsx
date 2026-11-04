@@ -23,10 +23,11 @@ export function Brand({ orgName }: { orgName: string }) {
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const isActive = (href: string) => {
-    if (href === "/ordenes") return pathname === "/ordenes" || (/^\/ordenes\/(?!importar)/.test(pathname));
-    return pathname === href || pathname.startsWith(href + "/");
-  };
+  // Activo = el ítem con la ruta más específica que coincide (evita marcar /analitica y /analitica/ranking a la vez)
+  const all = NAV.flatMap((g) => g.items.map((i) => i.href));
+  const matches = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const best = all.filter(matches).sort((a, b) => b.length - a.length)[0];
+  const isActive = (href: string) => href === best;
 
   return (
     <nav className="flex flex-col gap-5">

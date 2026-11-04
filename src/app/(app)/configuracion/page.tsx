@@ -27,7 +27,7 @@ export default async function SettingsPage() {
           <CardHeader title="Criterios de rentabilidad" description="Cómo se calculan ventas netas, costos y márgenes" />
           <CardBody>
             <FinanceForm editable={s.org.role === "admin" || s.org.role === "finanzas"}
-              fs={fs ?? { vat_recoverable: true, sales_include_vat: true, default_vat_rate: "21", min_margin_pct: "15", default_allocation: "importe" }} />
+              fs={fs ?? { vat_recoverable: true, sales_include_vat: true, default_vat_rate: "21", min_margin_pct: "15", default_allocation: "importe", collection_days: 30 }} />
           </CardBody>
         </Card>
         <Card>

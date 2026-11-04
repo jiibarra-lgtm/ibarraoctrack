@@ -1,7 +1,9 @@
 "use client";
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Lock, History, GitCommitHorizontal, ArrowRight } from "lucide-react";
+import { History, GitCommitHorizontal, ArrowRight } from "lucide-react";
+import { OrderBilling } from "./order-billing";
+import type { CollectionRow, InvoiceBalance, PoBilling } from "@/lib/billing";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/overlays";
 import { Badge, Card, CardBody, CardHeader, EmptyState } from "@/components/ui/primitives";
 import { formatDate, formatDateTime, formatMoney, formatQty } from "@/lib/format";
@@ -35,6 +37,10 @@ type Props = {
   orderOption: OrderOption;
   deliveryItems: DeliveryItemOption[];
   deliveries: DeliveryRow[];
+  billing: PoBilling | null;
+  invoices: InvoiceBalance[];
+  collections: CollectionRow[];
+  canBill: boolean;
 };
 
 const TABS = [
@@ -43,8 +49,7 @@ const TABS = [
   { id: "compras", label: "Compras" },
   { id: "costos", label: "Costos" },
   { id: "entregas", label: "Entregas" },
-  { id: "facturacion", label: "Facturación", phase: 4 },
-  { id: "cobranzas", label: "Cobranzas", phase: 4 },
+  { id: "facturacion", label: "Facturación y cobro" },
   { id: "documentos", label: "Documentos" },
   { id: "historial", label: "Historial" },
 ] as const;
@@ -52,8 +57,11 @@ const TABS = [
 export function OrderTabs(p: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const valid = TABS.find((t) => t.id === p.initialTab && !("phase" in t));
+  const valid = TABS.find((t) => t.id === p.initialTab);
   const [tab, setTab] = React.useState<string>(valid?.id ?? "resumen");
+  // Enlaces internos (?tab=…) cambian la pestaña sin recargar
+  const [prevInitial, setPrevInitial] = React.useState(p.initialTab);
+  if (p.initialTab !== prevInitial) { setPrevInitial(p.initialTab); if (valid) setTab(valid.id); }
   const cur = p.po.currency ?? "ARS";
 
   const change = (v: string) => {
@@ -65,9 +73,8 @@ export function OrderTabs(p: Props) {
     <Tabs value={tab} onValueChange={change}>
       <TabsList>
         {TABS.map((t) => (
-          <TabsTrigger key={t.id} value={t.id} disabled={"phase" in t} title={"phase" in t ? `Disponible en la Fase ${t.phase}` : undefined}>
+          <TabsTrigger key={t.id} value={t.id}>
             <span className="inline-flex items-center gap-1.5">
-              {"phase" in t && <Lock className="size-3" />}
               {t.label}
               {t.id === "productos" && <span className="rounded bg-surface-2 px-1.5 text-[11px] tabular text-fg-muted">{p.items.length}</span>}
               {t.id === "documentos" && p.documents.length > 0 && <span className="rounded bg-surface-2 px-1.5 text-[11px] tabular text-fg-muted">{p.documents.length}</span>}
@@ -81,6 +88,10 @@ export function OrderTabs(p: Props) {
       <TabsContent value="compras" className="mt-5"><PurchasesTab items={p.itemProfit} allocations={p.allocations} cur={cur} canWrite={p.canWrite} /></TabsContent>
       <TabsContent value="costos" className="mt-5"><CostsTab rows={p.costAllocs} cur={cur} categories={p.categories} order={p.orderOption} canWrite={p.canWrite} /></TabsContent>
       <TabsContent value="entregas" className="mt-5"><DeliveriesPanel poId={p.po.id} orgId={p.orgId} items={p.deliveryItems} deliveries={p.deliveries} defaultPlace={p.po.delivery_place ?? ""} canEdit={p.canDeliver} /></TabsContent>
+      <TabsContent value="facturacion" className="mt-5">
+        <OrderBilling billing={p.billing} invoices={p.invoices} collections={p.collections} orgId={p.orgId} canBill={p.canBill} cur={cur}
+          order={{ id: String(p.po.id), label: p.orderOption.label, customer: p.orderOption.customer, to_invoice: p.billing?.to_invoice ?? "0", currency: cur }} />
+      </TabsContent>
       <TabsContent value="documentos" className="mt-5"><OrderDocuments documents={p.documents as never} poId={String(p.po.id)} orgId={p.orgId} canWrite={p.canWrite || p.canDeliver} /></TabsContent>
       <TabsContent value="historial" className="mt-5"><Timeline {...p} /></TabsContent>
     </Tabs>
@@ -107,7 +118,7 @@ function Def({ label, value, mono }: { label: string; value: unknown; mono?: boo
   );
 }
 
-function Summary({ po, items, cur, profit }: Props & { cur: string }) {
+function Summary({ po, items, cur, profit, billing }: Props & { cur: string }) {
   const units = items.reduce((acc, it) => acc + Number(it.quantity ?? 0), 0);
   const itemsSum = sum(items.map((i) => String(i.total_amount)));
   const declared = po.total_amount ?? po.net_amount;
@@ -120,7 +131,7 @@ function Summary({ po, items, cur, profit }: Props & { cur: string }) {
         <Kpi label="Plazo de entrega" value={po.delivery_term_days ? `${po.delivery_term_days} días` : "—"} sub={po.delivery_term_text ?? (po.due_date ? `Límite ${formatDate(po.due_date)}` : undefined)} />
       </div>
 
-      <ProfitSummary p={profit} cur={cur} />
+      <ProfitSummary p={profit} cur={cur} billing={billing} />
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>

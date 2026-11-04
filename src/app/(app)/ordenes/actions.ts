@@ -90,16 +90,16 @@ export async function attachDocument(input: z.input<typeof docSchema>) {
   const d = parsed.data;
   if (!d.storagePath.startsWith(`${s.org.org_id}/`)) return { ok: false as const, error: "Ruta de archivo inválida" };
 
-  const { error } = await s.supabase.from("documents").insert({
+  const { data: row, error } = await s.supabase.from("documents").insert({
     org_id: s.org.org_id, purchase_order_id: d.purchaseOrderId, delivery_id: d.deliveryId ?? null, doc_type: d.docType, title: d.title,
     storage_path: d.storagePath, mime_type: d.mimeType, size_bytes: d.size, sha256: d.sha256, uploaded_by: s.userId,
-  });
-  if (error) {
+  }).select("id").single();
+  if (error || !row) {
     await s.supabase.storage.from("documents").remove([d.storagePath]);
     return { ok: false as const, error: friendlyDbError(error) };
   }
   revalidatePath(`/ordenes/${d.purchaseOrderId}`);
-  return { ok: true as const };
+  return { ok: true as const, id: row.id as string };
 }
 
 /** Cambia el tipo de un documento de la orden (remito oficial, PRD, factura…). */

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Activity, ArrowRight, CircleCheck, FileText, Inbox, ScanSearch, Upload, Wallet } from "lucide-react";
+import { computeAlerts } from "@/lib/alerts";
 import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
@@ -76,6 +77,13 @@ export default async function DashboardPage() {
   })();
 
   const writable = canWrite(s.org.role);
+  const [openInv, alerts] = await Promise.all([
+    s.supabase.from("invoice_balances").select("balance, collection_status, currency").eq("org_id", s.org.org_id).eq("status", "emitida").gt("balance", 0).then((r) => r.data ?? []),
+    computeAlerts(s.supabase, s.org.org_id),
+  ]);
+  const receivable = sum(openInv.filter((i) => i.currency === main).map((i) => String(i.balance)));
+  const overdueAmt = sum(openInv.filter((i) => i.currency === main && i.collection_status === "vencida").map((i) => String(i.balance)));
+  const urgent = alerts.filter((a) => a.level === "danger");
   const empty = nTotal === 0 && rows.length === 0;
 
   return (
@@ -173,6 +181,18 @@ export default async function DashboardPage() {
                   </ul>
                 </Card>
               )}
+              <Card>
+                <CardHeader title="Cobranzas y alertas" action={<Button asChild variant="ghost" size="sm"><Link href="/alertas">Alertas <ArrowRight /></Link></Button>} />
+                <CardBody className="grid grid-cols-2 gap-x-6 gap-y-4">
+                  <Mini label="Por cobrar" value={formatMoney(receivable, main)} href="/cobranzas" />
+                  <Mini label="Vencido" value={formatMoney(overdueAmt, main)} href="/cobranzas" warn={Number(overdueAmt) > 0} />
+                  <Mini label="Alertas urgentes" value={String(urgent.length)} href="/alertas" warn={urgent.length > 0} />
+                  <Mini label="Avisos totales" value={String(alerts.length)} href="/alertas" />
+                  {urgent.slice(0, 3).map((a) => (
+                    <Link key={a.id} href={a.href} className="col-span-2 truncate text-xs text-danger hover:underline">• {a.title} — {a.detail}</Link>
+                  ))}
+                </CardBody>
+              </Card>
               <Card>
                 <CardHeader title="Ganancias y entregas" description="Ganancia contable: no es dinero cobrado" action={<Button asChild variant="ghost" size="sm"><Link href="/analitica/ranking">Ranking <ArrowRight /></Link></Button>} />
                 <CardBody className="grid grid-cols-2 gap-x-6 gap-y-4">

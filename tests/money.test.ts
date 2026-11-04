@@ -5,6 +5,7 @@ import { parseArDate, formatDate } from "@/lib/format";
 describe("parseArNumber", () => {
   it.each([
     ["ARS $132.225,00", "132225.00"],
+    ["ARS $132 225,00", "132225.00"],
     ["8815,00", "8815.00"],
     ["15,00", "15.00"],
     ["132225,00", "132225.00"],
@@ -14,6 +15,7 @@ describe("parseArNumber", () => {
     ["1,234,567.89", "1234567.89"],
     ["$ 0,00", "0.00"],
     ["ARS $132.225.00", "132225.00"],
+    ["ARS $132 225,00", "132225.00"],
     ["15", "15"],
   ])("%s → %s", (input, expected) => {
     expect(parseArNumber(input)).toBe(expected);

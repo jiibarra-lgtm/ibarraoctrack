@@ -26,11 +26,13 @@ type Props = {
   warnings?: ExtractionWarning[];
   aside?: React.ReactNode;
   cancelHref?: string;
+  /** Importación: resumen chico con sólo lo dudoso; el formulario completo queda plegado. */
+  compact?: boolean;
 };
 
 type F = FieldPath<PurchaseOrderInput>;
 
-export function PoForm({ defaultValues, onSave, submitLabel = "Guardar orden", customers = [], review = [], warnings = [], aside, cancelHref }: Props) {
+export function PoForm({ defaultValues, onSave, submitLabel = "Guardar orden", customers = [], review = [], warnings = [], aside, cancelHref, compact = false }: Props) {
   const router = useRouter();
   const form = useForm<PurchaseOrderInput, unknown, PurchaseOrderData>({
     resolver: zodResolver(purchaseOrderSchema),
@@ -67,9 +69,13 @@ export function PoForm({ defaultValues, onSave, submitLabel = "Guardar orden", c
       }
       toast.error(res.error);
     }
-  }, () => toast.error("Revisá los campos marcados en rojo."));
+  }, () => {
+    setShowAll(true);
+    toast.error("Revisá los campos marcados en rojo.");
+  });
 
   const pendingReview = review.filter((p) => !isDirty(p)).length;
+  const [showAll, setShowAll] = React.useState(!compact || review.some((p) => p === "items" || p.startsWith("items.")));
 
   const T = (name: F, label: string, opts: { className?: string; placeholder?: string; type?: string; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"]; hint?: string } = {}) => (
     <Field label={label} error={err(name)} review={needsReview(name)} className={opts.className} htmlFor={name} hint={opts.hint}>
@@ -79,16 +85,16 @@ export function PoForm({ defaultValues, onSave, submitLabel = "Guardar orden", c
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-5" noValidate>
-      {(warnings.length > 0 || pendingReview > 0) && (
+      {(warnings.some((w) => w.level !== "info") || (!compact && pendingReview > 0)) && (
         <Card className="border-warn/40 bg-warn-soft/40">
           <CardBody className="flex flex-col gap-2">
-            {pendingReview > 0 && (
+            {!compact && pendingReview > 0 && (
               <p className="flex items-center gap-2 text-sm font-medium text-fg">
                 <AlertTriangle className="size-4 text-warn" />
                 {pendingReview} campo{pendingReview === 1 ? "" : "s"} para revisar (marcados en amarillo).
               </p>
             )}
-            {warnings.map((w, i) => (
+            {warnings.filter((w) => w.level !== "info").map((w, i) => (
               <p key={i} className={cn("flex items-start gap-2 text-sm", w.level === "error" ? "text-danger" : "text-fg-muted")}>
                 {w.level === "error" ? <CircleAlert className="mt-0.5 size-4 shrink-0" /> : w.level === "info" ? <Info className="mt-0.5 size-4 shrink-0" /> : <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />}
                 {w.message}
@@ -100,6 +106,11 @@ export function PoForm({ defaultValues, onSave, submitLabel = "Guardar orden", c
 
       <div className={cn("grid gap-5", aside && "xl:grid-cols-[minmax(0,1fr)_420px]")}>
         <div className="flex min-w-0 flex-col gap-5">
+          {compact && (
+            <CompactSummary control={control} register={register} err={err} needsReview={needsReview} setValue={setValue}
+              review={review} showAll={showAll} onToggle={() => setShowAll((v) => !v)} />
+          )}
+          <div className={cn("flex flex-col gap-5", !showAll && "hidden")}>
           <Card>
             <CardHeader title="Orden de compra" description="Datos de la OC según BAC" />
             <CardBody className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -196,6 +207,7 @@ export function PoForm({ defaultValues, onSave, submitLabel = "Guardar orden", c
           </Card>
 
           <AuthorizersSection control={control} register={register} />
+          </div>
         </div>
         {aside && <div className="min-w-0 xl:sticky xl:top-20 xl:self-start">{aside}</div>}
       </div>
@@ -378,6 +390,63 @@ function AuthorizersSection({ control, register }: Pick<Helpers, "control" | "re
           ))}
         </CardBody>
       )}
+    </Card>
+  );
+}
+
+const REVIEW_LABEL: Record<string, string> = {
+  bac_number: "Número de OC", customer_name: "Organismo comprador", total_amount: "Importe total", issue_date: "Fecha autorización",
+  awardee_cuit: "CUIT adjudicatario", net_amount: "Importe neto", perfected_date: "Fecha perfeccionamiento", due_date: "Fecha límite de entrega",
+};
+const DATE_FIELDS = new Set(["issue_date", "perfected_date", "due_date", "received_date"]);
+
+/** Resumen de una importación: lo leído en una tarjeta y, editables, sólo los campos dudosos. */
+function CompactSummary({ control, register, err, needsReview, setValue, review, showAll, onToggle }: Helpers & { review: string[]; showAll: boolean; onToggle: () => void }) {
+  const v = useWatch({ control });
+  const cur = v.currency || "ARS";
+  const items = v.items ?? [];
+  const fieldsToFix = review.filter((p) => REVIEW_LABEL[p] && needsReview(p));
+  const itemIssues = review.some((p) => p === "items" || p.startsWith("items.")) ;
+  const fmtDate = (iso?: string) => (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.split("-").reverse().join("/") : "—");
+  const money = (x: unknown) => { const n = parseArNumber(String(x ?? "")); return n ? formatMoney(n, cur) : "—"; };
+
+  return (
+    <Card>
+      <CardHeader title={v.bac_number || "Orden sin número"} description={v.customer_name || "Organismo sin detectar"}
+        action={<span className="text-lg font-semibold tabular">{money(v.total_amount)}</span>} />
+      <CardBody className="flex flex-col gap-4">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
+          {[["Autorización", fmtDate(v.issue_date)], ["Perfeccionamiento", fmtDate(v.perfected_date)], ["Entrega", v.delivery_term_text || fmtDate(v.due_date)], ["Proceso", v.process_number || "—"]].map(([k, val]) => (
+            <div key={k} className="min-w-0"><dt className="text-xs text-fg-subtle">{k}</dt><dd className="truncate">{val}</dd></div>
+          ))}
+        </dl>
+        <ul className="divide-y divide-border rounded-md border border-border">
+          {items.map((it, i) => (
+            <li key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+              <span className="min-w-0 truncate"><span className="text-fg-subtle tabular">R{String(it?.line_number ?? "")}</span> {it?.description_original || <em className="text-warn">sin descripción</em>}</span>
+              <span className="shrink-0 tabular text-fg-muted">{it?.quantity || "?"} × {money(it?.unit_price)} = <span className="font-medium text-fg">{money(it?.total_amount)}</span></span>
+            </li>
+          ))}
+        </ul>
+        {fieldsToFix.length > 0 && (
+          <div className="flex flex-col gap-3 rounded-md border border-warn/40 bg-warn-soft/30 p-3">
+            <p className="flex items-center gap-2 text-sm font-medium"><AlertTriangle className="size-4 text-warn" />Confirmá {fieldsToFix.length === 1 ? "este dato" : "estos datos"}</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {fieldsToFix.map((p) => (
+                <Field key={p} label={REVIEW_LABEL[p]} error={err(p)} review htmlFor={`c-${p}`}>
+                  <Input id={`c-${p}`} type={DATE_FIELDS.has(p) ? "date" : undefined} {...register(p as F)} review invalid={!!err(p)}
+                    onPaste={DATE_FIELDS.has(p) ? (e) => { const iso = parseArDate(e.clipboardData.getData("text")); if (iso) { e.preventDefault(); setValue(p as F, iso, { shouldDirty: true }); } } : undefined} />
+                </Field>
+              ))}
+            </div>
+          </div>
+        )}
+        {itemIssues && <p className="flex items-center gap-2 text-sm text-warn"><AlertTriangle className="size-4" />Algún renglón no se leyó completo: abrí todos los datos para revisarlo.</p>}
+        <button type="button" onClick={onToggle} className="inline-flex items-center gap-1 self-start text-sm text-fg-muted hover:text-fg">
+          <ChevronDown className={cn("size-4 transition-transform", showAll && "rotate-180")} />
+          {showAll ? "Ocultar todos los datos" : "Ver / editar todos los datos"}
+        </button>
+      </CardBody>
     </Card>
   );
 }

@@ -229,7 +229,7 @@ export function parseBacText(raw: string): ExtractedOrder {
   // ---- Totales
   const totSec = S.totales ?? "";
   const totalOf = (label: string) => {
-    const m = new RegExp(`${label}\\s*:?\\s*(?:ARS|USD)?\\s*\\$?\\s*(\\d[\\d.,]*\\d)`, "i").exec(totSec);
+    const m = new RegExp(`${label}\\s*:?\\s*(?:ARS|USD)?\\s*\\$?\\s*(\\d(?:[\\d.,]|\\s(?=\\d{3}(?:\\D|$)))*\\d)`, "i").exec(totSec);
     return m ? parseArNumber(m[1]) ?? "" : "";
   };
   o.total_amount = totalOf("Importe total");

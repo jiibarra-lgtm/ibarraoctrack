@@ -88,6 +88,7 @@ export function ImportReview(p: Props) {
       customers={p.customers}
       aside={aside}
       submitLabel="Confirmar e importar"
+      compact
       cancelHref="/ordenes/importar"
     />
   );

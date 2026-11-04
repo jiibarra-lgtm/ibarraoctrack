@@ -5,6 +5,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 import { parseBacText, validCuit } from "@/lib/bac/parse-text";
 import { aiAvailable, extractWithAi } from "@/lib/bac/ai";
 import { ocrImage } from "@/lib/bac/ocr";
+import { pdfToImage } from "@/lib/bac/pdf-images";
 import { mergeExtractions } from "@/lib/bac/merge";
 import { validateOrderMath } from "@/lib/bac/validate";
 import type { ExtractedOrder, ExtractionWarning } from "@/lib/bac/types";
@@ -83,8 +84,16 @@ export async function processImportJob(supabase: SupabaseClient, jobId: string, 
       rawText = text;
       if (text.replace(/\s/g, "").length > 200) textResult = parseBacText(text);
       else {
+        // Captura guardada como PDF (FireShot, impresión de imagen, escaneo): OCR de la imagen
         method = "ocr";
-        notes.push({ level: "info", message: "El PDF no tiene texto seleccionable (parece escaneado)." });
+        const img = await pdfToImage(pdf);
+        if (img) {
+          const { text: ocrText } = await ocrImage(img);
+          rawText = ocrText;
+          textResult = parseBacText(ocrText);
+        } else {
+          notes.push({ level: "warning", message: "El PDF no tiene texto ni imágenes legibles." });
+        }
       }
     } else {
       method = "ocr";

@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractText, getDocumentProxy } from "unpdf";
 import { ocrImage } from "@/lib/bac/ocr";
+import { pdfToImage } from "@/lib/bac/pdf-images";
 import { parseInvoiceText } from "@/lib/invoice/parse";
 import { matchRemitoLines, readRemitoHeader } from "@/lib/remito/parse";
 import type { ProcessOutcome } from "./process";
@@ -11,9 +12,12 @@ type Doc = { id: string; org_id: string; mime_type: string };
 /** Texto de un documento: capa de texto del PDF u OCR propio para imágenes. */
 export async function readDocumentText(buffer: Buffer, mime: string): Promise<{ text: string; method: "texto" | "ocr" }> {
   if (mime === "application/pdf") {
-    const { text } = await extractText(await getDocumentProxy(new Uint8Array(buffer)), { mergePages: true });
-    if (text.replace(/\s/g, "").length < 80) throw new Error("El PDF no tiene texto seleccionable. Subí una foto o captura del comprobante.");
-    return { text, method: "texto" };
+    const pdf = await getDocumentProxy(new Uint8Array(buffer));
+    const { text } = await extractText(pdf, { mergePages: true });
+    if (text.replace(/\s/g, "").length >= 80) return { text, method: "texto" };
+    const img = await pdfToImage(pdf);
+    if (!img) throw new Error("El PDF no tiene texto ni imágenes legibles. Subí una foto o captura del comprobante.");
+    return { text: (await ocrImage(img)).text, method: "ocr" };
   }
   return { text: (await ocrImage(buffer)).text, method: "ocr" };
 }

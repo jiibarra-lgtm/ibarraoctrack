@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AlarmClock, HandCoins, Percent, Wallet } from "lucide-react";
+import { AlarmClock, HandCoins, Percent, Upload, Wallet } from "lucide-react";
 import { requireOrg } from "@/lib/session";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/stat";
 import { formatDate, formatMoney, todayISO } from "@/lib/format";
 import { sum } from "@/lib/money";
 import { canBill, COLLECTION_STATUS, invoiceLabel, METHOD_LABEL, RETENTIONS, type CollectionRow } from "@/lib/billing";
-import { loadInvoices, orderRefs } from "@/lib/billing-load";
+import { loadBillableOrders, loadInvoices, orderRefs } from "@/lib/billing-load";
+import { InvoiceDialog } from "@/components/billing/invoice-dialog";
+import { Button } from "@/components/ui/button";
 import { InvoiceActions, VoidCollectionButton } from "@/components/billing/invoice-actions";
 import { cn } from "@/lib/utils";
 
@@ -18,11 +20,17 @@ export default async function CollectionsPage() {
   const sb = s.supabase;
   const year = todayISO().slice(0, 4);
   const month = todayISO().slice(0, 7);
-  const [open, { data: cols }] = await Promise.all([
+  const [open, { data: cols }, { data: pays }, billable] = await Promise.all([
     loadInvoices(sb, s.org.org_id, { onlyOpen: true }),
     sb.from("collections").select("*, sales_invoices(invoice_type, point_of_sale, number, currency)").eq("org_id", s.org.org_id)
       .order("payment_date", { ascending: false }).limit(200),
+    sb.from("bac_payments_overview").select("*").eq("org_id", s.org.org_id).order("notified_at", { ascending: false }).limit(300),
+    loadBillableOrders(sb, s.org.org_id),
   ]);
+  type Pay = { id: string; invoice_type: string; point_of_sale: string; number: string; invoice_date: string | null; notified_at: string; invoice_loaded: boolean; purchase_order_id: string | null; total_amount: string | null };
+  const payments = (pays ?? []) as Pay[];
+  const missingDoc = payments.filter((p) => !p.invoice_loaded);
+  const orderOptions = billable.map((b) => ({ id: b.purchase_order_id, label: b.order?.label ?? "—", customer: b.order?.customer ?? null, to_invoice: b.to_invoice, currency: b.currency }));
   const collections = (cols ?? []) as (CollectionRow & { sales_invoices: { invoice_type: string; point_of_sale: string | null; number: string | null; currency: string } })[];
   const refs = await orderRefs(sb, collections.map((c) => c.purchase_order_id));
   const bill = canBill(s.org.role);
@@ -49,6 +57,37 @@ export default async function CollectionsPage() {
         <Stat icon={HandCoins} label="Cobrado este mes" value={formatMoney(sum(ok.filter((c) => c.payment_date.startsWith(month) && c.sales_invoices.currency === "ARS").map((c) => c.amount_received)))} />
         <Stat icon={Percent} label={`Retenciones ${year}`} value={formatMoney(sum(ok.filter((c) => c.payment_date.startsWith(year)).map((c) => c.withholdings)))} sub="Para tu declaración" />
       </div>
+
+      {payments.length > 0 && (
+        <Card className="mt-5 overflow-hidden">
+          <CardHeader title="Pagos acreditados (avisos de SIGAF)"
+            description={missingDoc.length ? `${missingDoc.length} cobrado${missingDoc.length === 1 ? "" : "s"} sin factura cargada: subila y queda todo cerrado solo.` : "Todos con su factura cargada."} />
+          <ul className="max-h-[360px] divide-y divide-border overflow-y-auto">
+            {payments.map((p) => {
+              const label = invoiceLabel({ invoice_type: p.invoice_type, point_of_sale: p.point_of_sale, number: p.number });
+              return (
+                <li key={p.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-5">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                      <span className="tabular">Factura {label}</span>
+                      <Badge tone="accent">Cobrada</Badge>
+                      {!p.invoice_loaded && <Badge tone="warn">Falta subir la factura</Badge>}
+                    </p>
+                    <p className="text-xs text-fg-subtle">Acreditado {formatDate(p.notified_at)}{p.invoice_date ? ` · factura del ${formatDate(p.invoice_date)}` : ""}
+                      {p.invoice_loaded && p.purchase_order_id && <> · <Link href={`/ordenes/${p.purchase_order_id}?tab=facturacion`} className="text-brand hover:underline">ver orden</Link></>}</p>
+                  </div>
+                  {p.invoice_loaded && p.total_amount && <span className="text-sm font-medium tabular">{formatMoney(p.total_amount)}</span>}
+                  {!p.invoice_loaded && bill && (
+                    <InvoiceDialog orders={orderOptions} orgId={s.org.org_id} title={`Subir factura ${label}`}
+                      initial={{ invoice_type: p.invoice_type, point_of_sale: p.point_of_sale, number: p.number, ...(p.invoice_date ? { issue_date: p.invoice_date } : {}) }}
+                      trigger={<Button size="sm"><Upload /> Subir factura</Button>} />
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      )}
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="min-w-0 overflow-hidden">

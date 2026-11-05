@@ -9,12 +9,14 @@ export type BacEvent =
   | { kind: "oc_perfeccionada"; bac_number: string; process_number: string | null; process_name: string | null }
   | { kind: "prd"; bac_number: string; prd_number: string }
   | { kind: "pago"; invoice_type: string; point_of_sale: string; number: string; invoice_date: string | null }
-  | { kind: "publicacion"; process_number: string; unit_code: string | null; unit_name: string | null; title: string | null; opening_date: string | null };
+  | { kind: "publicacion"; source: "bac" | "comprar"; process_number: string; unit_code: string | null; unit_name: string | null; title: string | null; opening_date: string | null };
 
 export type ParsedMail = { message_id: string; received_at: string; subject: string; event: BacEvent };
 
 const OC = /\b(\d{2,5}-\d{3,7}-OC\d{2})\b/i;
 const PROC = /\b(\d{2,5}-\d{1,7}-(?:LPU|LPR|CME|CDI|CM|COMP|LIC|CD|CP|SUB|CON|CPE|LP)\d{2})\b/i;
+// COMPR.AR (Nación): 74/35-0592-LPR26, 16-0021-LPR26
+const PROC_NAC = /\b(\d{1,4}(?:\/\d{1,4})?-\d{3,5}-[A-Z]{2,5}\d{2})\b/;
 const clean = (s: string) => s.replace(/[\t\r]+/g, " ").replace(/ /g, " ").replace(/[ ]{2,}/g, " ").trim();
 const arDate = (s: string | undefined) => {
   const m = s ? /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s) : null;
@@ -39,6 +41,18 @@ export function parseBacMail(m: InboundMail): ParsedMail | null {
     return null;
   }
 
+  if (from.includes("comprar.gob.ar")) {
+    // "Oficina de compras: 74/35 - Parque Nacional Copo Proceso: 74/35-0592-LPR26 Adquisición de insumos ..."
+    if (!/publicad/i.test(text)) return null;
+    const flat = body.replace(/[|*]/g, " ").replace(/\s+/g, " ");
+    const pr = /Proceso:\s*(\d{1,4}(?:\/\d{1,4})?-\d{3,5}-[A-Z]{2,5}\d{2})\s+(.+?)(?:\s*\[|$)/i.exec(flat);
+    const num = pr?.[1] ?? PROC_NAC.exec(subject)?.[1] ?? PROC_NAC.exec(flat)?.[1];
+    if (!num) return null;
+    const unit = /Oficina de compras:\s*([\d/]+)\s*-\s*(.+?)\s+Proceso:/i.exec(flat);
+    return { ...base, event: { kind: "publicacion", source: "comprar", process_number: num.toUpperCase(), unit_code: unit?.[1] ?? null, unit_name: tidyName(unit?.[2]),
+      title: tidyName(pr?.[2])?.slice(0, 300) ?? null, opening_date: null } };
+  }
+
   if (!from.includes("notificacionesbac") && !from.includes("buenosairescompras")) return null;
 
   if (/perfeccionamiento/i.test(subject) || /ha sido perfeccionado/i.test(body)) {
@@ -61,7 +75,7 @@ export function parseBacMail(m: InboundMail): ParsedMail | null {
     const unit = /Oficina de compras:\s*(\d{2,5})\s*-\s*(.+?)(?=\s*(?:Pliego|Compulsa|Proceso)\s*:|$)/i.exec(body);
     const title = new RegExp(`${pr[1].replace(/-/g, "\\-")}\\s+([^\\n]+)`, "i").exec(body);
     const open = /apertura[^.]*?(\d{1,2}\/\d{1,2}\/\d{4})/i.exec(body);
-    return { ...base, event: { kind: "publicacion", process_number: pr[1].toUpperCase(), unit_code: unit?.[1] ?? null, unit_name: tidyName(unit?.[2]), title: tidyName(title?.[1])?.slice(0, 300) ?? null, opening_date: arDate(open?.[1]) } };
+    return { ...base, event: { kind: "publicacion", source: "bac", process_number: pr[1].toUpperCase(), unit_code: unit?.[1] ?? null, unit_name: tidyName(unit?.[2]), title: tidyName(title?.[1])?.slice(0, 300) ?? null, opening_date: arDate(open?.[1]) } };
   }
   return null;
 }

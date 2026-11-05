@@ -24,7 +24,7 @@ const addDays = (iso: string, d: number) => new Date(new Date(`${iso}T12:00:00Z`
 export async function computeAlerts(sb: SupabaseClient, orgId: string): Promise<Alert[]> {
   const today = todayISO();
   const soon = addDays(today, 7);
-  const [pos, deliv, billing, profit, invoices, docs, payables, jobs, inbox] = await Promise.all([
+  const [pos, deliv, billing, profit, invoices, docs, payables, jobs, inbox, pays] = await Promise.all([
     sb.from("purchase_orders_overview").select("id, bac_number, display_number, customer_name, status, due_date, currency").eq("org_id", orgId).neq("status", "anulada").limit(2000),
     sb.from("po_delivery_summary").select("purchase_order_id, delivered_pct, is_late, due_date").eq("org_id", orgId).limit(2000),
     sb.from("po_billing").select("*").eq("org_id", orgId).limit(2000),
@@ -34,6 +34,7 @@ export async function computeAlerts(sb: SupabaseClient, orgId: string): Promise<
     sb.from("purchases").select("id, number, point_of_sale, due_date, total_amount, currency, suppliers(name)").eq("org_id", orgId).eq("status", "confirmada").eq("paid", false).lt("due_date", today).limit(500),
     sb.from("import_jobs").select("id, kind, status, created_at, documents(title)").eq("org_id", orgId).in("status", ["revision", "error"]).limit(200),
     sb.from("bac_inbox_overview").select("bac_number, unit_name, unit_code, notified_at, first_seen_at, prd_number, loaded, dismissed").eq("org_id", orgId).limit(3000),
+    sb.from("bac_payments").select("id, invoice_type, point_of_sale, number, invoice_date, notified_at").eq("org_id", orgId).is("invoice_id", null).limit(500),
   ]);
   const prdByOc = new Map((inbox.data ?? []).filter((r) => r.prd_number).map((r) => [String(r.bac_number), String(r.prd_number)]));
 
@@ -90,6 +91,12 @@ export async function computeAlerts(sb: SupabaseClient, orgId: string): Promise<
     if (r.loaded || r.dismissed) continue;
     out.push({ id: `bac-${r.bac_number}`, level: "warn", kind: "bac", title: `OC sin cargar · ${r.bac_number}`,
       detail: `${r.unit_name ?? `Unidad ${r.unit_code}`} · avisada ${formatDate(r.notified_at ?? r.first_seen_at)}`, href: `/bac/${r.bac_number}`, date: r.notified_at ?? r.first_seen_at });
+  }
+
+  // Pagos acreditados por SIGAF cuya factura no está cargada
+  for (const p of pays.data ?? []) {
+    out.push({ id: `pay-doc-${p.id}`, level: "warn", kind: "cobranza", title: `Cobrada · falta subir la factura ${invoiceLabel(p)}`,
+      detail: `SIGAF acreditó el pago el ${formatDate(p.notified_at)}${p.invoice_date ? ` (factura del ${formatDate(p.invoice_date)})` : ""}`, href: "/cobranzas", date: p.notified_at });
   }
 
   // Márgenes

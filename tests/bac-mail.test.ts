@@ -28,7 +28,15 @@ describe("avisos BAC / SIGAF (textos reales)", () => {
   it("publicación de pliego (oficina de compras)", () => {
     const r = m(BAC, "Publicación - proceso de compra 416-3920-CME26",
       "Estimado proveedor:Le informamos que se ha publicado el siguiente pliego que incluye ítems de las clases en las que su empresa se encuentra registrada. La apertura del mismo se llevará a cabo el día 12/11/2026.Oficina de compras: 416 - HTAL. CARLOS G. DURANDPliego: 416-3920-CME26 AM Alquiler Concentrador de Oxigeno - PED 88 PTE CANO, OSCAR - ABASTECIMIENTO 12 MESES\n\t\t\tDirección General de Compras y Contrataciones");
-    expect(r?.event).toMatchObject({ kind: "publicacion", process_number: "416-3920-CME26", unit_code: "416", unit_name: "HTAL. CARLOS G. DURAND", opening_date: "2026-11-12", title: "AM Alquiler Concentrador de Oxigeno - PED 88 PTE CANO, OSCAR - ABASTECIMIENTO 12 MESES" });
+    expect(r?.event).toMatchObject({ kind: "publicacion", source: "bac", process_number: "416-3920-CME26", unit_code: "416", unit_name: "HTAL. CARLOS G. DURAND", opening_date: "2026-11-12", title: "AM Alquiler Concentrador de Oxigeno - PED 88 PTE CANO, OSCAR - ABASTECIMIENTO 12 MESES" });
+  });
+  it("COMPR.AR (Nación): proceso publicado", () => {
+    const body = " ComprAR\n\nAnte cualquier duda comuníquese con [*Mesa de Ayuda*](https://comprar.gob.ar/contactenos.aspx)\n\n| [](https://comprar.gob.ar) |\n|---|\n| Estimado/a: Le informamos que se ha publicado el siguiente proceso que incluye ítems de las clases en las que su empresa se encuentra registrada: Oficina de compras: 74/35 - Parque Nacional Copo Proceso: 74/35-0592-LPR26 Adquisición de insumos para botiquines de PN Copo 2026. |\n| [](https://comprar.gob.ar) | |";
+    const r = m("COMPR.AR <info@comprar.gob.ar>", "Proceso de compras 74/35-0592-LPR26: Publicado", body);
+    expect(r?.event).toEqual({ kind: "publicacion", source: "comprar", process_number: "74/35-0592-LPR26", unit_code: "74/35", unit_name: "Parque Nacional Copo",
+      title: "Adquisición de insumos para botiquines de PN Copo 2026", opening_date: null });
+    const plain = m("info@comprar.gob.ar", "Proceso de compras 16-0021-LPR26: Publicado", "Estimado/a:\nLe informamos que se ha publicado el siguiente proceso:\nOficina de compras: 16 - Ministerio X\nProceso: 16-0021-LPR26 Adquisición de artículos de limpieza\n");
+    expect(plain?.event).toMatchObject({ source: "comprar", process_number: "16-0021-LPR26", unit_name: "Ministerio X", title: "Adquisición de artículos de limpieza" });
   });
   it("ignora mails que no son avisos", () => {
     expect(m("alguien@gmail.com", "Hola", "orden de compra 420-18786-OC26")).toBeNull();

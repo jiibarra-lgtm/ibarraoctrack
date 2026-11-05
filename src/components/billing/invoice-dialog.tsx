@@ -16,11 +16,13 @@ export type BillableOrder = { id: string; label: string; customer: string | null
 
 const EMPTY = { invoice_type: "B", point_of_sale: "", number: "", issue_date: "", due_date: "", net_amount: "", vat_amount: "", other_taxes: "", total_amount: "", cae: "", notes: "" };
 
-export function InvoiceDialog({ orders, orgId, defaultOrderId, trigger }: { orders: BillableOrder[]; orgId: string; defaultOrderId?: string; trigger: React.ReactNode }) {
+export function InvoiceDialog({ orders, orgId, defaultOrderId, trigger, initial, title }: {
+  orders: BillableOrder[]; orgId: string; defaultOrderId?: string; trigger: React.ReactNode; initial?: Partial<typeof EMPTY>; title?: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [poId, setPoId] = React.useState(defaultOrderId ?? "");
-  const [f, setF] = React.useState({ ...EMPTY, issue_date: todayISO() });
+  const [f, setF] = React.useState({ ...EMPTY, issue_date: todayISO(), ...initial });
   const [docId, setDocId] = React.useState<string | null>(null);
   const [reading, setReading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
@@ -28,7 +30,7 @@ export function InvoiceDialog({ orders, orgId, defaultOrderId, trigger }: { orde
   const po = orders.find((o) => o.id === poId);
   const set = (k: keyof typeof EMPTY) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
 
-  const reset = () => { setF({ ...EMPTY, issue_date: todayISO() }); setDocId(null); if (!defaultOrderId) setPoId(""); };
+  const reset = () => { setF({ ...EMPTY, issue_date: todayISO(), ...initial }); setDocId(null); if (!defaultOrderId) setPoId(""); };
 
   const onPdf = async (fl: FileList | null) => {
     const fileObj = fl?.[0];
@@ -73,7 +75,7 @@ export function InvoiceDialog({ orders, orgId, defaultOrderId, trigger }: { orde
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent title="Registrar factura emitida" description="Factura al organismo por esta orden. Subí el PDF y se completa solo." className="max-w-xl">
+      <DialogContent title={title ?? "Registrar factura emitida"} description="Factura al organismo por esta orden. Subí el PDF y se completa solo." className="max-w-xl">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Field label="Orden" className="col-span-2 sm:col-span-4" htmlFor="inv-po">
             <NativeSelect id="inv-po" value={poId} onChange={(e) => setPoId(e.target.value)} disabled={!!defaultOrderId}>

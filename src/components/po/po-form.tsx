@@ -225,7 +225,7 @@ export function PoForm({ defaultValues, onSave, submitLabel = "Guardar orden", c
         {aside && <div className="min-w-0 xl:sticky xl:top-20 xl:self-start">{aside}</div>}
       </div>
 
-      <div className="sticky bottom-0 z-20 -mx-4 flex items-center justify-end gap-2 border-t border-card-border bg-surface-solid/85 px-4 py-3 backdrop-blur-xl lg:rounded-b-3xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      <div className="sticky bottom-[var(--bottom-nav)] z-20 -mx-4 flex items-center justify-end gap-2 border-t border-card-border bg-surface-solid/85 px-4 py-3 backdrop-blur-xl lg:rounded-b-3xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         {cancelHref && <Button type="button" variant="ghost" onClick={() => router.push(cancelHref)}>Cancelar</Button>}
         <Button type="submit" size="lg" loading={isSubmitting}>{submitLabel}</Button>
       </div>

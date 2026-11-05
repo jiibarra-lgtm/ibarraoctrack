@@ -1,6 +1,7 @@
 import { requireOrg, ROLE_LABEL, canWrite } from "@/lib/session";
 import { Header } from "@/components/shell/header";
 import { Brand, SidebarNav } from "@/components/shell/sidebar";
+import { BottomNav } from "@/components/shell/bottom-nav";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const s = await requireOrg();
@@ -20,7 +21,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           memberships={s.memberships}
           canWrite={canWrite(s.org.role)}
         />
-        <main className="mx-auto w-full max-w-[1400px] flex-1 border-panel-border bg-panel px-4 py-6 backdrop-blur-md sm:px-6 lg:rounded-3xl lg:border lg:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1400px] flex-1 border-panel-border bg-panel px-4 pb-[calc(var(--bottom-nav)+1.5rem)] pt-6 backdrop-blur-md sm:px-6 lg:rounded-3xl lg:border lg:px-8 lg:pb-6">{children}</main>
+        <BottomNav />
       </div>
     </div>
   );

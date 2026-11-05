@@ -10,6 +10,7 @@ import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } fr
 import { signOut, switchOrg } from "@/app/actions";
 import { CommandSearch } from "./command-search";
 import { Brand, SidebarNav } from "./sidebar";
+import { InstallButton } from "@/components/pwa";
 
 type Props = {
   email: string;
@@ -28,14 +29,14 @@ export function Header(p: Props) {
   const initials = (p.fullName || p.email).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join("");
 
   return (
-    <header className="glass sticky top-0 z-30 flex h-14 items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:top-3 lg:rounded-2xl">
+    <header className="glass sticky top-0 z-30 flex min-h-14 items-center gap-2 px-3 pt-[env(safe-area-inset-top)] sm:gap-3 sm:px-4 lg:top-3 lg:rounded-2xl lg:pt-0">
       <DialogPrimitive.Root open={mobileOpen} onOpenChange={setMobileOpen}>
         <DialogPrimitive.Trigger asChild>
           <Button variant="ghost" size="icon" className="lg:hidden" aria-label="Abrir menú"><MenuIcon /></Button>
         </DialogPrimitive.Trigger>
         <DialogPrimitive.Portal>
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 lg:hidden" />
-          <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col gap-5 overflow-y-auto border-r border-side-border bg-[var(--bg)] bg-[image:var(--bg-image)] p-3 pt-4 text-side-fg lg:hidden">
+          <DialogPrimitive.Content className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col gap-5 overflow-y-auto border-r border-side-border bg-[var(--bg)] bg-[image:var(--bg-image)] p-3 pt-[calc(1rem+env(safe-area-inset-top))] pb-[calc(1rem+env(safe-area-inset-bottom))] text-side-fg lg:hidden">
             <DialogPrimitive.Title className="sr-only">Navegación</DialogPrimitive.Title>
             <DialogPrimitive.Description className="sr-only">Menú principal</DialogPrimitive.Description>
             <div className="flex items-center justify-between">
@@ -56,6 +57,7 @@ export function Header(p: Props) {
         </div>
       )}
 
+      <InstallButton />
       <Menu>
         <MenuTrigger asChild>
           <Button variant="ghost" size="icon" aria-label="Tema">

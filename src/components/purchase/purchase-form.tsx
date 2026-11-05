@@ -130,7 +130,7 @@ export function PurchaseForm({ defaultValues, suppliers, review = [], warnings =
         </div>
         {aside && <div className="min-w-0 xl:sticky xl:top-20 xl:self-start">{aside}</div>}
       </div>
-      <div className="sticky bottom-0 z-20 -mx-4 flex justify-end gap-2 border-t border-card-border bg-surface-solid/85 px-4 py-3 backdrop-blur-xl lg:rounded-b-3xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+      <div className="sticky bottom-[var(--bottom-nav)] z-20 -mx-4 flex justify-end gap-2 border-t border-card-border bg-surface-solid/85 px-4 py-3 backdrop-blur-xl lg:rounded-b-3xl sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <Button type="button" variant="ghost" onClick={() => router.back()}>Cancelar</Button>
         <Button type="submit" size="lg" loading={formState.isSubmitting}>{submitLabel}</Button>
       </div>

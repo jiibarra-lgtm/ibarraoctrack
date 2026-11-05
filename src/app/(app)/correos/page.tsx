@@ -7,6 +7,7 @@ import { Card, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { isUuid, cn } from "@/lib/utils";
 import { MarkRead } from "./mark-read";
+import { OrgFilter } from "./org-filter";
 
 export const metadata: Metadata = { title: "Correos" };
 
@@ -26,24 +27,35 @@ type MailRow = {
   process_number: string | null; attachments: { name: string; size?: number }[]; is_read: boolean;
 };
 
-export default async function MailPage({ searchParams }: { searchParams: Promise<{ c?: string; q?: string; id?: string }> }) {
-  const { c = "todos", q = "", id } = await searchParams;
+export default async function MailPage({ searchParams }: { searchParams: Promise<{ c?: string; q?: string; id?: string; org?: string }> }) {
+  const { c = "todos", q = "", id, org = "" } = await searchParams;
   const s = await requireOrg();
   const sb = s.supabase;
   let list = sb.from("mail_messages").select("id, thread_id, message_id, from_email, from_name, subject, received_at, snippet, category, bac_number, process_number, attachments, is_read")
     .eq("org_id", s.org.org_id).order("received_at", { ascending: false }).limit(300);
   if (c !== "todos") list = list.eq("category", c);
+  const orgCode = /^\d{2,5}$/.test(org) ? org : "";
+  if (orgCode) list = list.like("bac_number", `${orgCode}-%`);
   const term = q.trim().replace(/[%,()]/g, " ");
   if (term) list = list.or(`subject.ilike.%${term}%,from_name.ilike.%${term}%,from_email.ilike.%${term}%,snippet.ilike.%${term}%,bac_number.ilike.%${term}%`);
-  const [{ data: rows }, { data: sel }, { count: unread }] = await Promise.all([
+  const [{ data: rows }, { data: sel }, { count: unread }, { data: codes }, { data: units }, { data: custs }] = await Promise.all([
     list,
     id && isUuid(id) ? sb.from("mail_messages").select("*").eq("id", id).eq("org_id", s.org.org_id).maybeSingle() : Promise.resolve({ data: null }),
     sb.from("mail_messages").select("id", { count: "exact", head: true }).eq("org_id", s.org.org_id).eq("is_read", false),
+    sb.from("mail_messages").select("bac_number").eq("org_id", s.org.org_id).not("bac_number", "is", null).limit(5000),
+    sb.from("bac_units").select("code, name").eq("org_id", s.org.org_id),
+    sb.from("customers").select("name").eq("org_id", s.org.org_id).limit(2000),
   ]);
+  // Organismos presentes en los correos (código de la OC → nombre conocido)
+  const names = new Map<string, string>();
+  (custs ?? []).forEach((x) => { const m = /^(\d{2,5})\s*-\s*(.+)$/.exec(x.name ?? ""); if (m) names.set(m[1], `${m[1]} - ${m[2]}`); });
+  (units ?? []).forEach((u) => { if (!names.has(u.code)) names.set(u.code, `${u.code} - ${u.name}`); });
+  const orgOptions = [...new Set((codes ?? []).map((x) => String(x.bac_number).split("-")[0]))]
+    .map((code) => ({ code, name: names.get(code) ?? `Unidad ${code}` })).sort((a, b) => a.name.localeCompare(b.name));
   const mails = (rows ?? []) as MailRow[];
   const m = sel as MailRow | null;
   const qs = (extra: Record<string, string>) => {
-    const p = new URLSearchParams({ ...(c !== "todos" ? { c } : {}), ...(q ? { q } : {}), ...extra });
+    const p = new URLSearchParams({ ...(c !== "todos" ? { c } : {}), ...(q ? { q } : {}), ...(orgCode ? { org: orgCode } : {}), ...extra });
     return `/correos${p.toString() ? `?${p}` : ""}`;
   };
   const gmail = (x: MailRow) => `https://mail.google.com/mail/u/0/#all/${x.thread_id ?? x.message_id}`;
@@ -57,12 +69,14 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
           <div className="flex flex-col gap-2 border-b border-border p-3">
             <form className="relative">
               {c !== "todos" && <input type="hidden" name="c" value={c} />}
+              {orgCode && <input type="hidden" name="org" value={orgCode} />}
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-fg-subtle" />
               <input name="q" defaultValue={q} placeholder="Buscar asunto, remitente, OC…" className="h-9 w-full rounded-full border border-card-border bg-field pl-9 pr-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/40" />
             </form>
+            {orgOptions.length > 0 && <OrgFilter options={orgOptions} value={orgCode} />}
             <div className="flex gap-1.5 overflow-x-auto pb-0.5">
               {CATS.map(([k, l]) => (
-                <Link key={k} href={`/correos?${new URLSearchParams({ ...(k !== "todos" ? { c: k } : {}), ...(q ? { q } : {}) })}`}
+                <Link key={k} href={`/correos?${new URLSearchParams({ ...(k !== "todos" ? { c: k } : {}), ...(q ? { q } : {}), ...(orgCode ? { org: orgCode } : {}) })}`}
                   className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-medium", c === k ? "bg-primary text-primary-fg" : "bg-field text-fg-muted hover:text-fg")}>{l}</Link>
               ))}
             </div>
@@ -82,7 +96,7 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
                     <p className="mt-0.5 truncate text-sm">{x.subject || "(sin asunto)"}</p>
                     <div className="mt-1 flex items-center gap-1.5">
                       <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-medium", CAT_STYLE[x.category])}>{CAT_LABEL[x.category] ?? "Otro"}</span>
-                      {x.bac_number && <span className="truncate font-mono text-[11px] text-fg-subtle">{x.bac_number}</span>}
+                      {x.bac_number && <span className="truncate text-[11px] text-fg-subtle"><span className="font-mono">{x.bac_number}</span>{names.get(x.bac_number.split("-")[0]) ? ` · ${names.get(x.bac_number.split("-")[0])!.replace(/^\d+\s*-\s*/, "")}` : ""}</span>}
                       {x.attachments?.length > 0 && <Paperclip className="ml-auto size-3.5 shrink-0 text-fg-subtle" />}
                     </div>
                   </Link>

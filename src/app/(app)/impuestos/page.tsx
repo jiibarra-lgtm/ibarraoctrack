@@ -32,17 +32,26 @@ const neto = (xs: V[]) => xs.reduce((a, v) => a + (Number(v.net_taxed) + Number(
 export default async function ImpuestosPage({ searchParams }: { searchParams: Promise<{ m?: string; t?: string; q?: string }> }) {
   const sp = await searchParams;
   const s = await requireOrg();
-  const { data } = await s.supabase.from("arca_vouchers_overview").select("*").eq("org_id", s.org.org_id)
-    .order("issue_date", { ascending: false }).limit(20000);
-  const all = (data ?? []) as V[];
+  // Resumen por mes desde la base (no hay límite de filas) y sólo los comprobantes del mes elegido
+  const { data: mon } = await s.supabase.from("arca_monthly").select("*").eq("org_id", s.org.org_id).order("month", { ascending: false }).limit(500);
+  const monthly = (mon ?? []) as { month: string; direction: "emitido" | "recibido"; vouchers: number; total: string; vat: string; net: string; other_taxes: string }[];
   const writable = ["admin", "finanzas", "compras"].includes(s.org.role);
 
-  const months = [...new Set(all.map((v) => v.issue_date.slice(0, 7)))].sort().reverse();
+  const months = [...new Set(monthly.map((x) => x.month))].sort().reverse();
   const m = sp.m && /^\d{4}-\d{2}$/.test(sp.m) ? sp.m : months[0] ?? new Date().toISOString().slice(0, 7);
   const t = sp.t === "recibido" ? "recibido" : "emitido";
   const q = (sp.q ?? "").trim().toLowerCase();
 
-  const ofMonth = all.filter((v) => v.issue_date.startsWith(m));
+  const [y, mm] = m.split("-").map(Number);
+  const next = new Date(Date.UTC(y, mm, 1)).toISOString().slice(0, 10);
+  const ofMonth: V[] = [];
+  for (let from = 0; from < 20000; from += 1000) {
+    const { data } = await s.supabase.from("arca_vouchers_overview").select("*").eq("org_id", s.org.org_id)
+      .gte("issue_date", `${m}-01`).lt("issue_date", next).order("issue_date", { ascending: false }).order("id").range(from, from + 999);
+    ofMonth.push(...((data ?? []) as V[]));
+    if (!data || data.length < 1000) break;
+  }
+  const all = monthly;
   const em = ofMonth.filter((v) => v.direction === "emitido");
   const re = ofMonth.filter((v) => v.direction === "recibido");
   const debito = sum(em, "vat"), credito = sum(re, "vat"), saldo = debito - credito;
@@ -65,10 +74,11 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
     }
   }
 
-  const history = months.slice(0, 12).map((k) => {
-    const xs = all.filter((v) => v.issue_date.startsWith(k));
-    const d = sum(xs.filter((v) => v.direction === "emitido"), "vat"), c = sum(xs.filter((v) => v.direction === "recibido"), "vat");
-    return { k, d, c, s: d - c, n: xs.length };
+  const history = months.slice(0, 24).map((k) => {
+    const e = monthly.find((x) => x.month === k && x.direction === "emitido");
+    const r = monthly.find((x) => x.month === k && x.direction === "recibido");
+    const d = Number(e?.vat ?? 0), c = Number(r?.vat ?? 0);
+    return { k, d, c, s: d - c, ventas: Number(e?.total ?? 0), compras: Number(r?.total ?? 0) };
   });
 
   const href = (p: Record<string, string>) => `/impuestos?${new URLSearchParams({ m, t, ...(q ? { q } : {}), ...p })}`;
@@ -87,7 +97,7 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
       ) : (
         <>
           <div className="mt-5 flex flex-wrap gap-1.5">
-            {months.slice(0, 12).map((k) => (
+            {months.slice(0, 24).map((k) => (
               <Link key={k} href={href({ m: k })} className={cn("rounded-full px-3 py-1 text-xs font-medium", k === m ? "bg-primary text-primary-fg" : "bg-field text-fg-muted hover:text-fg")}>{monthLabel(k)}</Link>
             ))}
           </div>
@@ -156,13 +166,13 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
                 </Card>
               )}
               <Card>
-                <CardHeader title="Mes a mes" description="IVA débito − crédito" />
+                <CardHeader title="Mes a mes" description="Facturado · IVA débito − crédito" />
                 <ul className="divide-y divide-border">
                   {history.map((h) => (
                     <li key={h.k}>
                       <Link href={href({ m: h.k })} className={cn("flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-surface-2/60 sm:px-5", h.k === m && "bg-surface-2/60")}>
                         <span className="w-14 font-medium">{monthLabel(h.k)}</span>
-                        <span className="flex-1 truncate text-xs text-fg-subtle tabular">{formatMoney(h.d)} − {formatMoney(h.c)}</span>
+                        <span className="flex-1 truncate text-xs text-fg-subtle tabular">Fact. {formatMoney(h.ventas)}</span>
                         <span className={cn("tabular font-medium", h.s > 0 ? "text-warn" : "text-accent")}>{formatMoney(h.s)}</span>
                       </Link>
                     </li>

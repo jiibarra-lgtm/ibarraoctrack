@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, FileArchive, Percent, Scale } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, FileArchive, Percent, Receipt, Scale, ShoppingCart, TrendingUp } from "lucide-react";
 import { requireOrg } from "@/lib/session";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/stat";
@@ -47,6 +47,7 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
   const re = ofMonth.filter((v) => v.direction === "recibido");
   const debito = sum(em, "vat"), credito = sum(re, "vat"), saldo = debito - credito;
   const percep = sum(re, "other_taxes");
+  const facturado = sum(em, "total"), comprado = sum(re, "total");
 
   const rows = (t === "emitido" ? em : re)
     .filter((v) => !q || [v.name, v.doc_number, String(v.number), v.po_number, v.supplier_name].some((x) => x?.toLowerCase().includes(q)))
@@ -91,6 +92,11 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
             ))}
           </div>
 
+          <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <Stat icon={Receipt} label="Facturación total (ventas)" value={formatMoney(facturado)} sub={`${em.length} comprobantes · neto ${formatMoney(neto(em))}`} href={href({ t: "emitido" })} tone="accent" />
+            <Stat icon={ShoppingCart} label="Compras totales" value={formatMoney(comprado)} sub={`${re.length} comprobantes · neto ${formatMoney(neto(re))}`} href={href({ t: "recibido" })} />
+            <Stat icon={TrendingUp} label="Ventas − compras (neto)" value={formatMoney(neto(em) - neto(re))} tone={neto(em) - neto(re) < 0 ? "warn" : undefined} sub={`${monthLabel(m)} · sin IVA`} />
+          </div>
           <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat icon={ArrowUpRight} label="IVA débito (ventas)" value={formatMoney(debito)} sub={`${em.length} emitidos · neto ${formatMoney(neto(em))}`} href={href({ t: "emitido" })} />
             <Stat icon={ArrowDownLeft} label="IVA crédito (compras)" value={formatMoney(credito)} sub={`${re.length} recibidos · neto ${formatMoney(neto(re))}`} href={href({ t: "recibido" })} />

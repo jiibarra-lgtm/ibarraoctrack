@@ -38,7 +38,7 @@ describe("Mis Comprobantes ARCA", () => {
 
   it("abre el ZIP de ARCA", async () => {
     const zip = zipSync({ "comprobantes.csv": strToU8(recibidosNuevo) });
-    const f = new File([zip], "Mis Comprobantes Recibidos - CUIT 20044240522.zip");
+    const f = new File([zip as unknown as BlobPart], "Mis Comprobantes Recibidos - CUIT 20044240522.zip");
     const [p] = await readComprobantesFile(f);
     expect(p.direction).toBe("recibido");
     expect(p.rows).toHaveLength(1);

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Pencil } from "lucide-react";
+import { ClipboardList, Pencil } from "lucide-react";
 import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/primitives";
@@ -93,6 +93,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         actions={
           <>
             {original && <DocumentButton documentId={original.id} label="Ver original" />}
+            {(writable || s.org.role === "logistica") && <Button asChild variant="secondary"><Link href={`/remitos?oc=${encodeURIComponent(o.bac_number ?? o.display_number)}`}><ClipboardList /> Emitir remito</Link></Button>}
             {writable && <StatusDialog id={o.id} status={o.status as PoStatus} version={o.version} />}
             {writable && <Button asChild variant="secondary"><Link href={`/ordenes/${o.id}/editar`}><Pencil /> Editar</Link></Button>}
           </>

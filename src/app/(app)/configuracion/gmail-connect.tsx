@@ -46,7 +46,7 @@ export function GmailConnect({ status, admin, appUrl }: { status: { last_used_at
             <li>Aceptá los permisos (Configuración avanzada → Ir al proyecto). Listo: carga los últimos 6 meses y después revisa cada 10 minutos.</li>
           </ol>
           <Button onClick={copy} className="self-start">{copied ? <Check /> : <Copy />} {copied ? "Copiado" : "Copiar script"}</Button>
-          <p className="text-xs text-fg-subtle">La clave se muestra una sola vez y queda guardada sólo dentro del script. Lee únicamente mails de organismos públicos (.gob.ar, .gov.ar, bue.edu.ar).</p>
+          <p className="text-xs text-fg-subtle">La clave se muestra una sola vez y queda guardada sólo dentro del script. Lee únicamente mails de organismos públicos (.gob.ar, .gov.ar, bue.edu.ar) y el aviso de movimientos de Banco Ciudad, del que sólo toma los pagos del GCBA y las retenciones SIRCREB.</p>
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, Scale, Receipt } from "lucide-react";
 import { requireOrg } from "@/lib/session";
-import { Card, CardBody, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
+import { Badge, Card, CardBody, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/stat";
 import { formatDate, formatMoney, todayISO } from "@/lib/format";
 import { dec, sum } from "@/lib/money";
@@ -18,12 +18,22 @@ export default async function FinancePage() {
   const s = await requireOrg();
   const sb = s.supabase;
   const today = todayISO();
-  const [open, flows, { data: payables }] = await Promise.all([
+  const [open, flows, { data: payables }, { data: bankRows }] = await Promise.all([
     loadInvoices(sb, s.org.org_id, { onlyOpen: true }),
     loadMonthlyFlows(sb, s.org.org_id, "ARS", 12),
     sb.from("purchases").select("id, point_of_sale, number, invoice_date, due_date, total_amount, currency, suppliers(name)")
       .eq("org_id", s.org.org_id).eq("status", "confirmada").eq("paid", false).order("due_date", { ascending: true, nullsFirst: false }).limit(300),
+    sb.from("bank_movements_overview").select("*").eq("org_id", s.org.org_id).order("mov_date", { ascending: false }).limit(300),
   ]);
+  type Mov = { id: string; mov_date: string; detail: string; amount: string; kind: string; status: string; status_note: string | null; payments_count: number; invoices: string | null };
+  const bank = (bankRows ?? []) as Mov[];
+  const gcba = bank.filter((m) => m.kind === "gcba");
+  const sircrebMonth = sum(bank.filter((m) => m.kind === "sircreb" && m.mov_date.startsWith(today.slice(0, 7))).map((m) => m.amount));
+  const sircrebYear = sum(bank.filter((m) => m.kind === "sircreb" && m.mov_date.startsWith(today.slice(0, 4))).map((m) => m.amount));
+  const MOV_STATUS: Record<string, { label: string; tone: "accent" | "warn" | "danger" | "neutral" }> = {
+    conciliado: { label: "Conciliado", tone: "accent" }, faltan_facturas: { label: "Faltan facturas", tone: "warn" },
+    sin_avisos: { label: "Sin aviso de SIGAF", tone: "neutral" }, revisar: { label: "Revisar", tone: "danger" }, pendiente: { label: "Pendiente", tone: "neutral" },
+  };
   const ars = open.filter((i) => i.currency === "ARS");
   const pay = (payables ?? []).filter((p) => p.currency === "ARS");
   const receivable = sum(ars.map((i) => i.balance));
@@ -60,6 +70,28 @@ export default async function FinancePage() {
         <CardBody className="pt-2">
           <SeriesChart data={flows} series={[{ key: "collected", label: "Cobrado" }, { key: "paid", label: "Pagado a proveedores" }, { key: "expenses", label: "Gastos" }]} />
         </CardBody>
+      </Card>
+
+      <Card className="mt-5 overflow-hidden">
+        <CardHeader title="Banco Ciudad · cobros del GCBA"
+          description="Se leen solos del aviso diario de movimientos y se cruzan con los avisos de pago de SIGAF. Lo que falta para llegar al total de las facturas son retenciones."
+          action={<span className="text-right text-xs text-fg-muted">SIRCREB mes <b className="tabular text-fg">{formatMoney(sircrebMonth)}</b><br />año <b className="tabular text-fg">{formatMoney(sircrebYear)}</b></span>} />
+        {!gcba.length ? <EmptyState title="Sin movimientos todavía" description="Aparecen cuando el script de Gmail lee el aviso de Banco Ciudad." /> : (
+          <ul className="max-h-[380px] divide-y divide-border overflow-y-auto">
+            {gcba.map((m) => {
+              const st = MOV_STATUS[m.status] ?? MOV_STATUS.pendiente;
+              return (
+                <li key={m.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-5">
+                  <div className="min-w-0 flex-1">
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-medium">Pago GCBA · {formatDate(m.mov_date)} <Badge tone={st.tone}>{st.label}</Badge></p>
+                    <p className="truncate text-xs text-fg-subtle">{m.invoices ? `Facturas ${m.invoices}` : "Sin facturas vinculadas"}{m.status_note ? ` · ${m.status_note}` : ""}</p>
+                  </div>
+                  <span className="text-sm font-semibold tabular">{formatMoney(m.amount)}</span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </Card>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">

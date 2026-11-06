@@ -1,10 +1,11 @@
 /** Script de Google Apps Script que corre en la cuenta de Gmail del usuario y manda los mails de trabajo a la app. */
 export function gmailScript(url: string, token: string) {
   return `// OC Track · Conexión con Gmail
-// Manda a tu sistema los avisos de BAC / SIGAF y los correos con organismos públicos.
+// Manda a tu sistema los avisos de BAC / SIGAF / COMPR.AR, los correos con organismos públicos
+// y el aviso diario de movimientos de Banco Ciudad (sólo se toman los pagos del GCBA y SIRCREB).
 const URL = '${url}';
 const TOKEN = '${token}';
-const QUERY = '{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar}';
+const QUERY = '{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar from:avisos.bancociudad.com.ar}';
 
 // 1) Ejecutá "instalar" una sola vez (pide permiso para leer Gmail).
 function instalar() {

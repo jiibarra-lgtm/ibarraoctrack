@@ -76,7 +76,10 @@ export function parseComprobantes(text: string, fileName = ""): ParsedFile {
   const has = (s: string) => (h: string) => h.includes(s);
   const eq = (s: string) => (h: string) => h === s;
 
-  const side = head.some((h) => h.includes("receptor")) ? "receptor" : head.some((h) => h.includes("emisor")) ? "emisor" : "";
+  // Recibidos traen "Denominación Emisor" (y también columnas del receptor, que somos nosotros): manda la denominación
+  const side = head.some((h) => h.includes("denominacion") && h.includes("emisor")) ? "emisor"
+    : head.some((h) => h.includes("denominacion") && h.includes("receptor")) ? "receptor"
+    : head.some((h) => h.includes("emisor")) ? "emisor" : head.some((h) => h.includes("receptor")) ? "receptor" : "";
   const fname = norm(fileName);
   const direction: Direction = side === "receptor" ? "emitido" : side === "emisor" ? "recibido"
     : fname.includes("recibid") ? "recibido" : "emitido";

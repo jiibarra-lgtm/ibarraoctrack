@@ -48,3 +48,12 @@ describe("Mis Comprobantes ARCA", () => {
     expect(() => parseComprobantes("a;b\n1;2", "otro.csv")).toThrow();
   });
 });
+
+describe("recibidos reales de ARCA (traen emisor y receptor)", () => {
+  it("se detectan como recibidos", () => {
+    const head = `"Fecha de Emisión";"Tipo de Comprobante";"Punto de Venta";"Número Desde";"Número Hasta";"Cód. Autorización";"Tipo Doc. Emisor";"Nro. Doc. Emisor";"Denominación Emisor";"Tipo Doc. Receptor";"Nro. Doc. Receptor";"Tipo Cambio";"Moneda";"Imp. Neto Gravado IVA 0%";"IVA 2,5%";"Imp. Neto Gravado IVA 2,5%";"IVA 5%";"Imp. Neto Gravado IVA 5%";"IVA 10,5%";"Imp. Neto Gravado IVA 10,5%";"IVA 21%";"Imp. Neto Gravado IVA 21%";"IVA 27%";"Imp. Neto Gravado IVA 27%";"Imp. Neto Gravado Total";"Imp. Neto No Gravado";"Imp. Op. Exentas";"Otros Tributos";"Total IVA";"Imp. Total"`;
+    const p = parseComprobantes(`${head}\n2026-11-02;1;6;96224;96224;86440650283593;80;20937543094;LEVY IOSEF;80;20044240522;1,00;$;;;;;;;;156706,86;746223,14;;;746223,14;0,00;0,00;0,00;156706,86;902930,00`, "comprobantes_consulta_csv_recibidos.csv");
+    expect(p.direction).toBe("recibido");
+    expect(p.rows[0]).toMatchObject({ doc_number: "20937543094", name: "LEVY IOSEF" });
+  });
+});

@@ -2,10 +2,16 @@
 export function gmailScript(url: string, token: string) {
   return `// OC Track · Conexión con Gmail
 // Manda a tu sistema los avisos de BAC / SIGAF / COMPR.AR, los correos con organismos públicos
-// y el aviso diario de movimientos de Banco Ciudad (sólo se toman los pagos del GCBA y SIRCREB).
+// el aviso diario de movimientos de Banco Ciudad (sólo se toman los pagos del GCBA y SIRCREB)
+// y los avisos de Mercado Libre (compras, envíos, entregas, facturas y ventas).
 const URL = '${url}';
 const TOKEN = '${token}';
-const QUERY = '{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar from:avisos.bancociudad.com.ar}';
+const QUERIES = [
+  '{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar from:avisos.bancociudad.com.ar}',
+  'from:mercadolibre {subject:compraste subject:vendiste subject:factura subject:"en camino" subject:"llegó tu compra" subject:"recibiste tu paquete"}'
+];
+// Números de compra / venta que vienen en los links del mail (el texto plano no los trae)
+const REFS = /(my_purchases\\/\\d+|purchaseId=\\d+|filterPurchase=\\d+|ventas\\/\\d+)/g;
 
 // 1) Ejecutá "instalar" una sola vez (pide permiso para leer Gmail).
 function instalar() {
@@ -19,9 +25,11 @@ function instalar() {
 function sincronizar() {
   var props = PropertiesService.getScriptProperties();
   var desde = props.getProperty('desde');
-  var q = QUERY + (desde ? ' after:' + desde : ' newer_than:180d');
   var inicio = Math.floor(Date.now() / 1000);
-  var start = 0, total = 0;
+  var total = 0;
+  QUERIES.forEach(function (QUERY) {
+  var q = QUERY + (desde ? ' after:' + desde : ' newer_than:180d');
+  var start = 0;
   while (true) {
     var threads = GmailApp.search(q, start, 50);
     if (!threads.length) break;
@@ -31,6 +39,7 @@ function sincronizar() {
         lote.push({
           id: m.getId(), threadId: th.getId(), from: m.getFrom(), to: m.getTo(), subject: m.getSubject(),
           date: m.getDate().toISOString(), body: m.getPlainBody().slice(0, 30000),
+          refs: /mercadolibre/i.test(m.getFrom()) ? (m.getBody().match(REFS) || []).slice(0, 40) : [],
           attachments: m.getAttachments({ includeInlineImages: false }).slice(0, 20).map(function (a) {
             return { name: a.getName(), size: a.getSize(), type: a.getContentType() };
           })
@@ -42,6 +51,7 @@ function sincronizar() {
     start += threads.length;
     if (threads.length < 50 || start >= 1500) break;
   }
+  });
   props.setProperty('desde', String(inicio - 3600));
   console.log('OC Track: ' + total + ' correos enviados');
 }

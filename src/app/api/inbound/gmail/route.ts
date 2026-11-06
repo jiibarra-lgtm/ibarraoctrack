@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { classifyMail, parseBacMail } from "@/lib/inbound/bac-mail";
 import { isCiudadMovementsMail, parseCiudadMovements, type BankMovement } from "@/lib/inbound/bank-ciudad";
+import { isMercadoLibreMail, parseMercadoLibreMail, type MlEvent } from "@/lib/inbound/mercadolibre";
 
 /**
  * Recibe los mails que manda el script de Google de la cuenta del usuario.
@@ -18,6 +19,7 @@ const Msg = z.object({
   subject: z.string().max(1000).default(""),
   date: z.string().max(60),
   body: z.string().max(40000).default(""),
+  refs: z.array(z.string().max(300)).max(40).optional(),
   attachments: z.array(z.object({ name: z.string().max(300), size: z.number().optional(), type: z.string().max(120).optional() })).max(30).optional(),
 });
 const Body = z.object({ token: z.string().min(32).max(200), messages: z.array(Msg).max(300) });
@@ -41,12 +43,19 @@ export async function POST(req: NextRequest) {
   const events: unknown[] = [];
   const mails: unknown[] = [];
   const movements: (BankMovement & { message_id: string })[] = [];
+  const mlEvents: MlEvent[] = [];
   for (const m of body.messages) {
     const date = new Date(m.date);
     if (Number.isNaN(date.getTime())) continue;
     // Aviso de movimientos del banco: sólo se extraen pagos del GCBA y SIRCREB; el mail no se guarda
     if (isCiudadMovementsMail(m.from, m.subject)) {
       parseCiudadMovements(m.body, date.toISOString()).forEach((x) => movements.push({ ...x, message_id: m.id }));
+      continue;
+    }
+    // Mercado Libre: compras, envíos, entregas, facturas y ventas van a su sección; el mail no se guarda
+    if (isMercadoLibreMail(m.from)) {
+      const e = parseMercadoLibreMail({ id: m.id, from: m.from, subject: m.subject, body: m.body, date: date.toISOString(), refs: m.refs });
+      if (e) mlEvents.push(e);
       continue;
     }
     const inbound = { id: m.id, from: m.from, subject: m.subject, date: date.toISOString(), body: m.body, to: m.to ?? "" };
@@ -62,15 +71,16 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const [ev, ml, bk] = await Promise.all([
+  const [ev, ml, bk, me] = await Promise.all([
     events.length ? sb.rpc("ingest_bac_events", { p_token: body.token, p_events: events }) : Promise.resolve({ data: { nuevos: 0, aplicados: 0 }, error: null }),
     mails.length ? sb.rpc("ingest_mail_messages", { p_token: body.token, p_messages: mails }) : Promise.resolve({ data: 0, error: null }),
     movements.length ? sb.rpc("ingest_bank_movements", { p_token: body.token, p_movs: movements }) : Promise.resolve({ data: null, error: null }),
+    mlEvents.length ? sb.rpc("ingest_ml_events", { p_token: body.token, p_events: mlEvents }) : Promise.resolve({ data: null, error: null }),
   ]);
-  const err = ev.error ?? ml.error ?? bk.error;
+  const err = ev.error ?? ml.error ?? bk.error ?? me.error;
   if (err) {
     const auth = /token/i.test(err.message);
     return NextResponse.json({ error: auth ? "Token inválido" : "No se pudo guardar" }, { status: auth ? 401 : 500 });
   }
-  return NextResponse.json({ ok: true, correos: ml.data, avisos: ev.data, banco: bk.data });
+  return NextResponse.json({ ok: true, correos: ml.data, avisos: ev.data, banco: bk.data, mercadolibre: me.data });
 }

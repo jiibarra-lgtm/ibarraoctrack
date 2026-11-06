@@ -14,6 +14,8 @@ import { DocumentButton } from "./document-button";
 import { loadProfitability } from "@/lib/profitability";
 import { loadDeliveries, loadDeliveryItems } from "@/lib/delivery-load";
 import { canBill, type CollectionRow, type InvoiceBalance, type PoBilling } from "@/lib/billing";
+import { OrderMercadoLibre } from "./order-ml";
+import type { MlRow } from "@/lib/mercadolibre";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -56,6 +58,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     sb.from("invoice_balances").select("*").eq("purchase_order_id", id).order("issue_date", { ascending: false }).then((r) => (r.data ?? []) as InvoiceBalance[]),
     sb.from("collections").select("*").eq("purchase_order_id", id).order("payment_date", { ascending: false }).then((r) => (r.data ?? []) as CollectionRow[]),
   ]);
+  const { data: mlRows } = await sb.from("ml_orders_overview").select("*").eq("purchase_order_id", id).order("ordered_at", { ascending: false });
   const orderOption = {
     id, label: o.bac_number ?? o.display_number, customer: o.customer_name,
     sales: String(o.net_amount ?? o.items_total ?? "0"),
@@ -120,6 +123,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         collections={collections}
         canBill={canBill(s.org.role)}
       />
+      {!!mlRows?.length && <OrderMercadoLibre rows={mlRows as MlRow[]} />}
     </>
   );
 }

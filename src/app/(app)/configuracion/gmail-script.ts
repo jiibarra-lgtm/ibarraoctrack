@@ -7,53 +7,74 @@ export function gmailScript(url: string, token: string) {
 const URL = '${url}';
 const TOKEN = '${token}';
 const QUERIES = [
-  '{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar from:avisos.bancociudad.com.ar}',
-  'from:mercadolibre {subject:compraste subject:vendiste subject:factura subject:"en camino" subject:"llegó tu compra" subject:"recibiste tu paquete"}'
+  'from:mercadolibre {subject:compraste subject:vendiste subject:factura subject:"en camino" subject:"llegó tu compra" subject:"recibiste tu paquete"}',
+  '{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar from:avisos.bancociudad.com.ar}'
 ];
 // Números de compra / venta que vienen en los links del mail (el texto plano no los trae)
 const REFS = /(my_purchases\\/\\d+|purchaseId=\\d+|filterPurchase=\\d+|ventas\\/\\d+)/g;
 
+const LOTE = 25;                    // hilos por búsqueda
+const LIMITE_MS = 4.5 * 60 * 1000;  // Google corta a los 6 minutos: frenamos antes y seguimos en la próxima corrida
+
 // 1) Ejecutá "instalar" una sola vez (pide permiso para leer Gmail).
+//    La primera vez trae los últimos 6 meses en varias tandas: sigue sola cada 10 minutos hasta terminar.
 function instalar() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('sincronizar').timeBased().everyMinutes(10).create();
-  PropertiesService.getScriptProperties().deleteProperty('desde');
   sincronizar();
 }
 
-// 2) Después corre solo cada 10 minutos.
+// Vuelve a traer todo desde cero (no duplica: la app ignora lo que ya tiene).
+function reiniciar() {
+  PropertiesService.getScriptProperties().deleteAllProperties();
+  instalar();
+}
+
+// 2) Corre sola cada 10 minutos.
 function sincronizar() {
+  var t0 = Date.now();
   var props = PropertiesService.getScriptProperties();
   var desde = props.getProperty('desde');
-  var inicio = Math.floor(Date.now() / 1000);
-  var total = 0;
-  QUERIES.forEach(function (QUERY) {
-  var q = QUERY + (desde ? ' after:' + desde : ' newer_than:180d');
-  var start = 0;
-  while (true) {
-    var threads = GmailApp.search(q, start, 50);
-    if (!threads.length) break;
-    var lote = [];
-    threads.forEach(function (th) {
-      th.getMessages().forEach(function (m) {
-        lote.push({
-          id: m.getId(), threadId: th.getId(), from: m.getFrom(), to: m.getTo(), subject: m.getSubject(),
-          date: m.getDate().toISOString(), body: m.getPlainBody().slice(0, 30000),
-          refs: /mercadolibre/i.test(m.getFrom()) ? (m.getBody().match(REFS) || []).slice(0, 40) : [],
-          attachments: m.getAttachments({ includeInlineImages: false }).slice(0, 20).map(function (a) {
-            return { name: a.getName(), size: a.getSize(), type: a.getContentType() };
-          })
+  if (!desde && !props.getProperty('inicio')) {
+    var c = new Date(t0 - 180 * 864e5);
+    props.setProperty('inicio', String(Math.floor(t0 / 1000)));
+    props.setProperty('corte', c.getFullYear() + '/' + (c.getMonth() + 1) + '/' + c.getDate());
+  }
+  var total = 0, completo = true;
+  for (var i = 0; i < QUERIES.length && completo; i++) {
+    if (!desde && props.getProperty('fin' + i)) continue;
+    var q = QUERIES[i] + (desde ? ' after:' + desde : ' after:' + props.getProperty('corte'));
+    var start = desde ? 0 : Number(props.getProperty('pos' + i) || 0);
+    while (true) {
+      if (Date.now() - t0 > LIMITE_MS) { completo = false; break; }
+      var threads = GmailApp.search(q, start, LOTE);
+      var lote = [];
+      threads.forEach(function (th) {
+        th.getMessages().forEach(function (m) {
+          lote.push({
+            id: m.getId(), threadId: th.getId(), from: m.getFrom(), to: m.getTo(), subject: m.getSubject(),
+            date: m.getDate().toISOString(), body: m.getPlainBody().slice(0, 30000),
+            refs: /mercadolibre/i.test(m.getFrom()) ? (m.getBody().match(REFS) || []).slice(0, 40) : [],
+            attachments: m.getAttachments({ includeInlineImages: false }).slice(0, 20).map(function (a) {
+              return { name: a.getName(), size: a.getSize(), type: a.getContentType() };
+            })
+          });
         });
       });
-    });
-    for (var i = 0; i < lote.length; i += 100) enviar(lote.slice(i, i + 100));
-    total += lote.length;
-    start += threads.length;
-    if (threads.length < 50 || start >= 1500) break;
+      for (var j = 0; j < lote.length; j += 50) enviar(lote.slice(j, j + 50));
+      total += lote.length;
+      start += threads.length;
+      if (!desde) props.setProperty('pos' + i, String(start));
+      if (threads.length < LOTE) { if (!desde) props.setProperty('fin' + i, '1'); break; }
+    }
   }
-  });
-  props.setProperty('desde', String(inicio - 3600));
-  console.log('OC Track: ' + total + ' correos enviados');
+  if (completo) {
+    // Historial terminado (o pasada nueva completa): desde ahora sólo lo nuevo
+    var base = desde ? Math.floor(t0 / 1000) : Number(props.getProperty('inicio'));
+    props.deleteAllProperties();
+    props.setProperty('desde', String(base - 3600));
+  }
+  console.log('OC Track: ' + total + ' correos enviados' + (completo ? '' : ' · sigue en la próxima corrida (en 10 minutos)'));
 }
 
 function enviar(messages) {

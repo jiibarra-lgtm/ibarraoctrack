@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, FileText, Upload, Truck, ShoppingCart, Receipt, Wallet, Landmark, Building2, Factory,
   Package, LineChart, Calculator, FileBarChart, FolderOpen, Bell, Settings, Users, Trophy, CalendarRange, CircleDollarSign,
-  Inbox, Mail, Gavel, ShoppingBag, ClipboardList, type LucideIcon,
+  Inbox, Mail, Gavel, ShoppingBag, ClipboardList, Percent, type LucideIcon,
 } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon; phase?: number };
@@ -29,6 +29,7 @@ export const NAV: NavGroup[] = [
       { href: "/remitos", label: "Remitos", icon: ClipboardList },
       { href: "/facturacion", label: "Facturación", icon: Receipt },
       { href: "/cobranzas", label: "Cobranzas", icon: Wallet },
+      { href: "/impuestos", label: "Impuestos", icon: Percent },
       { href: "/finanzas", label: "Finanzas", icon: Landmark },
     ],
   },

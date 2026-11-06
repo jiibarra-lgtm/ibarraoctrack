@@ -10,6 +10,7 @@ import { monthLabel } from "@/lib/months";
 import type { MlRow } from "@/lib/mercadolibre";
 import { cn } from "@/lib/utils";
 import { MlRowItem } from "./ml-row";
+import { MlSyncButton } from "./sync-button";
 
 export const metadata: Metadata = { title: "Mercado Libre" };
 
@@ -38,6 +39,8 @@ export default async function MercadoLibrePage({ searchParams }: { searchParams:
   const { data } = await s.supabase.from("ml_orders_overview").select("*").eq("org_id", s.org.org_id)
     .order("ordered_at", { ascending: false, nullsFirst: false }).limit(3000);
   const all = (data ?? []) as MlRow[];
+  const { data: conn } = await s.supabase.rpc("ml_conn", { p_action: "status", p_org: s.org.org_id });
+  const connected = !!(conn as { connected?: boolean } | null)?.connected;
   const compras = all.filter((r) => r.kind === "compra");
   const ventas = all.filter((r) => r.kind === "venta");
   const thisMonth = currentYm();
@@ -66,7 +69,8 @@ export default async function MercadoLibrePage({ searchParams }: { searchParams:
 
   return (
     <>
-      <PageHeader title="Mercado Libre" description="Lo que comprás, lo que te llega y lo que vendés en Mercado Libre, leído de tus mails y vinculado a las órdenes de compra." />
+      <PageHeader title="Mercado Libre" description="Lo que comprás, lo que te llega y lo que vendés en Mercado Libre, leído de tus mails y vinculado a las órdenes de compra."
+        actions={<MlSyncButton connected={connected} />} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={ShoppingBag} label="Compras del mes" value={String(cur.compras)} sub={cur.gastado ? `${formatMoney(cur.gastado)}${cur.sinPrecio ? ` · ${cur.sinPrecio} sin precio` : ""}` : cur.sinPrecio ? `${cur.sinPrecio} sin precio cargado` : undefined} href="/mercadolibre?t=compra" />

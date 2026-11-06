@@ -37,6 +37,7 @@ export function MlRowItem({ r, canEdit }: { r: MlRow; canEdit: boolean }) {
           <>
             <p className="font-semibold tabular">{formatMoney(r.total_amount)}</p>
             {r.unit_value && <p className="text-xs text-fg-subtle tabular">{formatMoney(r.unit_value)} c/u</p>}
+            {r.fees && Number(r.fees) > 0 && <p className="text-xs text-fg-subtle tabular">Comisión ML {formatMoney(r.fees)} · neto {formatMoney(Number(r.total_amount ?? 0) - Number(r.fees))}</p>}
           </>
         ) : (
           <PriceInput r={r} canEdit={canEdit} onSaved={() => router.refresh()} />

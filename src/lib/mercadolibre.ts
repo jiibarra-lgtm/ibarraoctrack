@@ -1,7 +1,7 @@
 /** Tipos y etiquetas de la sección Mercado Libre (sirve en cliente y servidor). */
 export type MlRow = {
   id: string; kind: "compra" | "venta"; ml_id: string; title: string; extra_items: number;
-  quantity: string | null; unit_price: string | null; total_amount: string | null; unit_value: string | null;
+  quantity: string | null; unit_price: string | null; fees: string | null; total_amount: string | null; unit_value: string | null;
   counterpart: string | null; shipping: string | null; eta: string | null;
   status: "comprada" | "en_camino" | "entregada" | "vendida" | "cancelada";
   ordered_at: string | null; shipped_at: string | null; delivered_at: string | null; invoice_available: boolean; created_at: string;

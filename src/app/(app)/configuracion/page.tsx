@@ -8,6 +8,7 @@ import { FinanceForm } from "./finance-form";
 import { GmailConnect } from "./gmail-connect";
 import { StorageUsage } from "./storage-usage";
 import { MlConnect, type MlStatus } from "./ml-connect";
+import { ArcaConnect, type ArcaStatus } from "./arca-connect";
 import { headers } from "next/headers";
 
 export const metadata: Metadata = { title: "Configuración" };
@@ -21,7 +22,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     s.supabase.from("inbound_tokens").select("last_used_at, total_events, created_at").eq("org_id", s.org.org_id).maybeSingle(),
     s.supabase.rpc("storage_usage", { p_org: s.org.org_id }),
   ]);
-  const { data: ml } = await s.supabase.rpc("ml_conn", { p_action: "status", p_org: s.org.org_id });
+  const [{ data: ml }, { data: arca }, { data: rset }] = await Promise.all([
+    s.supabase.rpc("ml_conn", { p_action: "status", p_org: s.org.org_id }),
+    s.supabase.rpc("arca_conn", { p_action: "status", p_org: s.org.org_id }),
+    s.supabase.from("remito_settings").select("cuit").eq("org_id", s.org.org_id).maybeSingle(),
+  ]);
   const hdrs = await headers();
   const appUrl = `${hdrs.get("x-forwarded-proto") ?? "https"}://${hdrs.get("x-forwarded-host") ?? hdrs.get("host")}`;
   const ai = aiAvailable();
@@ -47,6 +52,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <Card id="mercadolibre">
           <CardHeader title="Mercado Libre" description="Precios de compras y ventas, comisiones y operaciones, directo de tu cuenta" />
           <CardBody><MlConnect status={(ml ?? { has_app: false, connected: false }) as MlStatus} admin={s.org.role === "admin"} redirectUri={`${appUrl}/api/ml/callback`} flash={{ ok: sp.ml, error: sp.ml_error }} /></CardBody>
+        </Card>
+        <Card id="arca">
+          <CardHeader title="ARCA (factura electrónica)" description="Certificado del web service para emitir y consultar facturas con CAE" />
+          <CardBody><ArcaConnect status={(arca ?? { alias: "octrack", has_csr: false, has_cert: false }) as ArcaStatus} admin={s.org.role === "admin"} defaultCuit={rset?.cuit ?? org?.cuit ?? ""} /></CardBody>
         </Card>
         <Card>
           <CardHeader title="Espacio usado" description="Base de datos y archivos" />

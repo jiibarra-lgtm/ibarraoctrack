@@ -11,18 +11,23 @@ import { isMercadoLibreMail, parseMercadoLibreMail, type MlEvent } from "@/lib/i
  */
 export const maxDuration = 60;
 
+// Tolerante: recorta en vez de rechazar (mails con cientos de destinatarios, adjuntos con nombres largos, etc.)
+const cut = (n: number) => z.preprocess((v) => (v == null ? "" : String(v).slice(0, n)), z.string());
 const Msg = z.object({
   id: z.string().min(1).max(200),
-  threadId: z.string().max(200).optional(),
-  from: z.string().max(500).default(""),
-  to: z.string().max(2000).optional(),
-  subject: z.string().max(1000).default(""),
-  date: z.string().max(60),
-  body: z.string().max(40000).default(""),
-  refs: z.array(z.string().max(300)).max(40).optional(),
-  attachments: z.array(z.object({ name: z.string().max(300), size: z.number().optional(), type: z.string().max(120).optional() })).max(30).optional(),
+  threadId: cut(200).optional(),
+  from: cut(500),
+  to: cut(2000).optional(),
+  subject: cut(1000),
+  date: cut(60),
+  body: cut(40000),
+  refs: z.preprocess((v) => (Array.isArray(v) ? v.slice(0, 40).map((x) => String(x).slice(0, 300)) : []), z.array(z.string())).optional(),
+  attachments: z.preprocess(
+    (v) => (Array.isArray(v) ? v.slice(0, 30).map((a) => ({ name: String(a?.name ?? "").slice(0, 300), size: Number(a?.size) || undefined, type: a?.type ? String(a.type).slice(0, 120) : undefined })) : []),
+    z.array(z.object({ name: z.string(), size: z.number().optional(), type: z.string().optional() })),
+  ).optional(),
 });
-const Body = z.object({ token: z.string().min(32).max(200), messages: z.array(Msg).max(300) });
+const Body = z.object({ token: z.string().min(32).max(200), messages: z.array(z.unknown()).max(500) });
 
 const nameEmail = (s: string) => {
   const m = /^\s*"?([^"<]*)"?\s*<([^>]+)>/.exec(s);
@@ -30,12 +35,15 @@ const nameEmail = (s: string) => {
 };
 
 export async function POST(req: NextRequest) {
-  let body: z.infer<typeof Body>;
+  let raw: z.infer<typeof Body>;
   try {
-    body = Body.parse(await req.json());
+    raw = Body.parse(await req.json());
   } catch {
     return NextResponse.json({ error: "Formato inválido" }, { status: 400 });
   }
+  // Un mail raro no frena el lote: se saltea y se sigue
+  const messages = raw.messages.map((m) => Msg.safeParse(m)).filter((r) => r.success).map((r) => r.data!);
+  const body = { token: raw.token, messages };
   const sb = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
   });

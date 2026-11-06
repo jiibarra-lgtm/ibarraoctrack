@@ -8,6 +8,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { monthLabel } from "@/lib/months";
 import { cn } from "@/lib/utils";
 import { ComprobantesUploader } from "./uploader";
+import { ProfitCalc } from "./profit-calc";
 
 export const metadata: Metadata = { title: "Impuestos" };
 
@@ -74,6 +75,7 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
     }
   }
 
+  const yearNet = monthly.filter((x) => x.direction === "emitido" && x.month.startsWith(m.slice(0, 4)) && x.month <= m).reduce((a, x) => a + Number(x.net), 0);
   const history = months.slice(0, 24).map((k) => {
     const e = monthly.find((x) => x.month === k && x.direction === "emitido");
     const r = monthly.find((x) => x.month === k && x.direction === "recibido");
@@ -152,6 +154,7 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
             </Card>
 
             <div className="flex flex-col gap-5 self-start">
+              <ProfitCalc monthNet={neto(em)} yearNet={yearNet} monthLabel={monthLabel(m)} yearLabel={`ene–${monthLabel(m).split(" ")[0]} ${m.slice(0, 4)}`} />
               {rates.size > 0 && (
                 <Card>
                   <CardHeader title="Por alícuota" description={monthLabel(m)} />

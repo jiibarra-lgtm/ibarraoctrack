@@ -1,24 +1,31 @@
 /** Script de Google Apps Script que corre en la cuenta de Gmail del usuario y manda los mails de trabajo a la app. */
 import { BILL_QUERY } from "@/lib/inbound/bills";
 import { PAYMENT_QUERY } from "@/lib/inbound/payments";
+import { INVOICE_QUERY } from "@/lib/inbound/supplier-invoices";
 
 export function gmailScript(url: string, token: string) {
   const BILLS = BILL_QUERY;
   const PAYS = PAYMENT_QUERY.replace(/'/g, "\\'");
+  const INVS = INVOICE_QUERY.replace(/'/g, "\\'");
   return `// OC Track · Conexión con Gmail
 // Manda a tu sistema los avisos de BAC / SIGAF / COMPR.AR, los correos con organismos públicos
 // el aviso diario de movimientos de Banco Ciudad (sólo se toman los pagos del GCBA y SIRCREB)
 // los avisos de Mercado Libre (compras, envíos, entregas, facturas y ventas)
 // las facturas de servicios (gas, luz, agua, teléfono, prepaga) y los pagos que salen (transferencias,
-// tarjeta, débitos automáticos) para Gastos fijos y variables.
+// tarjeta, débitos automáticos) para Gastos fijos y variables
+// y las facturas de proveedores en PDF (productos, precios, fecha y proveedor).
 const URL = '${url}';
+const URL_FACTURAS = URL.replace(/\/gmail$/, '/facturas');
 const TOKEN = '${token}';
 const QUERIES = [
   'from:mercadolibre {subject:compraste subject:vendiste subject:factura subject:"en camino" subject:"llegó tu compra" subject:"recibiste tu paquete"}',
   '{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar from:avisos.bancociudad.com.ar}',
   '${BILLS}',
-  '${PAYS}'
+  '${PAYS}',
+  '${INVS}'
 ];
+const FACTURAS = QUERIES.length - 1; // de esta búsqueda se mandan los PDF adjuntos
+const MAX_PDF = 3 * 1024 * 1024;
 // Números de compra / venta que vienen en los links del mail (el texto plano no los trae)
 const REFS = /(my_purchases\\/\\d+|purchaseId=\\d+|filterPurchase=\\d+|ventas\\/\\d+)/g;
 
@@ -70,7 +77,8 @@ function sincronizar() {
           });
         });
       });
-      for (var j = 0; j < lote.length; j += 50) enviar(lote.slice(j, j + 50));
+      if (i === FACTURAS) enviarFacturas(threads);
+      else for (var j = 0; j < lote.length; j += 50) enviar(lote.slice(j, j + 50));
       total += lote.length;
       start += threads.length;
       if (!desde) props.setProperty('pos' + i, String(start));
@@ -84,6 +92,34 @@ function sincronizar() {
     props.setProperty('desde', String(base - 3600));
   }
   console.log('OC Track: ' + total + ' correos enviados' + (completo ? '' : ' · sigue en la próxima corrida (en 10 minutos)'));
+}
+
+// Manda los PDF de facturas de a poco (la app los lee y guarda productos y precios, no el PDF)
+function enviarFacturas(threads) {
+  var tanda = [], peso = 0;
+  threads.forEach(function (th) {
+    th.getMessages().forEach(function (m) {
+      m.getAttachments({ includeInlineImages: false }).forEach(function (a) {
+        var nombre = a.getName() || '';
+        if (!/pdf/i.test(a.getContentType()) && !/\.pdf$/i.test(nombre)) return;
+        if (a.getSize() > MAX_PDF) return;
+        var b64 = Utilities.base64Encode(a.getBytes());
+        if (tanda.length && (peso + b64.length > 3500000 || tanda.length >= 8)) { postFacturas(tanda); tanda = []; peso = 0; }
+        tanda.push({ id: m.getId(), from: m.getFrom(), subject: m.getSubject(), date: m.getDate().toISOString(), filename: nombre, pdf: b64 });
+        peso += b64.length;
+      });
+    });
+  });
+  if (tanda.length) postFacturas(tanda);
+}
+
+function postFacturas(invoices) {
+  var r = UrlFetchApp.fetch(URL_FACTURAS, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({ token: TOKEN, invoices: invoices })
+  });
+  if (r.getResponseCode() === 401) throw new Error('OC Track: la clave del script no es válida, generá una nueva en Configuración');
+  if (r.getResponseCode() !== 200) console.log('OC Track facturas respondió ' + r.getResponseCode() + ': ' + r.getContentText().slice(0, 300));
 }
 
 function enviar(messages) {

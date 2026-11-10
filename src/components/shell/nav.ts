@@ -2,6 +2,7 @@ import {
   LayoutDashboard, FileText, Upload, Truck, ShoppingCart, Receipt, Wallet, Landmark, Building2, Factory,
   Package, LineChart, Calculator, FileBarChart, FolderOpen, Bell, Settings, Users, Trophy, CalendarRange, CircleDollarSign,
   Inbox, Mail, Gavel, ShoppingBag, ClipboardList, Percent, WalletCards, type LucideIcon,
+  Tags,
 } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon; phase?: number };
@@ -23,6 +24,7 @@ export const NAV: NavGroup[] = [
     label: "Operación",
     items: [
       { href: "/compras", label: "Compras", icon: ShoppingCart },
+      { href: "/precios-proveedores", label: "Precios de proveedores", icon: Tags },
       { href: "/mercadolibre", label: "Mercado Libre", icon: ShoppingBag },
       { href: "/costos", label: "Costos", icon: CircleDollarSign },
       { href: "/entregas", label: "Entregas", icon: Truck },

@@ -8,7 +8,7 @@ import { Field, Input } from "@/components/ui/primitives";
 import { formatDateTime } from "@/lib/format";
 import { disconnectMl, saveMlApp, syncMlNow } from "../mercadolibre/ml-actions";
 
-export type MlStatus = { has_app: boolean; client_id: string | null; connected: boolean; nickname: string | null; connected_at: string | null; last_sync_at: string | null; last_error: string | null };
+export type MlStatus = { has_app: boolean; client_id: string | null; connected: boolean; offline?: boolean; expires_at?: string | null; nickname: string | null; connected_at: string | null; last_sync_at: string | null; last_error: string | null };
 
 export function MlConnect({ status, admin, redirectUri, flash }: { status: MlStatus; admin: boolean; redirectUri: string; flash?: { ok?: string; error?: string } }) {
   const router = useRouter();
@@ -59,6 +59,12 @@ export function MlConnect({ status, admin, redirectUri, flash }: { status: MlSta
       ) : (
         <p className="text-fg-muted">Conectá tu cuenta para traer solo los <b>precios de compras y ventas</b>, las comisiones y las operaciones que no llegaron por mail.</p>
       )}
+      {status.connected && status.offline === false && (
+        <p className="rounded-xl bg-warn-soft px-3 py-2 text-xs text-warn">
+          La conexión dura sólo hasta {status.expires_at ? formatDateTime(status.expires_at) : "dentro de unas horas"}: tu aplicación de Mercado Libre no tiene <b>Acceso offline</b>.
+          En developers.mercadolibre.com.ar → tu aplicación → Editar, tildá <b>offline_access</b>, guardá y tocá <b>Conectar</b> otra vez. Así queda conectada para siempre.
+        </p>
+      )}
       {status.last_error && <p className="rounded-xl bg-danger-soft px-3 py-2 text-xs text-danger">Último error: {status.last_error}</p>}
 
       {admin && editing && (
@@ -75,7 +81,7 @@ export function MlConnect({ status, admin, redirectUri, flash }: { status: MlSta
 
       {admin && !editing && (
         <div className="flex flex-wrap gap-2">
-          {!status.connected && <Button asChild><a href="/api/ml/connect"><Link2 /> Conectar Mercado Libre</a></Button>}
+          {(!status.connected || status.offline === false) && <Button asChild variant={status.connected ? "secondary" : "default"}><a href="/api/ml/connect"><Link2 /> {status.connected ? "Reconectar" : "Conectar Mercado Libre"}</a></Button>}
           {status.connected && <Button onClick={sync} loading={busy === "sync"}><RefreshCw /> Sincronizar ahora</Button>}
           <Button variant="ghost" onClick={() => setEditing(true)}>Cambiar App ID / Secret</Button>
           {status.connected && <Button variant="ghost" onClick={off} loading={busy === "off"}><Unplug /> Desconectar</Button>}

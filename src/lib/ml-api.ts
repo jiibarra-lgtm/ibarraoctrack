@@ -100,11 +100,14 @@ export type MlRpc = (action: string, data?: Record<string, unknown>) => Promise<
 /** Sincroniza: refresca el token si hace falta, trae compras y ventas desde la última vez y las aplica. */
 export async function syncMercadoLibre(rpc: MlRpc) {
   const c = await rpc("creds");
-  if (!c.connected) return { connected: false as const };
+  if (!c.connected) {
+    if (c.expired) throw new Error("La conexión con Mercado Libre venció. Activá \"Acceso offline\" (offline_access) en tu aplicación de ML y tocá Conectar de nuevo");
+    return { connected: false as const };
+  }
   try {
     let token = String(c.access_token ?? "");
     let userId = Number(c.ml_user_id ?? 0);
-    if (!token || !c.expires_at || new Date(String(c.expires_at)).getTime() < Date.now() + 5 * 60_000) {
+    if (c.refresh_token && (!token || !c.expires_at || new Date(String(c.expires_at)).getTime() < Date.now() + 5 * 60_000)) {
       const t = await refresh({ client_id: String(c.client_id), client_secret: String(c.client_secret), refresh_token: String(c.refresh_token) });
       token = t.access_token;
       userId = t.user_id || userId;

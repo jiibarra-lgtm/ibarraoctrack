@@ -26,6 +26,7 @@ const QUERIES = [
 ];
 const FACTURAS = QUERIES.length - 1; // de esta búsqueda se mandan los PDF adjuntos
 const MAX_PDF = 3 * 1024 * 1024;
+const DIAS_FACTURAS = 730; // historial de facturas de proveedores: 2 años
 // Números de compra / venta que vienen en los links del mail (el texto plano no los trae)
 const REFS = /(my_purchases\\/\\d+|purchaseId=\\d+|filterPurchase=\\d+|ventas\\/\\d+)/g;
 
@@ -55,11 +56,13 @@ function sincronizar() {
     var c = new Date(t0 - 180 * 864e5);
     props.setProperty('inicio', String(Math.floor(t0 / 1000)));
     props.setProperty('corte', c.getFullYear() + '/' + (c.getMonth() + 1) + '/' + c.getDate());
+    var cf = new Date(t0 - DIAS_FACTURAS * 864e5); // las facturas de proveedores van más atrás
+    props.setProperty('corteFacturas', cf.getFullYear() + '/' + (cf.getMonth() + 1) + '/' + cf.getDate());
   }
   var total = 0, completo = true;
   for (var i = 0; i < QUERIES.length && completo; i++) {
     if (!desde && props.getProperty('fin' + i)) continue;
-    var q = QUERIES[i] + (desde ? ' after:' + desde : ' after:' + props.getProperty('corte'));
+    var q = QUERIES[i] + (desde ? ' after:' + desde : ' after:' + (i === FACTURAS ? props.getProperty('corteFacturas') : props.getProperty('corte')));
     var start = desde ? 0 : Number(props.getProperty('pos' + i) || 0);
     while (true) {
       if (Date.now() - t0 > LIMITE_MS) { completo = false; break; }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarClock, CheckCircle2, Mail, Receipt, Sparkles, TrendingDown, Wallet } from "lucide-react";
+import { CalendarClock, CheckCircle2, Landmark, Mail, Receipt, ShoppingBasket, Sparkles, TrendingDown, Wallet } from "lucide-react";
 import { requireOrg } from "@/lib/session";
 import { Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/stat";
@@ -8,6 +8,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { monthLabel } from "@/lib/months";
 import { cn } from "@/lib/utils";
 import { ActiveToggle, AddArcaButton, CATEGORY_LABEL, CostDialog, EditCost, PaidToggle } from "./cost-ui";
+import { CategorySelect, IgnoreToggle, VAR_CATEGORIES } from "./payee-ui";
 
 export const metadata: Metadata = { title: "Gastos fijos" };
 
@@ -16,20 +17,35 @@ type Bill = { id: string; cost_id: string; period: string; due_date: string | nu
 
 const curMonth = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
 const shift = (ym: string, d: number) => { const [y, m] = ym.split("-").map(Number); return new Date(Date.UTC(y, m - 1 + d, 1)).toISOString().slice(0, 7); };
-const SOURCE: Record<string, { label: string; icon: React.ElementType }> = { mail: { label: "Mail", icon: Mail }, arca: { label: "ARCA", icon: Receipt }, manual: { label: "Manual", icon: Wallet } };
+const SOURCE: Record<string, { label: string; icon: React.ElementType }> = { mail: { label: "Mail", icon: Mail }, arca: { label: "ARCA", icon: Receipt }, manual: { label: "Manual", icon: Wallet }, banco: { label: "Banco (se repite todos los meses)", icon: Landmark } };
+type Pay = { id: string; kind: string; paid_at: string; amount: string; payee: string; payee_key: string; concept: string | null; card: string | null; final_category: string; ignored: boolean; cost_id: string | null; cost_name: string | null };
+const KIND: Record<string, string> = { transferencia: "Transferencia", tarjeta: "Tarjeta de débito", debito_automatico: "Débito automático", resumen_tarjeta: "Resumen de tarjeta" };
 
-export default async function GastosFijosPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
+export default async function GastosFijosPage({ searchParams }: { searchParams: Promise<{ m?: string; v?: string }> }) {
   const sp = await searchParams;
   const m = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : curMonth();
+  const view = sp.v === "variables" ? "variables" : sp.v === "movimientos" ? "movimientos" : "fijos";
   const s = await requireOrg();
   const canEdit = ["admin", "finanzas", "compras"].includes(s.org.role);
   const next = `${shift(m, 1)}-01`;
-  const [{ data: costs }, { data: bills }, { data: sugg }, { data: monthly }] = await Promise.all([
+  const [{ data: costs }, { data: bills }, { data: sugg }, { data: monthly }, { data: pays }] = await Promise.all([
     s.supabase.from("fixed_costs").select("*").eq("org_id", s.org.org_id).order("category").order("name"),
     s.supabase.from("fixed_cost_bills").select("*").eq("org_id", s.org.org_id).eq("period", m),
     s.supabase.from("arca_recurring_suppliers").select("*").eq("org_id", s.org.org_id).order("months", { ascending: false }).order("avg_month", { ascending: false }).limit(12),
     s.supabase.from("arca_monthly").select("direction, net").eq("org_id", s.org.org_id).eq("month", m),
+    s.supabase.from("payments_out_overview").select("id, kind, paid_at, amount, payee, payee_key, concept, card, final_category, ignored, cost_id, cost_name").eq("org_id", s.org.org_id).gte("paid_at", `${m}-01`).lt("paid_at", next).order("paid_at", { ascending: false }).limit(1000),
   ]);
+  const payList = (pays ?? []) as Pay[];
+  // Variables: lo que no es gasto fijo, ni resumen de tarjeta (ya incluye consumos), ni pago a proveedores, ni marcado personal
+  const variables = payList.filter((p) => !p.cost_id && !p.ignored && p.kind !== "resumen_tarjeta" && !["proveedores", "compras"].includes(p.final_category));
+  const varTotal = variables.reduce((a, p) => a + Number(p.amount), 0);
+  const varByCat = Object.entries(variables.reduce<Record<string, { total: number; n: number; payees: Record<string, { name: string; total: number; n: number }> }>>((a, p) => {
+    const c = (a[p.final_category] ??= { total: 0, n: 0, payees: {} });
+    c.total += Number(p.amount); c.n++;
+    const y = (c.payees[p.payee_key] ??= { name: p.payee, total: 0, n: 0 });
+    y.total += Number(p.amount); y.n++;
+    return a;
+  }, {})).sort((a, b) => b[1].total - a[1].total);
   const list = (costs ?? []) as Cost[];
   const cuits = list.filter((c) => c.supplier_cuit).map((c) => c.supplier_cuit!);
   const { data: arcaMonth } = cuits.length
@@ -51,11 +67,12 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
   const byCat = Object.entries(active.reduce<Record<string, number>>((a, r) => { a[r.c.category] = (a[r.c.category] ?? 0) + r.month; return a; }, {})).sort((a, b) => b[1] - a[1]);
   const ventas = Number((monthly ?? []).find((x) => x.direction === "emitido")?.net ?? 0);
   const compras = Number((monthly ?? []).find((x) => x.direction === "recibido")?.net ?? 0);
+  const tabHref = (v: string) => `/gastos-fijos?${new URLSearchParams({ m, ...(v !== "fijos" ? { v } : {}) })}`;
   const groups = Object.keys(CATEGORY_LABEL).map((k) => [k, rows.filter((r) => r.c.category === k)] as const).filter(([, l]) => l.length);
 
   return (
     <>
-      <PageHeader title="Gastos fijos" description="Lo que pagás todos los meses. Gas, luz, agua, teléfono, internet y prepaga se cargan solos desde tus mails; el resto lo agregás vos."
+      <PageHeader title="Gastos fijos" description="Lo que pagás todos los meses y en qué se va la plata. Servicios, débitos automáticos, sueldos y seguros se detectan solos desde tus mails y el banco; lo demás lo agregás vos."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 rounded-full border border-card-border bg-field p-1 text-sm">
@@ -67,14 +84,68 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
           </div>
         } />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat icon={Wallet} label="Gastos fijos del mes" value={formatMoney(total)} sub={`${active.length} gastos activos`} />
         <Stat icon={CheckCircle2} label="Pagado" value={formatMoney(paid)} sub={`Falta ${formatMoney(Math.max(0, total - paid))}`} tone="accent" />
         <Stat icon={CalendarClock} label="Por vencer" value={String(active.filter((r) => r.bill && !r.bill.paid && r.bill.due_date).length)} sub="facturas recibidas sin pagar" tone="warn" />
-        <Stat icon={TrendingDown} label="Ventas − compras − fijos" value={formatMoney(ventas - compras - total)} tone={ventas - compras - total < 0 ? "danger" : undefined} sub={`${monthLabel(m)} · neto sin IVA (de Impuestos)`} />
+        <Stat icon={ShoppingBasket} label="Gastos variables" value={formatMoney(varTotal)} sub={`${variables.length} pagos con tarjeta y transferencias`} href={tabHref("variables")} />
+        <Stat icon={TrendingDown} label="Resultado del mes" value={formatMoney(ventas - compras - total - varTotal)} tone={ventas - compras - total - varTotal < 0 ? "danger" : undefined} sub="ventas − compras − fijos − variables (sin IVA)" />
       </div>
 
-      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="mt-5 inline-flex rounded-full border border-card-border bg-field p-1 text-sm">
+        {([["fijos", `Fijos (${active.length})`], ["variables", `Variables (${variables.length})`], ["movimientos", `Movimientos (${payList.length})`]] as const).map(([k, l]) => (
+          <Link key={k} href={tabHref(k)} className={cn("rounded-full px-4 py-1.5 font-medium", view === k ? "bg-surface-solid text-brand shadow-sm" : "text-fg-muted hover:text-fg")}>{l}</Link>
+        ))}
+      </div>
+
+      {view === "variables" && (
+        <Card className="mt-4 overflow-hidden">
+          <CardHeader title="Gastos variables por rubro" description="Pagos con tarjeta y transferencias del mes que no son gastos fijos. Corregí el rubro o marcá como personal y queda para siempre." />
+          {!varByCat.length ? <EmptyState icon={<ShoppingBasket />} title="Sin gastos variables este mes" description="Aparecen cuando el script de Gmail lea los avisos de Santander y Red Link." /> : (
+            <ul className="divide-y divide-border">
+              {varByCat.map(([cat, c]) => (
+                <li key={cat} className="px-4 py-3 sm:px-5">
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                    <span className="font-semibold">{VAR_CATEGORIES[cat] ?? cat} <span className="font-normal text-fg-subtle">· {c.n} pagos</span></span>
+                    <span className="tabular font-semibold">{formatMoney(c.total)}</span>
+                  </div>
+                  <div className="mt-1 h-1.5 rounded-full bg-field"><div className="h-1.5 rounded-full bg-brand" style={{ width: `${varTotal ? Math.round((c.total / varTotal) * 100) : 0}%` }} /></div>
+                  <ul className="mt-2 grid gap-1">
+                    {Object.entries(c.payees).sort((a, b) => b[1].total - a[1].total).slice(0, 8).map(([k, y]) => (
+                      <li key={k} className="flex items-center gap-2 text-xs text-fg-muted">
+                        <span className="min-w-0 flex-1 truncate">{y.name}{y.n > 1 ? ` (${y.n})` : ""}</span>
+                        <span className="tabular">{formatMoney(y.total)}</span>
+                        {canEdit && <><CategorySelect payeeKey={k} value={cat} /><IgnoreToggle payeeKey={k} ignored={false} /></>}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {view === "movimientos" && (
+        <Card className="mt-4 overflow-hidden">
+          <CardHeader title="Pagos del mes" description="Todo lo que salió de tus cuentas según los avisos del banco" />
+          {!payList.length ? <EmptyState icon={<Landmark />} title="Sin pagos leídos este mes" /> : (
+            <ul className="divide-y divide-border">
+              {payList.map((p) => (
+                <li key={p.id} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm sm:px-5", p.ignored && "opacity-50")}>
+                  <span className="w-20 text-xs text-fg-subtle">{formatDate(p.paid_at)}</span>
+                  <span className="min-w-0 flex-1"><span className="block truncate">{p.payee}</span>
+                    <span className="text-xs text-fg-subtle">{KIND[p.kind] ?? p.kind}{p.concept ? ` · ${p.concept}` : ""}{p.card ? ` · tarjeta ${p.card}` : ""}{p.cost_name ? ` · fijo: ${p.cost_name}` : ""}{p.ignored ? " · personal" : ""}</span></span>
+                  <span className="tabular font-medium">{formatMoney(p.amount)}</span>
+                  {canEdit && <><CategorySelect payeeKey={p.payee_key} value={p.final_category} /><IgnoreToggle payeeKey={p.payee_key} ignored={p.ignored} /></>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {view === "fijos" && <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="min-w-0 overflow-hidden">
           {!rows.length ? (
             <EmptyState icon={<Wallet />} title="Todavía no hay gastos fijos"
@@ -141,7 +212,7 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
             </Card>
           )}
         </div>
-      </div>
+      </div>}
     </>
   );
 }

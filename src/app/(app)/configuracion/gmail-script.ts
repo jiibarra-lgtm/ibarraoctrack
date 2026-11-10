@@ -1,19 +1,23 @@
 /** Script de Google Apps Script que corre en la cuenta de Gmail del usuario y manda los mails de trabajo a la app. */
 import { BILL_QUERY } from "@/lib/inbound/bills";
+import { PAYMENT_QUERY } from "@/lib/inbound/payments";
 
 export function gmailScript(url: string, token: string) {
   const BILLS = BILL_QUERY;
+  const PAYS = PAYMENT_QUERY.replace(/'/g, "\\'");
   return `// OC Track · Conexión con Gmail
 // Manda a tu sistema los avisos de BAC / SIGAF / COMPR.AR, los correos con organismos públicos
 // el aviso diario de movimientos de Banco Ciudad (sólo se toman los pagos del GCBA y SIRCREB)
 // los avisos de Mercado Libre (compras, envíos, entregas, facturas y ventas)
-// y las facturas de servicios (gas, luz, agua, teléfono, prepaga) y débitos automáticos para Gastos fijos.
+// las facturas de servicios (gas, luz, agua, teléfono, prepaga) y los pagos que salen (transferencias,
+// tarjeta, débitos automáticos) para Gastos fijos y variables.
 const URL = '${url}';
 const TOKEN = '${token}';
 const QUERIES = [
   'from:mercadolibre {subject:compraste subject:vendiste subject:factura subject:"en camino" subject:"llegó tu compra" subject:"recibiste tu paquete"}',
   '{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar from:avisos.bancociudad.com.ar}',
-  '${BILLS}'
+  '${BILLS}',
+  '${PAYS}'
 ];
 // Números de compra / venta que vienen en los links del mail (el texto plano no los trae)
 const REFS = /(my_purchases\\/\\d+|purchaseId=\\d+|filterPurchase=\\d+|ventas\\/\\d+)/g;

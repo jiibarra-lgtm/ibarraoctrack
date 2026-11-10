@@ -6,6 +6,7 @@ import { isCiudadMovementsMail, parseCiudadMovements, type BankMovement } from "
 import { isMercadoLibreMail, parseMercadoLibreMail, type MlEvent } from "@/lib/inbound/mercadolibre";
 import { syncMercadoLibre } from "@/lib/ml-api";
 import { isBillMail, parseBillMail, type BillEvent } from "@/lib/inbound/bills";
+import { isPaymentMail, parsePaymentMail, type PaymentEvent } from "@/lib/inbound/payments";
 import { tokenRpc } from "@/lib/ml-rpc";
 
 /**
@@ -56,12 +57,19 @@ export async function POST(req: NextRequest) {
   const movements: (BankMovement & { message_id: string })[] = [];
   const mlEvents: MlEvent[] = [];
   const bills: BillEvent[] = [];
+  const payments: PaymentEvent[] = [];
   for (const m of body.messages) {
     const date = new Date(m.date);
     if (Number.isNaN(date.getTime())) continue;
     // Aviso de movimientos del banco: sólo se extraen pagos del GCBA y SIRCREB; el mail no se guarda
     if (isCiudadMovementsMail(m.from, m.subject)) {
       parseCiudadMovements(m.body, date.toISOString()).forEach((x) => movements.push({ ...x, message_id: m.id }));
+      continue;
+    }
+    // Pagos que salen (transferencias, tarjeta, débitos automáticos, resumen de tarjeta): van a Gastos
+    if (isPaymentMail(m.from, m.subject)) {
+      const pay = parsePaymentMail({ id: m.id, from: m.from, subject: m.subject, body: m.body, date: date.toISOString() });
+      if (pay) payments.push(pay);
       continue;
     }
     // Facturas de servicios y débitos automáticos: van a Gastos fijos; el mail no se guarda
@@ -89,19 +97,20 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const [ev, ml, bk, me, bl] = await Promise.all([
+  const [ev, ml, bk, me, bl, py] = await Promise.all([
     events.length ? sb.rpc("ingest_bac_events", { p_token: body.token, p_events: events }) : Promise.resolve({ data: { nuevos: 0, aplicados: 0 }, error: null }),
     mails.length ? sb.rpc("ingest_mail_messages", { p_token: body.token, p_messages: mails }) : Promise.resolve({ data: 0, error: null }),
     movements.length ? sb.rpc("ingest_bank_movements", { p_token: body.token, p_movs: movements }) : Promise.resolve({ data: null, error: null }),
     mlEvents.length ? sb.rpc("ingest_ml_events", { p_token: body.token, p_events: mlEvents }) : Promise.resolve({ data: null, error: null }),
     bills.length ? sb.rpc("ingest_bills", { p_token: body.token, p_bills: bills }) : Promise.resolve({ data: null, error: null }),
+    payments.length ? sb.rpc("ingest_payments", { p_token: body.token, p_payments: payments }) : Promise.resolve({ data: null, error: null }),
   ]);
-  const err = ev.error ?? ml.error ?? bk.error ?? me.error ?? bl.error;
+  const err = ev.error ?? ml.error ?? bk.error ?? me.error ?? bl.error ?? py.error;
   if (err) {
     const auth = /token/i.test(err.message);
     return NextResponse.json({ error: auth ? "Token inválido" : "No se pudo guardar" }, { status: auth ? 401 : 500 });
   }
   // Con mails nuevos de Mercado Libre, se traen los precios por la API (si la cuenta está conectada), después de responder
   if (mlEvents.length) after(() => syncMercadoLibre(tokenRpc(body.token)).catch(() => null));
-  return NextResponse.json({ ok: true, correos: ml.data, avisos: ev.data, banco: bk.data, mercadolibre: me.data, gastos: bl.data });
+  return NextResponse.json({ ok: true, correos: ml.data, avisos: ev.data, banco: bk.data, mercadolibre: me.data, gastos: bl.data, pagos: py.data });
 }

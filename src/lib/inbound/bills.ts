@@ -15,6 +15,8 @@ export const BILL_PROVIDERS: Provider[] = [
   { key: "edesur", name: "Edesur", category: "servicios", from: /edesur\.com\.ar/i, skip: /experiencia|suspensi[oó]n/i },
   { key: "edenor", name: "Edenor", category: "servicios", from: /edenor\.com/i },
   { key: "aysa", name: "AySA", category: "servicios", from: /aysa\.com\.ar/i },
+  { key: "absa", name: "ABSA", category: "servicios", from: /absaweb\.com\.ar/i },
+  { key: "cesop", name: "CESOP", category: "servicios", from: /cesop\.com\.ar/i },
   { key: "movistar", name: "Movistar", category: "telefonia", from: /factura\.sinpapel@movistar\.com\.ar|movistar\.com\.ar/i, skip: /suscripci[oó]n|te espera|experiencia|promo/i },
   { key: "claro", name: "Claro", category: "telefonia", from: /factura@email\.claro\.com\.ar/i },
   { key: "personal", name: "Personal", category: "telefonia", from: /personal\.com\.ar|telecom\.com\.ar/i },
@@ -26,7 +28,7 @@ export const BILL_PROVIDERS: Provider[] = [
   { key: "swiss", name: "Swiss Medical", category: "salud", from: /swissmedical\.com\.ar/i },
 ];
 
-export const BILL_QUERY = "from:(metrogas.com.ar edesur.com.ar edenor.com aysa.com.ar factura.sinpapel@movistar.com.ar factura@email.claro.com.ar personal.com.ar telecentro.com.ar flow.com.ar fibertel.com.ar iplan.com.ar galeno.com.ar osde.com.ar swissmedical.com.ar mails.santander.com.ar)";
+export const BILL_QUERY = "from:(metrogas.com.ar edesur.com.ar edenor.com aysa.com.ar factura.sinpapel@movistar.com.ar factura@email.claro.com.ar personal.com.ar telecentro.com.ar flow.com.ar fibertel.com.ar iplan.com.ar galeno.com.ar osde.com.ar swissmedical.com.ar cesop.com.ar absaweb.com.ar)";
 
 export const isBillMail = (from: string) => BILL_PROVIDERS.some((p) => p.from.test(from)) || /mails\.santander\.com\.ar/i.test(from);
 

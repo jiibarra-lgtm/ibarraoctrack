@@ -7,7 +7,7 @@ import { parseArNumber } from "@/lib/money";
 import { isUuid } from "@/lib/utils";
 
 type R = { ok: true } | { ok: false; error: string };
-const CATS = ["sueldos", "alquiler", "servicios", "telefonia", "salud", "impuestos", "seguros", "bancos", "software", "vehiculos", "otros"] as const;
+const CATS = ["sueldos", "alquiler", "servicios", "telefonia", "salud", "impuestos", "seguros", "honorarios", "bancos", "software", "vehiculos", "otros"] as const;
 const can = (role: string) => ["admin", "finanzas", "compras"].includes(role);
 
 const Cost = z.object({
@@ -68,5 +68,23 @@ export async function setMonthPaid(costId: string, period: string, paid: boolean
     ? await s.supabase.from("fixed_cost_bills").update({ paid, paid_at: paid ? today : null }).eq("id", billId).eq("org_id", s.org.org_id)
     : await s.supabase.from("fixed_cost_bills").insert({ org_id: s.org.org_id, cost_id: costId, dedupe_key: `manual|${costId}|${period}`, period, amount: Number(amount) || null, paid, paid_at: paid ? today : null, source: "manual" });
   if (error) return { ok: false, error: friendlyDbError(error) };
+  return done();
+}
+
+/** Regla por destinatario: corregir rubro, marcar como personal (no cuenta) o "no es gasto fijo". */
+export async function setPayeeRule(payeeKey: string, rule: { category?: string | null; ignore?: boolean; not_fixed?: boolean }): Promise<R> {
+  const s = await requireOrg();
+  if (!can(s.org.role) || !payeeKey || payeeKey.length > 60) return { ok: false, error: "No permitido" };
+  if (rule.category && !(CATS as readonly string[]).concat(["comida", "ferreteria", "proveedores", "compras", "honorarios"]).includes(rule.category)) return { ok: false, error: "Rubro inválido" };
+  const { data: prev } = await s.supabase.from("payee_rules").select("*").eq("org_id", s.org.org_id).eq("payee_key", payeeKey).maybeSingle();
+  const { error } = await s.supabase.from("payee_rules").upsert({
+    org_id: s.org.org_id, payee_key: payeeKey, category: rule.category !== undefined ? rule.category : prev?.category ?? null,
+    ignore: rule.ignore ?? prev?.ignore ?? false, not_fixed: rule.not_fixed ?? prev?.not_fixed ?? false, updated_at: new Date().toISOString(),
+  });
+  if (error) return { ok: false, error: friendlyDbError(error) };
+  if (rule.ignore || rule.not_fixed) {
+    await s.supabase.from("fixed_costs").update({ active: false }).eq("org_id", s.org.org_id).eq("provider_key", "pago").eq("account_ref", payeeKey);
+  }
+  await s.supabase.rpc("redetect_fixed", { p_org: s.org.org_id });
   return done();
 }

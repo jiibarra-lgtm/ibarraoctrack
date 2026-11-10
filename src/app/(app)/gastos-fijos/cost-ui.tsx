@@ -11,7 +11,7 @@ import { addFromArca, saveFixedCost, setCostActive, setMonthPaid, type CostInput
 
 export const CATEGORY_LABEL: Record<string, string> = {
   sueldos: "Sueldos y cargas", alquiler: "Alquiler", servicios: "Servicios (luz, gas, agua)", telefonia: "Teléfono e internet", salud: "Prepaga / salud",
-  impuestos: "Impuestos y tasas", seguros: "Seguros", bancos: "Bancos y comisiones", software: "Sistemas y suscripciones", vehiculos: "Vehículos y combustible", otros: "Otros",
+  impuestos: "Impuestos y tasas", seguros: "Seguros", honorarios: "Honorarios (contador, abogado)", bancos: "Bancos y comisiones", software: "Sistemas y suscripciones", vehiculos: "Vehículos y combustible", otros: "Otros",
 };
 const FREQ: [number, string][] = [[1, "Mensual"], [2, "Bimestral"], [3, "Trimestral"], [6, "Semestral"], [12, "Anual"]];
 const EMPTY: CostInput = { name: "", category: "otros", amount: "", frequency: 1, due_day: "", notes: "" };

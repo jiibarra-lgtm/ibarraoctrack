@@ -40,7 +40,7 @@ export function MlRowItem({ r, canEdit }: { r: MlRow; canEdit: boolean }) {
             {r.fees && Number(r.fees) > 0 && <p className="text-xs text-fg-subtle tabular">Comisión ML {formatMoney(r.fees)} · neto {formatMoney(Number(r.total_amount ?? 0) - Number(r.fees))}</p>}
           </>
         ) : (
-          <PriceInput r={r} canEdit={canEdit} onSaved={() => router.refresh()} />
+          <PriceInput key={`${r.id}:${r.unit_price ?? ""}:${r.unit_value ?? ""}`} r={r} canEdit={canEdit} onSaved={() => router.refresh()} />
         )}
       </div>
 
@@ -79,8 +79,18 @@ function PriceInput({ r, canEdit, onSaved }: { r: MlRow; canEdit: boolean; onSav
     if (!res.ok) return toast.error(res.error);
     onSaved();
   };
-  const total = r.unit_price && r.quantity ? Number(r.unit_price) * Number(r.quantity) : null;
-  if (!canEdit) return <p className="font-semibold tabular">{r.unit_price ? formatMoney(r.unit_price) : "—"}</p>;
+  const total = r.total_amount ? Number(r.total_amount) : r.unit_value && r.quantity ? Number(r.unit_value) * Number(r.quantity) : null;
+  const [editing, setEditing] = React.useState(false);
+  if (r.unit_value && !editing) {
+    return (
+      <div>
+        <p className="font-semibold tabular">{formatMoney(r.unit_value)} <span className="text-xs font-normal text-fg-subtle">c/u</span></p>
+        {total !== null && <p className="text-xs text-fg-subtle tabular">Total {formatMoney(total)}{r.extra_items ? ` · carrito de ${Number(r.extra_items) + 1}` : ""}</p>}
+        {canEdit && <button type="button" onClick={() => setEditing(true)} className="text-[11px] text-fg-subtle underline-offset-2 hover:text-fg hover:underline">Corregir</button>}
+      </div>
+    );
+  }
+  if (!canEdit) return <p className="font-semibold tabular">—</p>;
   return (
     <div>
       <div className="relative w-36">

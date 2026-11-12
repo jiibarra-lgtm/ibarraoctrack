@@ -3,6 +3,7 @@ import {
   Package, LineChart, Calculator, FileBarChart, FolderOpen, Bell, Settings, Users, Trophy, CalendarRange, CircleDollarSign,
   Inbox, Mail, Gavel, ShoppingBag, ClipboardList, Percent, WalletCards, type LucideIcon,
   Tags,
+  Boxes,
 } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon; phase?: number };
@@ -29,6 +30,7 @@ export const NAV: NavGroup[] = [
       { href: "/costos", label: "Costos", icon: CircleDollarSign },
       { href: "/entregas", label: "Entregas", icon: Truck },
       { href: "/remitos", label: "Remitos", icon: ClipboardList },
+      { href: "/stock", label: "Stock", icon: Boxes },
       { href: "/facturacion", label: "Facturación", icon: Receipt },
       { href: "/cobranzas", label: "Cobranzas", icon: Wallet },
       { href: "/impuestos", label: "Impuestos", icon: Percent },

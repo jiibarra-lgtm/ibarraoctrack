@@ -14,7 +14,9 @@ export const GMAIL_SOURCES: GmailSource[] = [
   { key: "gob", days: 180, mode: "mail", q: "{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar from:avisos.bancociudad.com.ar}" },
   { key: "servicios", days: 180, mode: "mail", q: BILL_QUERY },
   { key: "pagos", days: 180, mode: "mail", q: PAYMENT_QUERY },
+  // Banco completo: todos los avisos del Ciudad (movimientos + saldo) y débitos de tarjeta que no se cubrieron
+  { key: "banco", days: 400, mode: "mail", q: '{from:avisos.bancociudad.com.ar subject:"pudimos debitar"}' },
   { key: "facturas", days: 730, mode: "pdf", q: INVOICE_QUERY },
 ];
 
-export const GMAIL_SOURCES_VERSION = "2026-11-10b";
+export const GMAIL_SOURCES_VERSION = "2026-11-12a";

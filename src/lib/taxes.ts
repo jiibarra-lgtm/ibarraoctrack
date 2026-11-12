@@ -35,6 +35,15 @@ export function businessDay(y: number, m: number, day: number) {
 }
 
 /** Día de vencimiento de la DDJJ mensual de IVA según la terminación del CUIT. */
+/** Días hábiles del mes (sin sábados, domingos ni feriados nacionales). */
+export function businessDaysInMonth(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  let n = 0;
+  for (let d = new Date(Date.UTC(y, m - 1, 1)); d.getUTCMonth() === m - 1; d.setUTCDate(d.getUTCDate() + 1))
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6 && !HOLIDAYS.has(iso(d))) n++;
+  return n;
+}
+
 export const IVA_DAY: Record<number, number> = { 0: 18, 1: 18, 2: 19, 3: 19, 4: 20, 5: 20, 6: 21, 7: 21, 8: 22, 9: 22 };
 
 export type Due = { date: string; title: string; detail: string; kind: "iva" | "iibb" | "autonomos" | "ganancias" };

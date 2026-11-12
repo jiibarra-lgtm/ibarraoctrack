@@ -8,11 +8,12 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { monthLabel } from "@/lib/months";
 import { cn } from "@/lib/utils";
 import { ActiveToggle, AddArcaButton, CATEGORY_LABEL, CostDialog, EditCost, PaidToggle } from "./cost-ui";
+import { CostInsights } from "./insights";
 import { CategorySelect, IgnoreToggle, VAR_CATEGORIES } from "./payee-ui";
 
 export const metadata: Metadata = { title: "Gastos fijos" };
 
-type Cost = { id: string; name: string; category: string; amount: string; frequency: number; due_day: number | null; active: boolean; source: string; supplier_cuit: string | null; notes: string | null };
+type Cost = { id: string; name: string; category: string; amount: string; frequency: number; due_day: number | null; active: boolean; source: string; supplier_cuit: string | null; notes: string | null; is_personal?: boolean };
 type Bill = { id: string; cost_id: string; period: string; due_date: string | null; amount: string | null; paid: boolean; paid_at: string | null; source: string };
 
 const curMonth = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
@@ -24,7 +25,7 @@ const KIND: Record<string, string> = { transferencia: "Transferencia", tarjeta: 
 export default async function GastosFijosPage({ searchParams }: { searchParams: Promise<{ m?: string; v?: string }> }) {
   const sp = await searchParams;
   const m = /^\d{4}-\d{2}$/.test(sp.m ?? "") ? sp.m! : curMonth();
-  const view = sp.v === "variables" ? "variables" : sp.v === "movimientos" ? "movimientos" : "fijos";
+  const view = sp.v === "variables" ? "variables" : sp.v === "movimientos" ? "movimientos" : sp.v === "analisis" ? "analisis" : "fijos";
   const s = await requireOrg();
   const canEdit = ["admin", "finanzas", "compras"].includes(s.org.role);
   const next = `${shift(m, 1)}-01`;
@@ -62,6 +63,7 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
     return { c, bill, real, month: c.active ? (real ?? expected) : 0, expected };
   });
   const active = rows.filter((r) => r.c.active);
+  const personalTotal = active.filter((r) => r.c.is_personal).reduce((a, r) => a + r.month, 0);
   const total = active.reduce((a, r) => a + r.month, 0);
   const paid = active.filter((r) => r.bill?.paid).reduce((a, r) => a + r.month, 0);
   const byCat = Object.entries(active.reduce<Record<string, number>>((a, r) => { a[r.c.category] = (a[r.c.category] ?? 0) + r.month; return a; }, {})).sort((a, b) => b[1] - a[1]);
@@ -89,14 +91,16 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
         <Stat icon={CheckCircle2} label="Pagado" value={formatMoney(paid)} sub={`Falta ${formatMoney(Math.max(0, total - paid))}`} tone="accent" />
         <Stat icon={CalendarClock} label="Por vencer" value={String(active.filter((r) => r.bill && !r.bill.paid && r.bill.due_date).length)} sub="facturas recibidas sin pagar" tone="warn" />
         <Stat icon={ShoppingBasket} label="Gastos variables" value={formatMoney(varTotal)} sub={`${variables.length} pagos con tarjeta y transferencias`} href={tabHref("variables")} />
-        <Stat icon={TrendingDown} label="Resultado del mes" value={formatMoney(ventas - compras - total - varTotal)} tone={ventas - compras - total - varTotal < 0 ? "danger" : undefined} sub="ventas − compras − fijos − variables (sin IVA)" />
+        <Stat icon={TrendingDown} label="Resultado del mes" value={formatMoney(ventas - compras - (total - personalTotal) - varTotal)} tone={ventas - compras - (total - personalTotal) - varTotal < 0 ? "danger" : undefined} sub={`ventas − compras − fijos − variables (sin IVA)${personalTotal ? " · sin los personales" : ""}`} />
       </div>
 
       <div className="mt-5 inline-flex rounded-full border border-card-border bg-field p-1 text-sm">
-        {([["fijos", `Fijos (${active.length})`], ["variables", `Variables (${variables.length})`], ["movimientos", `Movimientos (${payList.length})`]] as const).map(([k, l]) => (
+        {([["fijos", `Fijos (${active.length})`], ["variables", `Variables (${variables.length})`], ["movimientos", `Movimientos (${payList.length})`], ["analisis", "Detección y detalle"]] as const).map(([k, l]) => (
           <Link key={k} href={tabHref(k)} className={cn("rounded-full px-4 py-1.5 font-medium", view === k ? "bg-surface-solid text-brand shadow-sm" : "text-fg-muted hover:text-fg")}>{l}</Link>
         ))}
       </div>
+
+      {view === "analisis" && <CostInsights sb={s.supabase} org={s.org.org_id} m={m} canEdit={canEdit} />}
 
       {view === "variables" && (
         <Card className="mt-4 overflow-hidden">

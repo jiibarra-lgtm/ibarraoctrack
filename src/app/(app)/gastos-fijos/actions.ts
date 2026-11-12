@@ -88,3 +88,23 @@ export async function setPayeeRule(payeeKey: string, rule: { category?: string |
   await s.supabase.rpc("redetect_fixed", { p_org: s.org.org_id });
   return done();
 }
+
+/** Gasto personal (no del negocio): se muestra aparte y no resta en el resultado del negocio. */
+export async function setCostPersonal(id: string, personal: boolean): Promise<R> {
+  const s = await requireOrg();
+  if (!can(s.org.role) || !isUuid(id)) return { ok: false, error: "No permitido" };
+  const { error } = await s.supabase.from("fixed_costs").update({ is_personal: personal }).eq("id", id).eq("org_id", s.org.org_id);
+  if (error) return { ok: false, error: friendlyDbError(error) };
+  return done();
+}
+
+/** Inflación mensual esperada y % de aumento que dispara la alerta. */
+export async function saveCostSettings(inflation: string, alertPct: string): Promise<R> {
+  const s = await requireOrg();
+  if (!["admin", "finanzas"].includes(s.org.role)) return { ok: false, error: "Sólo administración y finanzas" };
+  const inf = Number(inflation.replace(",", ".")), al = Number(alertPct.replace(",", "."));
+  if (!(inf >= 0 && inf <= 50) || !(al >= 0 && al <= 200)) return { ok: false, error: "Valores inválidos" };
+  const { error } = await s.supabase.rpc("tax_settings_extra", { p_org: s.org.org_id, p: { inflation_monthly: inf, cost_alert_pct: al } });
+  if (error) return { ok: false, error: friendlyDbError(error) };
+  return done();
+}

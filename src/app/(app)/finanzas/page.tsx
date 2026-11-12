@@ -23,7 +23,7 @@ export default async function FinancePage() {
     loadMonthlyFlows(sb, s.org.org_id, "ARS", 12),
     sb.from("purchases").select("id, point_of_sale, number, invoice_date, due_date, total_amount, currency, suppliers(name)")
       .eq("org_id", s.org.org_id).eq("status", "confirmada").eq("paid", false).order("due_date", { ascending: true, nullsFirst: false }).limit(300),
-    sb.from("bank_movements_overview").select("*").eq("org_id", s.org.org_id).order("mov_date", { ascending: false }).limit(300),
+    sb.from("bank_movements_overview").select("*").eq("org_id", s.org.org_id).in("kind", ["gcba", "sircreb"]).order("mov_date", { ascending: false }).limit(300),
   ]);
   type Mov = { id: string; mov_date: string; detail: string; amount: string; kind: string; status: string; status_note: string | null; payments_count: number; invoices: string | null };
   const bank = (bankRows ?? []) as Mov[];

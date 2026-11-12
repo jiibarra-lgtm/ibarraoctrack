@@ -43,3 +43,16 @@ export async function checkPadronNow(): Promise<R> {
     return { ok: true };
   } catch (e) { return { ok: false, error: (e as Error).message }; }
 }
+
+/** Alícuota de SIRCREB que figura en tu padrón (para detectar si el banco retiene de más). Vacío = sin cargar. */
+export async function saveSircrebRate(raw: string): Promise<R> {
+  const s = await requireOrg();
+  if (!canBill(s.org.role)) return { ok: false, error: "Sólo administración y finanzas" };
+  const t = raw.trim().replace(",", ".");
+  const v = t === "" ? "" : Number(t);
+  if (v !== "" && !(v >= 0 && v <= 10)) return { ok: false, error: "Alícuota inválida (0 a 10%)" };
+  const { error } = await s.supabase.rpc("tax_settings_extra", { p_org: s.org.org_id, p: { sircreb_rate: v === "" ? "" : String(v) } });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/impuestos");
+  return { ok: true };
+}

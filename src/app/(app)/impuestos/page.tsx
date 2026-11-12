@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { AlertTriangle, ArrowDownLeft, ArrowUpRight, FileArchive, Percent, Receipt, Scale, ShoppingCart, TrendingUp } from "lucide-react";
 import { requireOrg } from "@/lib/session";
+import { TaxAlerts } from "./alerts";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/stat";
 import { formatDate, formatMoney } from "@/lib/format";
@@ -146,6 +147,8 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
           <Link key={k} href={`/impuestos?${new URLSearchParams({ m, v: k })}`} className={cn("rounded-full px-3 py-1.5 text-xs font-semibold", view === k ? "bg-primary text-primary-fg" : "bg-field text-fg-muted hover:text-fg")}>{l}</Link>
         ))}
       </div>
+      <TaxAlerts sb={s.supabase} org={org} monthly={monthly} wh={wh} iibbRate={Number(settings.iibb_rate)} iibbDay={Number(settings.iibb_day)}
+        sircrebRate={(tsData as { sircreb_rate?: string | null } | null)?.sircreb_rate != null ? Number((tsData as { sircreb_rate: string }).sircreb_rate) : null} canEdit={billing} />
       {settings.emitted_sync_error && view === "iva" && <p className="mb-3 text-xs text-warn">No se pudieron traer los emitidos de ARCA: {settings.emitted_sync_error}</p>}
 
       {view === "libro" ? <LibroTab m={m} monthly={monthly} />

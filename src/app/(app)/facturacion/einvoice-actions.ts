@@ -77,15 +77,22 @@ async function emit(
     associated: p.associated ? { type: p.associated.type, pointOfSale: p.associated.pv, number: p.associated.number, cuit: auth.cuit, date: p.associated.date } : null,
   };
   let cae: string, caeDue: string | null, observations: string[] = [];
+  // Rechazos de ARCA quedan registrados para avisar en Facturación e Impuestos
+  const logAttempt = (msg: string) => s.supabase.from("einvoice_attempts").insert({
+    org_id: s.org.org_id, kind: p.kind, receiver: `${p.receiver.name} (${p.receiver.cuit})`.slice(0, 200), total: p.totals.total.toFixed(2), error: msg.slice(0, 1000), created_by: s.userId,
+  }).then(() => null, () => null);
   try {
     const r = await requestCae(auth, req);
     if (!r.ok) throw Object.assign(new Error(`ARCA rechazó el comprobante: ${r.error}`), { rejected: true });
     cae = r.cae; caeDue = fromYmd(r.caeDue); observations = r.observations;
   } catch (e) {
-    if ((e as { rejected?: boolean }).rejected) throw e;
+    if ((e as { rejected?: boolean }).rejected) { await logAttempt((e as Error).message); throw e; }
     // Se cortó la conexión: puede que ARCA lo haya autorizado igual. Se consulta antes de reintentar.
     const v = await getVoucher(auth, pv, type, number).catch(() => null);
-    if (!v?.cae || Math.abs(v.total - p.totals.total) > 0.01 || v.docNumber !== p.receiver.cuit) throw new Error(`No se pudo confirmar con ARCA: ${(e as Error).message}. Revisá en unos minutos antes de volver a intentar.`);
+    if (!v?.cae || Math.abs(v.total - p.totals.total) > 0.01 || v.docNumber !== p.receiver.cuit) {
+      await logAttempt(`Sin confirmar: ${(e as Error).message}`);
+      throw new Error(`No se pudo confirmar con ARCA: ${(e as Error).message}. Revisá en unos minutos antes de volver a intentar.`);
+    }
     cae = v.cae; caeDue = fromYmd(v.caeDue);
   }
   const { data: id, error } = await s.supabase.rpc("einvoice_record", {

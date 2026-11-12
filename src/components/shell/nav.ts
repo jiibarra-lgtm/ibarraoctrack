@@ -4,6 +4,7 @@ import {
   Inbox, Mail, Gavel, ShoppingBag, ClipboardList, Percent, WalletCards, type LucideIcon,
   Tags,
   Boxes,
+  Scale,
 } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon; phase?: number };
@@ -35,6 +36,7 @@ export const NAV: NavGroup[] = [
       { href: "/cobranzas", label: "Cobranzas", icon: Wallet },
       { href: "/impuestos", label: "Impuestos", icon: Percent },
       { href: "/gastos-fijos", label: "Gastos fijos", icon: WalletCards },
+      { href: "/banco", label: "Banco", icon: Scale },
       { href: "/finanzas", label: "Finanzas", icon: Landmark },
     ],
   },

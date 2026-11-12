@@ -10,7 +10,7 @@ import { IVA_CONDITIONS } from "@/lib/einvoice";
 import { PadronButton, PrintButton, TaxSettingsForm } from "./tax-ui";
 
 export type Monthly = { month: string; direction: "emitido" | "recibido"; vouchers: number; total: string; vat: string; net: string; other_taxes: string };
-export type Withholding = { month: string; ret_iibb: string; ret_ganancias: string; ret_iva: string; ret_suss: string; ret_otras: string; sircreb: string; percepciones: string };
+export type Withholding = { month: string; ret_iibb: string; ret_ganancias: string; ret_iva: string; ret_suss: string; ret_otras: string; sircreb: string; percepciones: string; imp_cheque?: string; imp_cheque_cred?: string; creditos?: string };
 export type TaxSettings = {
   iibb_rate: number; iibb_day: number; autonomos: boolean; autonomos_day: number; gni: number; special_deduction: number; other_deductions: number; ganancias_paid: number;
   padron: Persona | null; padron_previous: Persona | null; padron_checked_at: string | null; padron_error: string | null;
@@ -138,14 +138,16 @@ export function GananciasTab({ monthly, wh, settings, fixedYear, canEdit }: { mo
   const imponible = annual - gastosSinFactura - deducciones;
   const { tax, bracket } = gananciasTax(imponible);
   const retenciones = wh.filter((w) => w.month.startsWith(year)).reduce((a, w) => a + N(w.ret_ganancias), 0);
-  const saldo = tax - retenciones - N(settings.ganancias_paid);
+  // Ley 25.413: 33% del impuesto sobre créditos se computa a cuenta de Ganancias
+  const chequeComputable = wh.filter((w) => w.month.startsWith(year)).reduce((a, w) => a + N(w.imp_cheque_cred), 0) * 0.33;
+  const saldo = tax - retenciones - chequeComputable - N(settings.ganancias_paid);
   return (
     <>
       <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={TrendingUp} label={`Resultado ${year} hasta hoy`} value={formatMoney(ytd)} sub={`ventas netas ${formatMoney(ventas)} − compras ${formatMoney(compras)}`} />
         <Stat icon={TrendingUp} label="Proyección al cierre del año" value={formatMoney(annual)} sub={`a ritmo de ${elapsed} meses`} />
         <Stat icon={Landmark} label="Impuesto estimado del año" value={formatMoney(tax)} tone="warn" sub={imponible > 0 ? `tramo ${bracket.rate}% · imponible ${formatMoney(imponible)}` : "por debajo de las deducciones"} />
-        <Stat icon={Banknote} label={saldo >= 0 ? "Saldo a pagar estimado" : "Saldo a favor estimado"} value={formatMoney(Math.abs(saldo))} tone={saldo > 0 ? "warn" : "accent"} sub={`menos retenciones ${formatMoney(retenciones)} y anticipos ${formatMoney(settings.ganancias_paid)}`} />
+        <Stat icon={Banknote} label={saldo >= 0 ? "Saldo a pagar estimado" : "Saldo a favor estimado"} value={formatMoney(Math.abs(saldo))} tone={saldo > 0 ? "warn" : "accent"} sub={`menos retenciones ${formatMoney(retenciones)}, imp. al cheque ${formatMoney(chequeComputable)} y anticipos ${formatMoney(settings.ganancias_paid)}`} />
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <Card>

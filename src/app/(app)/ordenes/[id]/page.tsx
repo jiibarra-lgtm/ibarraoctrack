@@ -47,7 +47,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   if (!po.data) notFound();
   const o = po.data;
 
-  const [profit, itemProfit, allocations, costAllocs, categories, deliveryItems, deliveries, billing, invoices, collections] = await Promise.all([
+  const [profit, itemProfit, allocations, costAllocs, categories, deliveryItems, deliveries, billing, invoices, collections, substitutions] = await Promise.all([
     loadProfitability(sb, s.org.org_id, [id]).then((r) => r[0] ?? null),
     sb.from("po_item_profitability").select("*").eq("purchase_order_id", id).order("line_number").order("option_number").then((r) => r.data ?? []),
     sb.from("purchase_allocations").select("id, quantity, unit_cost, amount, purchase_order_item_id, purchase_items(description, purchases(id, invoice_date, number, point_of_sale, status, suppliers(name)))").eq("purchase_order_id", id).then((r) => r.data ?? []),
@@ -58,6 +58,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     sb.from("po_billing").select("*").eq("purchase_order_id", id).maybeSingle().then((r) => (r.data ?? null) as PoBilling | null),
     sb.from("invoice_balances").select("*").eq("purchase_order_id", id).order("issue_date", { ascending: false }).then((r) => (r.data ?? []) as InvoiceBalance[]),
     sb.from("collections").select("*").eq("purchase_order_id", id).order("payment_date", { ascending: false }).then((r) => (r.data ?? []) as CollectionRow[]),
+    sb.from("po_item_substitutions").select("id, purchase_order_item_id, description, quantity, unit_cost, notes").eq("purchase_order_id", id).order("line").then((r) => r.data ?? []),
   ]);
   const { data: mlRows } = await sb.from("ml_orders_overview").select("*").eq("purchase_order_id", id).order("ordered_at", { ascending: false });
   const orderOption = {
@@ -115,6 +116,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         canDeliver={writable || s.org.role === "logistica"}
         profit={profit}
         itemProfit={itemProfit as never}
+        substitutions={substitutions as never}
         allocations={allocations as never}
         costAllocs={costAllocs as never}
         categories={categories}

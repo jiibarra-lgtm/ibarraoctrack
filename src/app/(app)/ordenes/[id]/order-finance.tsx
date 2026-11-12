@@ -12,11 +12,12 @@ import { CostDialog, type OrderOption } from "@/app/(app)/costos/cost-dialog";
 import type { ProfitRow } from "@/lib/profitability";
 import type { PoBilling } from "@/lib/billing";
 import { cn } from "@/lib/utils";
+import { SubstitutionDialog, type Subst } from "./substitution";
 
 export type ItemProfit = {
   purchase_order_item_id: string; line_number: number; option_number: number; description_original: string; quantity: string;
   unit_price: string; sales_gross: string; estimated_unit_cost: string | null; purchased_qty: string; purchased_cost: string;
-  estimated_cost: string | null; fully_purchased: boolean; delivered_qty?: string;
+  estimated_cost: string | null; fully_purchased: boolean; delivered_qty?: string; substituted?: boolean; substitution_cost?: string | null;
 };
 export type AllocationRow = {
   id: string; quantity: string; unit_cost: string; amount: string; purchase_order_item_id: string;
@@ -65,7 +66,7 @@ export function ProfitSummary({ p, cur, billing }: { p: ProfitRow | null; cur: s
   );
 }
 
-export function PurchasesTab({ items, allocations, cur, canWrite }: { items: ItemProfit[]; allocations: AllocationRow[]; cur: string; canWrite: boolean }) {
+export function PurchasesTab({ items, allocations, cur, canWrite, substitutions = [] }: { items: ItemProfit[]; allocations: AllocationRow[]; cur: string; canWrite: boolean; substitutions?: Subst[] }) {
   const byItem = new Map<string, AllocationRow[]>();
   allocations.forEach((a) => byItem.set(a.purchase_order_item_id, [...(byItem.get(a.purchase_order_item_id) ?? []), a]));
   return (
@@ -78,6 +79,8 @@ export function PurchasesTab({ items, allocations, cur, canWrite }: { items: Ite
             const allocs = byItem.get(it.purchase_order_item_id) ?? [];
             const realUnit = Number(it.purchased_qty) > 0 ? Number(it.purchased_cost) / Number(it.purchased_qty) : null;
             const unitSale = Number(it.unit_price);
+            const subs = substitutions.filter((x) => x.purchase_order_item_id === it.purchase_order_item_id);
+            const saleNet = Number(it.sales_gross) / 1.21;
             return (
               <li key={it.purchase_order_item_id} className="px-4 py-3 sm:px-5">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -86,13 +89,22 @@ export function PurchasesTab({ items, allocations, cur, canWrite }: { items: Ite
                     <p className="text-xs text-fg-subtle tabular">Venta {formatQty(it.quantity)} × {formatMoney(it.unit_price, cur)} · comprado {formatQty(it.purchased_qty)}{realUnit !== null ? ` a ${formatMoney(realUnit.toFixed(2), cur)} prom.` : ""}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <EstimatedCostInput id={it.purchase_order_item_id} value={it.estimated_unit_cost} disabled={!canWrite} />
+                    <SubstitutionDialog itemId={it.purchase_order_item_id} label={`R${it.line_number}.${it.option_number} ${it.description_original.slice(0, 40)}`} saleNet={saleNet} cur={cur} current={subs} disabled={!canWrite} />
+                    {!it.substituted && <EstimatedCostInput id={it.purchase_order_item_id} value={it.estimated_unit_cost} disabled={!canWrite} />}
                     <div className="w-32 text-right">
                       <p className="text-xs text-fg-subtle">Costo renglón</p>
                       <p className="text-sm font-medium tabular">{it.estimated_cost !== null ? formatMoney(it.estimated_cost, cur) : "—"}</p>
                     </div>
                   </div>
                 </div>
+                {it.substituted && subs.length > 0 && (
+                  <div className="mt-2 rounded-lg border border-warn/30 bg-warn/5 px-3 py-2 text-xs">
+                    <p><b>Entregado por otra cosa:</b> {subs.map((x) => `${formatQty(x.quantity)} × ${x.description}`).join(" + ")}{subs[0]?.notes ? ` · ${subs[0].notes}` : ""}</p>
+                    <p className="mt-0.5 tabular text-fg-muted">Paga la OC {formatMoney(saleNet.toFixed(2), cur)} sin IVA · tu costo real {formatMoney(it.substitution_cost, cur)} ·{" "}
+                      <span className={cn("font-medium", saleNet - Number(it.substitution_cost) < 0 ? "text-danger" : "text-accent")}>ganancia {formatMoney((saleNet - Number(it.substitution_cost)).toFixed(2), cur)}{saleNet > 0 ? ` (${(((saleNet - Number(it.substitution_cost)) / saleNet) * 100).toFixed(1)}%)` : ""}</span>
+                      {allocs.length > 0 && " · reemplaza al costo de las compras vinculadas"}</p>
+                  </div>
+                )}
                 {allocs.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {allocs.map((a) => (

@@ -10,6 +10,7 @@ import { monthLabel } from "@/lib/months";
 import type { MlRow } from "@/lib/mercadolibre";
 import { cn } from "@/lib/utils";
 import { MlRowItem } from "./ml-row";
+import { MlPublications } from "./publications";
 import { MlSyncButton } from "./sync-button";
 
 export const metadata: Metadata = { title: "Mercado Libre" };
@@ -67,6 +68,20 @@ export default async function MercadoLibrePage({ searchParams }: { searchParams:
   const writable = canWrite(s.org.role);
   const href = (p: Record<string, string>) => `/mercadolibre?${new URLSearchParams({ t, ...(q ? { q } : {}), ...p })}`;
 
+  if (sp.t === "publicaciones") {
+    return (
+      <>
+        <PageHeader title="Mercado Libre" description="Stock de tus publicaciones con reposición automática." actions={<MlSyncButton connected={connected} />} />
+        <div className="flex rounded-full bg-field p-0.5 w-fit">
+          <Link href="/mercadolibre?t=compra" className="rounded-full px-3 py-1 text-xs font-semibold text-fg-muted hover:text-fg">Compras · {compras.length}</Link>
+          <Link href="/mercadolibre?t=venta" className="rounded-full px-3 py-1 text-xs font-semibold text-fg-muted hover:text-fg">Ventas · {ventas.length}</Link>
+          <span className="rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-fg">Publicaciones y stock</span>
+        </div>
+        <MlPublications sb={s.supabase} org={s.org.org_id} canEdit={writable} connected={connected} />
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeader title="Mercado Libre" description="Lo que comprás, lo que te llega y lo que vendés en Mercado Libre, leído de tus mails y vinculado a las órdenes de compra."
@@ -88,6 +103,7 @@ export default async function MercadoLibrePage({ searchParams }: { searchParams:
                   {k === "compra" ? `Compras · ${compras.length}` : `Ventas · ${ventas.length}`}
                 </Link>
               ))}
+              <Link href="/mercadolibre?t=publicaciones" className="rounded-full px-3 py-1 text-xs font-semibold text-fg-muted hover:text-fg">Publicaciones y stock</Link>
             </div>
             {FILTERS[t].map(([k, l]) => (
               <Link key={k} href={href({ f: k })} className={cn("rounded-full px-3 py-1 text-xs font-medium", f === k ? "bg-surface-2 text-fg ring-1 ring-card-border" : "text-fg-muted hover:text-fg")}>{l}</Link>

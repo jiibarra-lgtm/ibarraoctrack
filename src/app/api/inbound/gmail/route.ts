@@ -4,10 +4,10 @@ import { z } from "zod";
 import { classifyMail, parseBacMail } from "@/lib/inbound/bac-mail";
 import { isCiudadMovementsMail, parseCiudadMovements, type BankMovement } from "@/lib/inbound/bank-ciudad";
 import { isMercadoLibreMail, parseMercadoLibreMail, type MlEvent } from "@/lib/inbound/mercadolibre";
-import { syncMercadoLibre } from "@/lib/ml-api";
+import { runMlTasks } from "@/lib/ml-tasks";
 import { isBillMail, parseBillMail, type BillEvent } from "@/lib/inbound/bills";
 import { isPaymentMail, parsePaymentMail, type PaymentEvent } from "@/lib/inbound/payments";
-import { tokenRpc } from "@/lib/ml-rpc";
+import { tokenRpc, tokenStockRpc } from "@/lib/ml-rpc";
 
 /**
  * Recibe los mails que manda el script de Google de la cuenta del usuario.
@@ -111,6 +111,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: auth ? "Token inválido" : "No se pudo guardar" }, { status: auth ? 401 : 500 });
   }
   // Con mails nuevos de Mercado Libre, se traen los precios por la API (si la cuenta está conectada), después de responder
-  if (mlEvents.length) after(() => syncMercadoLibre(tokenRpc(body.token)).catch(() => null));
+  if (mlEvents.length) after(() => runMlTasks(tokenRpc(body.token), tokenStockRpc(body.token)).catch(() => null));
   return NextResponse.json({ ok: true, correos: ml.data, avisos: ev.data, banco: bk.data, mercadolibre: me.data, gastos: bl.data, pagos: py.data });
 }

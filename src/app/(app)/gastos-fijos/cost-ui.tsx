@@ -87,12 +87,12 @@ export function ActiveToggle({ id, active }: { id: string; active: boolean }) {
   );
 }
 
-export function AddArcaButton({ cuit, name, avg }: { cuit: string; name: string; avg: string }) {
+export function AddArcaButton({ cuit, name, avg, category = "otros" }: { cuit: string; name: string; avg: string; category?: string }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   return (
     <Button size="sm" variant="secondary" loading={busy} onClick={async () => {
-      setBusy(true); const r = await addFromArca(cuit, name, avg); setBusy(false);
+      setBusy(true); const r = await addFromArca(cuit, name, avg, category); setBusy(false);
       if (!r.ok) toast.error(r.error); else { toast.success(`${name} agregado a gastos fijos`); router.refresh(); }
     }}>{!busy && <Plus />} Es gasto fijo</Button>
   );

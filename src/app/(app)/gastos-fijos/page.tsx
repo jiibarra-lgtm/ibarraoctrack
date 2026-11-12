@@ -31,7 +31,7 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
   const [{ data: costs }, { data: bills }, { data: sugg }, { data: monthly }, { data: pays }] = await Promise.all([
     s.supabase.from("fixed_costs").select("*").eq("org_id", s.org.org_id).order("category").order("name"),
     s.supabase.from("fixed_cost_bills").select("*").eq("org_id", s.org.org_id).eq("period", m),
-    s.supabase.from("arca_recurring_suppliers").select("*").eq("org_id", s.org.org_id).order("months", { ascending: false }).order("avg_month", { ascending: false }).limit(12),
+    s.supabase.from("arca_recurring_suppliers").select("*").eq("org_id", s.org.org_id).order("is_service", { ascending: false }).order("months", { ascending: false }).order("avg_month", { ascending: false }).limit(40),
     s.supabase.from("arca_monthly").select("direction, net").eq("org_id", s.org.org_id).eq("month", m),
     s.supabase.from("payments_out_overview").select("id, kind, paid_at, amount, payee, payee_key, concept, card, final_category, ignored, cost_id, cost_name").eq("org_id", s.org.org_id).gte("paid_at", `${m}-01`).lt("paid_at", next).order("paid_at", { ascending: false }).limit(1000),
   ]);
@@ -198,19 +198,33 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
               </ul>
             </Card>
           )}
-          {canEdit && !!sugg?.length && (
-            <Card>
-              <CardHeader title={<span className="flex items-center gap-2"><Sparkles className="size-4" /> Te facturan todos los meses</span>} description="Según ARCA. Marcá los que son gasto fijo (no mercadería)." />
-              <ul className="divide-y divide-border">
-                {(sugg as { cuit: string; name: string; months: number; avg_month: string }[]).map((x) => (
-                  <li key={x.cuit} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
-                    <span className="min-w-0"><span className="block truncate">{x.name}</span><span className="text-xs text-fg-subtle">{x.months} de los últimos 6 meses · {formatMoney(x.avg_month)}/mes</span></span>
-                    <AddArcaButton cuit={x.cuit} name={x.name} avg={String(x.avg_month)} />
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
+          {canEdit && !!sugg?.length && (() => {
+            type Sg = { cuit: string; name: string; months: number; avg_month: string; category: string | null; is_service: boolean };
+            const all = sugg as Sg[];
+            const services = all.filter((x) => x.is_service);
+            const others = all.filter((x) => !x.is_service).slice(0, 8);
+            const item = (x: Sg) => (
+              <li key={x.cuit} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
+                <span className="min-w-0">
+                  <span className="block truncate">{x.name}</span>
+                  <span className="text-xs text-fg-subtle">{x.category ? `${CATEGORY_LABEL[x.category] ?? x.category} · ` : ""}{x.months} de los últimos 6 meses · {formatMoney(x.avg_month)}/mes</span>
+                </span>
+                <AddArcaButton cuit={x.cuit} name={x.name} avg={String(x.avg_month)} category={x.category ?? "otros"} />
+              </li>
+            );
+            return (
+              <Card>
+                <CardHeader title={<span className="flex items-center gap-2"><Sparkles className="size-4" /> Te facturan todos los meses</span>} description="Según ARCA. Los servicios se reconocen solos; marcá los que son gasto fijo." />
+                {services.length > 0 && <ul className="divide-y divide-border">{services.map(item)}</ul>}
+                {others.length > 0 && (
+                  <details className="border-t border-border">
+                    <summary className="cursor-pointer px-5 py-2.5 text-xs text-fg-subtle hover:text-fg">{others.length} proveedores frecuentes (probablemente mercadería, no gasto fijo)</summary>
+                    <ul className="divide-y divide-border">{others.map(item)}</ul>
+                  </details>
+                )}
+              </Card>
+            );
+          })()}
         </div>
       </div>}
     </>

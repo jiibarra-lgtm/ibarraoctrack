@@ -48,11 +48,11 @@ export async function setCostActive(id: string, active: boolean): Promise<R> {
 }
 
 /** Convierte un proveedor que factura todos los meses (según ARCA) en gasto fijo. */
-export async function addFromArca(cuit: string, name: string, avg: string): Promise<R> {
+export async function addFromArca(cuit: string, name: string, avg: string, category = "otros"): Promise<R> {
   const s = await requireOrg();
   if (!can(s.org.role) || !/^\d{11}$/.test(cuit)) return { ok: false, error: "No permitido" };
   const { error } = await s.supabase.from("fixed_costs").insert({
-    org_id: s.org.org_id, name: name.slice(0, 120) || cuit, category: "otros", amount: Math.max(0, Number(avg) || 0).toFixed(2),
+    org_id: s.org.org_id, name: name.slice(0, 120) || cuit, category: /^[a-z]{3,20}$/.test(category) ? category : "otros", amount: Math.max(0, Number(avg) || 0).toFixed(2),
     source: "arca", supplier_cuit: cuit, created_by: s.userId,
   });
   if (error) return { ok: false, error: friendlyDbError(error) };

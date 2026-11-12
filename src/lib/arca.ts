@@ -106,6 +106,57 @@ export async function lastVoucher(auth: ArcaAuth, pointOfSale: number, voucherTy
   return Number(tag(r.xml, "CbteNro") ?? 0);
 }
 
+const n2 = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
+
+export type CaeRequest = {
+  pointOfSale: number; type: number; number: number; date: string; // AAAA-MM-DD
+  docType: number; docNumber: string; ivaCondition: number;
+  net: number; vatTotal: number; total: number; vat: { id: number; base: number; amount: number }[];
+  associated?: { type: number; pointOfSale: number; number: number; cuit: string; date: string } | null;
+};
+
+/** Pide el CAE (FECAESolicitar). Concepto 1 = productos. Devuelve CAE y vencimiento, o el motivo del rechazo. */
+export async function requestCae(auth: ArcaAuth, r: CaeRequest) {
+  const ymd = r.date.slice(0, 10).replace(/-/g, "");
+  const asoc = r.associated
+    ? `<ar:CbtesAsoc><ar:CbteAsoc><ar:Tipo>${r.associated.type}</ar:Tipo><ar:PtoVta>${r.associated.pointOfSale}</ar:PtoVta><ar:Nro>${r.associated.number}</ar:Nro><ar:Cuit>${r.associated.cuit}</ar:Cuit><ar:CbteFch>${r.associated.date.replace(/-/g, "")}</ar:CbteFch></ar:CbteAsoc></ar:CbtesAsoc>`
+    : "";
+  const iva = r.vat.filter((v) => v.base > 0 || v.amount > 0)
+    .map((v) => `<ar:AlicIva><ar:Id>${v.id}</ar:Id><ar:BaseImp>${n2(v.base)}</ar:BaseImp><ar:Importe>${n2(v.amount)}</ar:Importe></ar:AlicIva>`).join("");
+  const inner = `<ar:FeCAEReq><ar:FeCabReq><ar:CantReg>1</ar:CantReg><ar:PtoVta>${r.pointOfSale}</ar:PtoVta><ar:CbteTipo>${r.type}</ar:CbteTipo></ar:FeCabReq>`
+    + `<ar:FeDetReq><ar:FECAEDetRequest><ar:Concepto>1</ar:Concepto><ar:DocTipo>${r.docType}</ar:DocTipo><ar:DocNro>${r.docNumber.replace(/\D/g, "") || "0"}</ar:DocNro>`
+    + `<ar:CbteDesde>${r.number}</ar:CbteDesde><ar:CbteHasta>${r.number}</ar:CbteHasta><ar:CbteFch>${ymd}</ar:CbteFch>`
+    + `<ar:ImpTotal>${n2(r.total)}</ar:ImpTotal><ar:ImpTotConc>0.00</ar:ImpTotConc><ar:ImpNeto>${n2(r.net)}</ar:ImpNeto><ar:ImpOpEx>0.00</ar:ImpOpEx>`
+    + `<ar:ImpTrib>0.00</ar:ImpTrib><ar:ImpIVA>${n2(r.vatTotal)}</ar:ImpIVA><ar:MonId>PES</ar:MonId><ar:MonCotiz>1</ar:MonCotiz>`
+    + `<ar:CondicionIVAReceptorId>${r.ivaCondition}</ar:CondicionIVAReceptorId>${asoc}${iva ? `<ar:Iva>${iva}</ar:Iva>` : ""}`
+    + `</ar:FECAEDetRequest></ar:FeDetReq></ar:FeCAEReq>`;
+  const res = await wsfe("FECAESolicitar", auth, inner);
+  const det = tag(res.xml, "FECAEDetResponse") ?? "";
+  const obs = [...det.matchAll(/<Obs>\s*<Code>(\d+)<\/Code>\s*<Msg>([\s\S]*?)<\/Msg>\s*<\/Obs>/g)].map((m) => `${m[1]}: ${unescapeXml(m[2])}`);
+  const result = tag(det, "Resultado") ?? tag(res.xml, "Resultado");
+  const cae = tag(det, "CAE");
+  if (result !== "A" || !cae || !/^\d{14}$/.test(cae)) {
+    const why = [...res.errors, ...obs].join(" · ") || "ARCA rechazó el comprobante sin dar motivo";
+    return { ok: false as const, error: why };
+  }
+  return { ok: true as const, cae, caeDue: tag(det, "CAEFchVto"), observations: obs };
+}
+
+/** Consulta un comprobante emitido (FECompConsultar). null si no existe. */
+export async function getVoucher(auth: ArcaAuth, pointOfSale: number, type: number, number: number) {
+  const r = await wsfe("FECompConsultar", auth, `<ar:FeCompConsReq><ar:CbteTipo>${type}</ar:CbteTipo><ar:CbteNro>${number}</ar:CbteNro><ar:PtoVta>${pointOfSale}</ar:PtoVta></ar:FeCompConsReq>`);
+  const g = tag(r.xml, "ResultGet");
+  if (!g || r.errors.some((e) => e.startsWith("602"))) return null;
+  const num = (k: string) => Number(tag(g, k) ?? 0);
+  const ivas = [...g.matchAll(/<AlicIva>\s*<Id>(\d+)<\/Id>\s*<BaseImp>([\d.]+)<\/BaseImp>\s*<Importe>([\d.]+)<\/Importe>\s*<\/AlicIva>/g)].map((m) => ({ id: Number(m[1]), base: Number(m[2]), amount: Number(m[3]) }));
+  return {
+    type, pointOfSale, number, date: tag(g, "CbteFch"), docType: num("DocTipo"), docNumber: tag(g, "DocNro") ?? "",
+    total: num("ImpTotal"), net: num("ImpNeto"), untaxed: num("ImpTotConc"), exempt: num("ImpOpEx"), otherTaxes: num("ImpTrib"), vat: num("ImpIVA"),
+    currency: tag(g, "MonId") ?? "PES", rate: Number(tag(g, "MonCotiz") ?? 1), cae: tag(g, "CodAutorizacion"), caeDue: tag(g, "FchVto"),
+    result: tag(g, "Resultado"), ivas,
+  };
+}
+
 export type ArcaRpc = (action: string, data?: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
 /** Obtiene (o reutiliza) el acceso de WSAA. ARCA no da uno nuevo mientras el anterior siga vigente: se guarda. */

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarCheck, FileClock, Plus, Receipt, Wallet } from "lucide-react";
+import { CalendarCheck, FileClock, FileText, Plus, Printer, Receipt, Wallet } from "lucide-react";
 import { requireOrg } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
@@ -11,6 +11,9 @@ import { canBill, COLLECTION_STATUS, invoiceLabel } from "@/lib/billing";
 import { loadBillableOrders, loadInvoices } from "@/lib/billing-load";
 import { InvoiceDialog } from "@/components/billing/invoice-dialog";
 import { InvoiceActions } from "@/components/billing/invoice-actions";
+import { EInvoiceDialog } from "@/components/billing/einvoice-dialog";
+import { CreditNoteButton } from "@/components/billing/credit-note-button";
+import { fmtVoucher } from "@/lib/einvoice";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Facturación" };
@@ -20,7 +23,13 @@ const FILTERS = [["todas", "Todas"], ["pendientes", "Por cobrar"], ["vencidas", 
 export default async function BillingPage({ searchParams }: { searchParams: Promise<{ f?: string }> }) {
   const { f = "todas" } = await searchParams;
   const s = await requireOrg();
-  const [invoices, billable] = await Promise.all([loadInvoices(s.supabase, s.org.org_id), loadBillableOrders(s.supabase, s.org.org_id)]);
+  const [invoices, billable, { data: emissionsData }] = await Promise.all([
+    loadInvoices(s.supabase, s.org.org_id), loadBillableOrders(s.supabase, s.org.org_id),
+    s.supabase.from("arca_emissions_overview").select("id, kind, voucher_type, point_of_sale, number, issue_date, receiver_name, total, po_label, purchase_order_id, credit_note_id, cae")
+      .eq("org_id", s.org.org_id).order("created_at", { ascending: false }).limit(60),
+  ]);
+  type Em = { id: string; kind: string; voucher_type: number; point_of_sale: number; number: number; issue_date: string; receiver_name: string; total: string; po_label: string | null; purchase_order_id: string | null; credit_note_id: string | null; cae: string };
+  const emissions = (emissionsData ?? []) as Em[];
   const bill = canBill(s.org.role);
   const month = todayISO().slice(0, 7);
   const year = todayISO().slice(0, 4);
@@ -38,7 +47,10 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader title="Facturación" description="Facturas emitidas a los organismos por cada orden."
-        actions={bill && <InvoiceDialog orders={options} orgId={s.org.org_id} trigger={<Button><Plus /> Registrar factura</Button>} />} />
+        actions={bill && <div className="flex flex-wrap gap-2">
+          <InvoiceDialog orders={options} orgId={s.org.org_id} trigger={<Button variant="secondary"><Plus /> Registrar factura hecha afuera</Button>} />
+          <EInvoiceDialog trigger={<Button><FileText /> Factura electrónica</Button>} />
+        </div>} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={Receipt} label="Facturado este mes" value={formatMoney(sum(ars(active).filter((i) => i.issue_date.startsWith(month)).map((i) => i.total_amount)))} />
@@ -94,7 +106,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-medium tabular">{formatMoney(b.to_invoice, b.currency)}</p>
-                    {bill && <InvoiceDialog orders={options} orgId={s.org.org_id} defaultOrderId={b.purchase_order_id} trigger={<button className="text-xs text-brand hover:underline">Facturar</button>} />}
+                    {bill && <EInvoiceDialog purchaseOrderId={b.purchase_order_id} trigger={<button className="text-xs text-brand hover:underline">Facturar con ARCA</button>} />}
                   </div>
                 </li>
               ))}
@@ -102,6 +114,29 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
           )}
         </Card>
       </div>
+
+      {emissions.length > 0 && (
+        <Card className="mt-5 overflow-hidden">
+          <CardHeader title="Comprobantes electrónicos emitidos" description="Facturas y notas de crédito con CAE emitidas desde la app" />
+          <ul className="divide-y divide-border">
+            {emissions.map((e) => (
+              <li key={e.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm sm:px-5">
+                <div className="min-w-0 flex-1">
+                  <p className={cn("font-medium tabular", e.credit_note_id && "line-through opacity-60")}>{fmtVoucher(e.voucher_type, e.point_of_sale, Number(e.number))}</p>
+                  <p className="truncate text-xs text-fg-subtle">
+                    {formatDate(e.issue_date)} · {e.receiver_name}
+                    {e.po_label && e.purchase_order_id && <> · <Link href={`/ordenes/${e.purchase_order_id}`} className="hover:text-fg">OC {e.po_label}</Link></>}
+                    {" "}· CAE {e.cae}{e.credit_note_id ? " · anulada" : ""}
+                  </p>
+                </div>
+                <p className={cn("font-medium tabular", e.kind === "nota_credito" && "text-danger")}>{e.kind === "nota_credito" ? "−" : ""}{formatMoney(e.total)}</p>
+                <a href={`/imprimir/factura/${e.id}`} target="_blank" rel="noreferrer" className="text-fg-subtle hover:text-fg" title="Imprimir / PDF"><Printer className="size-4" /></a>
+                {bill && e.kind === "factura" && !e.credit_note_id && <CreditNoteButton id={e.id} label={fmtVoucher(e.voucher_type, e.point_of_sale, Number(e.number))} total={formatMoney(e.total)} />}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </>
   );
 }

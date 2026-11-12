@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ClipboardList, Pencil } from "lucide-react";
+import { ClipboardList, FileText, Pencil } from "lucide-react";
+import { EInvoiceDialog } from "@/components/billing/einvoice-dialog";
 import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/primitives";
@@ -94,6 +95,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           <>
             {original && <DocumentButton documentId={original.id} label="Ver original" />}
             {(writable || s.org.role === "logistica") && <Button asChild variant="secondary"><Link href={`/remitos?oc=${encodeURIComponent(o.bac_number ?? o.display_number)}`}><ClipboardList /> Emitir remito</Link></Button>}
+            {canBill(s.org.role) && o.status !== "anulada" && <EInvoiceDialog purchaseOrderId={o.id} trigger={<Button variant="secondary"><FileText /> Facturar</Button>} />}
             {writable && <StatusDialog id={o.id} status={o.status as PoStatus} version={o.version} />}
             {writable && <Button asChild variant="secondary"><Link href={`/ordenes/${o.id}/editar`}><Pencil /> Editar</Link></Button>}
           </>

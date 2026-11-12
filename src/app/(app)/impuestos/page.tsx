@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, FileArchive, Percent, Receipt, Scale, ShoppingCart, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, FileArchive, Percent, Receipt, Scale, ShoppingCart, TrendingUp } from "lucide-react";
 import { requireOrg } from "@/lib/session";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/stat";
@@ -9,6 +9,16 @@ import { monthLabel } from "@/lib/months";
 import { cn } from "@/lib/utils";
 import { ComprobantesUploader } from "./uploader";
 import { ProfitCalc } from "./profit-calc";
+import { after } from "next/server";
+import { canBill } from "@/lib/billing";
+import { refreshPadron, syncEmitted } from "@/lib/tax-sync";
+import { SyncEmittedButton } from "./tax-ui";
+import { CierreTab, GananciasTab, LibroTab, RetencionesTab, VencimientosTab, type TaxSettings, type Withholding } from "./tax-tabs";
+
+const VIEWS = [["iva", "IVA del mes"], ["libro", "Libro IVA Digital"], ["retenciones", "Retenciones y saldos"], ["ganancias", "Ganancias"], ["vencimientos", "Vencimientos y padrón"], ["cierre", "Cierre de mes"]] as const;
+const DEFAULT_SETTINGS = { iibb_rate: 3, iibb_day: 15, autonomos: false, autonomos_day: 5, gni: 5151802.5, special_deduction: 5151802.5, other_deductions: 0, ganancias_paid: 0, padron: null, padron_previous: null, padron_checked_at: null, padron_error: null, emitted_synced_at: null, emitted_sync_error: null };
+const ageMin = (iso: string | null) => (iso ? (Date.now() - Date.parse(iso)) / 60000 : Infinity);
+const nowArIso = () => new Date(Date.now() - 3 * 3600e3).toISOString();
 
 export const metadata: Metadata = { title: "Impuestos" };
 
@@ -30,9 +40,28 @@ const ars = (v: V, k: "vat" | "total" | "net_taxed" | "other_taxes") => Number(v
 const sum = (xs: V[], k: Parameters<typeof ars>[1]) => xs.reduce((a, v) => a + ars(v, k), 0);
 const neto = (xs: V[]) => xs.reduce((a, v) => a + (Number(v.net_taxed) + Number(v.net_untaxed) + Number(v.exempt)) * Number(v.exchange_rate || 1) * Number(v.sign), 0);
 
-export default async function ImpuestosPage({ searchParams }: { searchParams: Promise<{ m?: string; t?: string; q?: string }> }) {
+export default async function ImpuestosPage({ searchParams }: { searchParams: Promise<{ m?: string; t?: string; q?: string; v?: string }> }) {
   const sp = await searchParams;
   const s = await requireOrg();
+  const org = s.org.org_id;
+  const view = (VIEWS.find(([k]) => k === sp.v)?.[0] ?? "iva") as (typeof VIEWS)[number][0];
+  const billing = canBill(s.org.role);
+  const [{ data: tsData }, { data: whData }, { data: issuer }, { data: arcaSt }] = await Promise.all([
+    s.supabase.from("tax_settings").select("*").eq("org_id", org).maybeSingle(),
+    s.supabase.from("tax_withholdings_monthly").select("*").eq("org_id", org).order("month", { ascending: false }).limit(36),
+    s.supabase.from("remito_settings").select("cuit").eq("org_id", org).maybeSingle(),
+    s.supabase.rpc("arca_conn", { p_action: "status", p_org: org }),
+  ]);
+  const settings = { ...DEFAULT_SETTINGS, ...(tsData ?? {}) } as TaxSettings & { emitted_synced_at: string | null; emitted_sync_error: string | null };
+  const wh = (whData ?? []) as Withholding[];
+  const st = (arcaSt ?? {}) as { has_cert?: boolean; cuit?: string };
+  const ownCuit = String(st.cuit ?? issuer?.cuit ?? "").replace(/\D/g, "");
+  // Automático: trae los emitidos de ARCA cada 30 minutos y revisa el padrón una vez por día (al abrir la pantalla)
+  if (billing && st.has_cert) {
+    const sb = s.supabase;
+    if (ageMin(settings.emitted_synced_at) > 30) after(() => syncEmitted(sb, org).catch(() => null));
+    if (ageMin(settings.padron_checked_at) > 24 * 60) after(() => refreshPadron(sb, org).catch(() => null));
+  }
   // Resumen por mes desde la base (no hay límite de filas) y sólo los comprobantes del mes elegido
   const { data: mon } = await s.supabase.from("arca_monthly").select("*").eq("org_id", s.org.org_id).order("month", { ascending: false }).limit(500);
   const monthly = (mon ?? []) as { month: string; direction: "emitido" | "recibido"; vouchers: number; total: string; vat: string; net: string; other_taxes: string }[];
@@ -85,10 +114,47 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
 
   const href = (p: Record<string, string>) => `/impuestos?${new URLSearchParams({ m, t, ...(q ? { q } : {}), ...p })}`;
 
+  // Gastos sin factura (sueldos, alquiler, honorarios cargados a mano o detectados del banco) y variables del mes
+  const [{ data: fcData }, { data: payData }, { data: siData }] = await Promise.all([
+    s.supabase.from("fixed_costs").select("amount, frequency, source, active").eq("org_id", org).eq("active", true),
+    s.supabase.from("payments_out_overview").select("amount, kind, cost_id, ignored, final_category").eq("org_id", org).gte("paid_at", `${m}-01`).lt("paid_at", next).limit(2000),
+    s.supabase.from("supplier_invoices").select("id, issue_date, supplier_name, letter, total, net, items_net, arca_voucher_id, point_of_sale, number, mail_id").eq("org_id", org).eq("hidden", false).gte("issue_date", `${m}-01`).lt("issue_date", next).limit(2000),
+  ]);
+  const fixedMonthly = ((fcData ?? []) as { amount: string; frequency: number; source: string }[]).filter((c) => !["arca", "mail"].includes(c.source)).reduce((a, c) => a + Number(c.amount) / Math.max(1, Number(c.frequency) || 1), 0);
+  const variablesMonth = ((payData ?? []) as { amount: string; kind: string; cost_id: string | null; ignored: boolean; final_category: string }[])
+    .filter((p) => !p.cost_id && !p.ignored && p.kind !== "resumen_tarjeta" && !["proveedores", "compras"].includes(p.final_category)).reduce((a, p) => a + Number(p.amount), 0);
+  // Recordatorio: los recibidos del mes anterior todavía no se subieron
+  const nowIso = nowArIso();
+  const curMonth = nowIso.slice(0, 7);
+  const prevMonth = new Date(Date.UTC(Number(curMonth.slice(0, 4)), Number(curMonth.slice(5, 7)) - 2, 1)).toISOString().slice(0, 7);
+  const reminder = Number(nowIso.slice(8, 10)) <= 20 && monthly.length > 0 && !monthly.some((x) => x.month === prevMonth && x.direction === "recibido") ? prevMonth : null;
+  // Control: comprobantes de ARCA sin PDF y PDFs del mail que ARCA todavía no tiene
+  type SI = { id: string; issue_date: string | null; supplier_name: string; letter: string | null; total: string | null; net: string | null; items_net: string | null; arca_voucher_id: string | null; point_of_sale: number | null; number: number | null; mail_id: string | null };
+  const sis = (siData ?? []) as SI[];
+  const withPdf = new Set(sis.map((x) => x.arca_voucher_id).filter(Boolean));
+  const sinPdf = re.filter((v) => !withPdf.has(v.id) && Number(v.total) > 0);
+  const noArca = sis.filter((x) => !x.arca_voucher_id);
+  const extraCredit = noArca.filter((x) => x.letter === "A").reduce((a, x) => a + Math.max(0, Number(x.total ?? 0) - Number(x.net ?? x.items_net ?? x.total ?? 0)), 0);
+
   return (
     <>
-      <PageHeader title="Impuestos" description="IVA del mes armado con tus comprobantes de ARCA (Mis Comprobantes Emitidos y Recibidos). Las notas de crédito restan." />
+      <PageHeader title="Impuestos" description="IVA, Libro IVA Digital, retenciones, Ganancias y vencimientos, armados con tus comprobantes de ARCA. Las notas de crédito restan."
+        actions={billing && st.has_cert ? <SyncEmittedButton /> : undefined} />
 
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {VIEWS.map(([k, l]) => (
+          <Link key={k} href={`/impuestos?${new URLSearchParams({ m, v: k })}`} className={cn("rounded-full px-3 py-1.5 text-xs font-semibold", view === k ? "bg-primary text-primary-fg" : "bg-field text-fg-muted hover:text-fg")}>{l}</Link>
+        ))}
+      </div>
+      {settings.emitted_sync_error && view === "iva" && <p className="mb-3 text-xs text-warn">No se pudieron traer los emitidos de ARCA: {settings.emitted_sync_error}</p>}
+
+      {view === "libro" ? <LibroTab m={m} monthly={monthly} />
+        : view === "retenciones" ? <RetencionesTab monthly={monthly} wh={wh} settings={settings} />
+        : view === "ganancias" ? <GananciasTab monthly={monthly} wh={wh} settings={settings} fixedYear={fixedMonthly * 12} canEdit={billing} />
+        : view === "vencimientos" ? <VencimientosTab cuit={ownCuit} settings={settings} canEdit={billing} />
+        : view === "cierre" ? <CierreTab m={m} monthly={monthly} wh={wh} fixedMonth={fixedMonthly} variablesMonth={variablesMonth} />
+        : <>
+      {reminder && <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-warn/40 bg-warn/10 px-4 py-3 text-sm"><AlertTriangle className="size-4 text-warn" /> Todavía no cargaste los comprobantes <b>recibidos</b> de {monthLabel(reminder)}: bajá Mis Comprobantes → Recibidos de ese mes y subilo acá abajo.</div>}
       <ComprobantesUploader disabled={!writable} />
 
       {!all.length ? (
@@ -154,6 +220,17 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
             </Card>
 
             <div className="flex flex-col gap-5 self-start">
+              <Card>
+                <CardHeader title="Control del mes" description="ARCA contra las facturas en PDF que llegaron al mail" />
+                <div className="space-y-2 px-5 pb-4 text-sm">
+                  <p className="flex justify-between"><span className="text-fg-muted">Recibidos en ARCA sin PDF</span><b className={sinPdf.length ? "text-warn" : ""}>{sinPdf.length}</b></p>
+                  {sinPdf.slice(0, 6).map((v) => <p key={v.id} className="truncate text-xs text-fg-subtle">· {v.name || v.doc_number} · {label(v)} · {formatMoney(v.total)}</p>)}
+                  {sinPdf.length > 6 && <p className="text-xs text-fg-subtle">y {sinPdf.length - 6} más (pedíselos al proveedor o subilos en Precios de proveedores)</p>}
+                  <p className="flex justify-between pt-1"><span className="text-fg-muted">PDFs del mail que ARCA no tiene</span><b className={noArca.length ? "text-warn" : ""}>{noArca.length}</b></p>
+                  {noArca.slice(0, 6).map((x) => <p key={x.id} className="truncate text-xs text-fg-subtle">· {x.supplier_name} · {x.point_of_sale ? `${String(x.point_of_sale).padStart(5, "0")}-${String(x.number ?? 0).padStart(8, "0")}` : "sin número"} · {formatMoney(x.total)}</p>)}
+                  {m === curMonth && extraCredit > 0 && <p className="border-t border-border pt-2 text-xs">IVA estimado del mes con las facturas del mail: <b className="tabular">{formatMoney(saldo - extraCredit)}</b> (crédito extra {formatMoney(extraCredit)} que ARCA todavía no muestra)</p>}
+                </div>
+              </Card>
               <ProfitCalc monthNet={neto(em)} yearNet={yearNet} monthLabel={monthLabel(m)} yearLabel={`ene–${monthLabel(m).split(" ")[0]} ${m.slice(0, 4)}`} />
               {rates.size > 0 && (
                 <Card>
@@ -186,6 +263,7 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
           </div>
         </>
       )}
+      </>}
     </>
   );
 }

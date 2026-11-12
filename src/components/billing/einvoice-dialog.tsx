@@ -2,14 +2,14 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/overlays";
 import { Field, Input, NativeSelect } from "@/components/ui/primitives";
 import { formatMoney } from "@/lib/format";
 import { parseArNumber } from "@/lib/money";
 import { computeTotals, guessIvaCondition, IVA_CONDITIONS } from "@/lib/einvoice";
-import { emitEInvoice, loadOrderForInvoice } from "@/app/(app)/facturacion/einvoice-actions";
+import { emitEInvoice, loadOrderForInvoice, lookupCustomerCuit } from "@/app/(app)/facturacion/einvoice-actions";
 
 type L = { description: string; quantity: string; unit: string; unit_price: string; vat_rate: number };
 const blank: L = { description: "", quantity: "1", unit: "", unit_price: "", vat_rate: 21 };
@@ -33,6 +33,15 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
   const [incl, setIncl] = React.useState(true);
   const [lines, setLines] = React.useState<L[]>([{ ...blank }]);
   const [notes, setNotes] = React.useState("");
+  const [looking, setLooking] = React.useState(false);
+  const lookup = async () => {
+    setLooking(true);
+    const r = await lookupCustomerCuit(cuit);
+    setLooking(false);
+    if (!r.ok) { toast.error(r.error, { duration: 10000 }); return; }
+    setName(r.name); if (r.address) setAddress(r.address); setIva(r.iva_condition);
+    toast.success("Datos traídos del padrón de ARCA");
+  };
 
   const load = async () => {
     setConfirm(false);
@@ -87,7 +96,12 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
           <div className="mt-4 space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Cliente (razón social)" htmlFor="ei-name"><Input id="ei-name" value={name} onChange={(e) => setName(e.target.value)} /></Field>
-              <Field label="CUIT" htmlFor="ei-cuit"><Input id="ei-cuit" value={cuit} onChange={(e) => setCuit(e.target.value)} invalid={!!cuit && !cuitOk} placeholder="30-00000000-0" className="tabular" /></Field>
+              <Field label="CUIT" htmlFor="ei-cuit">
+                <div className="flex gap-2">
+                  <Input id="ei-cuit" value={cuit} onChange={(e) => setCuit(e.target.value)} invalid={!!cuit && !cuitOk} placeholder="30-00000000-0" className="tabular" />
+                  <Button type="button" variant="secondary" size="sm" className="h-9 shrink-0" disabled={!cuitOk} loading={looking} onClick={lookup} title="Completar con el padrón de ARCA">{!looking && <Search />} ARCA</Button>
+                </div>
+              </Field>
               <Field label="Domicilio" htmlFor="ei-addr"><Input id="ei-addr" value={address} onChange={(e) => setAddress(e.target.value)} /></Field>
               <Field label={`Condición de IVA → Factura ${letter}`} htmlFor="ei-iva">
                 <NativeSelect id="ei-iva" value={iva} onChange={(e) => setIva(Number(e.target.value))}>

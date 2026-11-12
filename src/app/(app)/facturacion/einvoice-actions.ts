@@ -159,3 +159,15 @@ export async function emitCreditNote(emissionId: string): Promise<R<{ id: string
     return { ok: true, ...r };
   } catch (e) { return fail(e); }
 }
+
+/** Busca el cliente en el padrón de ARCA por CUIT (razón social, domicilio y condición de IVA). */
+export async function lookupCustomerCuit(cuit: string): Promise<R<{ name: string; address: string | null; iva_condition: number }>> {
+  try {
+    const clean = cuit.replace(/\D/g, "");
+    if (!/^\d{11}$/.test(clean)) return { ok: false, error: "El CUIT tiene que tener 11 números" };
+    const { s } = await ctx();
+    const { lookupPersona } = await import("@/lib/tax-sync");
+    const p = await lookupPersona(s.supabase, s.org.org_id, clean);
+    return { ok: true, name: p.name, address: p.address, iva_condition: p.ivaCondition };
+  } catch (e) { return fail(e); }
+}

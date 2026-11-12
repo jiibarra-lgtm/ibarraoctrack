@@ -169,3 +169,57 @@ export async function arcaAuth(rpc: ArcaRpc): Promise<ArcaAuth & { pointOfSale: 
   await rpc("save_ta", { token: ta.token, sign: ta.sign, expires_at: ta.expiresAt });
   return { token: ta.token, sign: ta.sign, cuit: String(c.cuit), pointOfSale: (c.point_of_sale as number) ?? null };
 }
+
+const PADRON = "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5";
+export const PADRON_SERVICE = "ws_sr_constancia_inscripcion";
+
+export type Persona = {
+  cuit: string; name: string; address: string | null; status: string | null;
+  ivaCondition: number; taxes: string[]; monotributo: string | null; activity: string | null;
+};
+
+/** Constancia de inscripción (padrón A5): razón social, domicilio fiscal y condición frente al IVA de un CUIT. */
+export async function getPersona(auth: ArcaAuth, cuit: string): Promise<Persona> {
+  const id = cleanCuit(cuit);
+  const env = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:a5="http://a5.soap.ws.server.puc.sr/"><soapenv:Header/><soapenv:Body><a5:getPersona_v2><token>${auth.token}</token><sign>${auth.sign}</sign><cuitRepresentada>${auth.cuit}</cuitRepresentada><idPersona>${id}</idPersona></a5:getPersona_v2></soapenv:Body></soapenv:Envelope>`;
+  const res = await post(PADRON, env, "");
+  const fault = tag(res, "faultstring");
+  if (fault) throw new Error(`ARCA (padrón): ${unescapeXml(fault)}`);
+  const err = tag(tag(res, "errorConstancia") ?? "", "error");
+  const gen = tag(res, "datosGenerales");
+  if (!gen) throw new Error(err ? `ARCA (padrón): ${unescapeXml(err)}` : "ARCA no encontró ese CUIT");
+  const name = unescapeXml(tag(gen, "razonSocial") ?? [tag(gen, "apellido"), tag(gen, "nombre")].filter(Boolean).join(" "));
+  const dom = tag(gen, "domicilioFiscal") ?? "";
+  const address = [tag(dom, "direccion"), tag(dom, "localidad"), tag(dom, "descripcionProvincia")].filter(Boolean).map((x) => unescapeXml(x!)).join(", ") || null;
+  const taxes = [...res.matchAll(/<impuesto>([\s\S]*?)<\/impuesto>/g)].map((m) => `${tag(m[1], "idImpuesto")}:${unescapeXml(tag(m[1], "descripcionImpuesto") ?? "")}`);
+  const ids = taxes.map((t) => Number(t.split(":")[0]));
+  const mono = tag(res, "datosMonotributo");
+  const ivaCondition = mono ? 6 : ids.includes(30) ? 1 : ids.includes(32) ? 4 : 5;
+  const act = tag(res, "actividad") ?? tag(res, "actividadMonotributista");
+  return {
+    cuit: id, name: name.trim(), address, status: tag(gen, "estadoClave"), ivaCondition, taxes,
+    monotributo: mono ? unescapeXml(tag(mono, "descripcionCategoria") ?? tag(mono, "categoriaMonotributo") ?? "Monotributo") : null,
+    activity: act ? unescapeXml(tag(act, "descripcionActividad") ?? "") || null : null,
+  };
+}
+
+export type TicketRpc = (service: string, data?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+
+/** Acceso de WSAA para un servicio que no es facturación (se guarda mientras dure). */
+export async function serviceAuth(rpc: ArcaRpc, tickets: TicketRpc, service: string): Promise<ArcaAuth> {
+  const c = await rpc("creds");
+  if (!c.certificate) throw new Error("Falta subir el certificado de ARCA");
+  const t = await tickets(service);
+  if (t.token && t.sign) return { token: String(t.token), sign: String(t.sign), cuit: String(c.cuit) };
+  try {
+    const ta = await wsaaLogin(String(c.certificate), String(c.private_key), service);
+    await tickets(service, { token: ta.token, sign: ta.sign, expires_at: ta.expiresAt });
+    return { token: ta.token, sign: ta.sign, cuit: String(c.cuit) };
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (/notAuthorized|no autorizado|Computador no autorizado|cms.cert.untrusted|alcance/i.test(msg)) {
+      throw new Error(`El certificado no tiene permiso para "${service}". En ARCA → Administrador de Relaciones de Clave Fiscal → Nueva relación → buscá "${service === PADRON_SERVICE ? "Consulta de Constancia de Inscripción" : service}" y asocialo al computador fiscal "octrack".`);
+    }
+    throw e;
+  }
+}

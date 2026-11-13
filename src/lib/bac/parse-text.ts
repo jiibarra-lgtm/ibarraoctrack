@@ -240,6 +240,15 @@ export function parseBacText(raw: string): ExtractedOrder {
   // ---- Renglones
   const detSec = S.detalle ?? "";
   const codes = [...detSec.matchAll(RE.catalog)];
+  const segNums: string[][] = [];
+  // Si la tabla se partió (OCR de una página impresa), precio unitario y total quedan después del último renglón
+  const tailNums = (() => {
+    const last = codes.at(-1);
+    if (!last) return [] as string[];
+    const after = detSec.slice((last.index ?? 0) + last[0].length);
+    const m = /unitario\s+Total([\s\S]*)$/i.exec(after);
+    return m ? [...m[1].matchAll(RE.decimal)].map((a) => parseArNumber(a[0])).filter((v): v is string => !!v) : [];
+  })();
   codes.forEach((m, idx) => {
     const start = m.index ?? 0;
     const end = idx + 1 < codes.length ? (codes[idx + 1].index ?? detSec.length) : detSec.length;
@@ -253,6 +262,7 @@ export function parseBacText(raw: string): ExtractedOrder {
     it.bac_code = m[0];
 
     const nums = [...seg.matchAll(RE.decimal)].map((a) => ({ raw: a[0], at: a.index ?? 0, value: parseArNumber(a[0]) }));
+    segNums.push(nums.map((n) => n.value).filter((v): v is string => !!v));
     const qty = nums[0];
     it.quantity = qty?.value ?? "";
     let unitRaw = "";
@@ -268,11 +278,13 @@ export function parseBacText(raw: string): ExtractedOrder {
     const matchTotal = expected ? amounts.slice(1).find((a) => a.value && !differs(a.value, expected)) : undefined;
     it.total_amount = matchTotal?.value ?? amounts[1]?.value ?? "";
 
-    let desc = seg;
+    let desc = seg.split(/unitario\s+Total/i)[0];
     for (const n of [qty, ...amounts.slice(0, 2), matchTotal].filter(Boolean)) desc = desc.replace(n!.raw, " ");
     if (unitRaw) desc = desc.replace(new RegExp(`\\b${unitRaw}\\b`), " ");
     desc = desc
-      .replace(/\bARS\b|\$|Ver Detalle|Ver m[aá]s|\bTo\b/gi, " ")
+      .replace(/\bARS\b|\$|[VY]er Detalle|[VY]er m[aá]s|\bTo\b/gi, " ")
+      .replace(/^\s*(?:Unidad|Unidades)\b/i, " ")
+      .replace(/\s(?:Unidad|Unidades)\s/, " ")
       .replace(/[|]/g, "I")
       .replace(/\s+/g, " ")
       .trim();
@@ -304,6 +316,53 @@ export function parseBacText(raw: string): ExtractedOrder {
       const days = /(\d+)/.exec(first.delivery_term);
       o.delivery_term_days = days ? days[1] : "";
     }
+  }
+
+  // ---- Conciliación de importes (OCR): cantidad × precio = total con los números disponibles
+  //      (tabla de detalle, tabla de entrega, importe neto si hay un solo renglón)
+  const entCodes = [...(S.entrega ?? "").matchAll(RE.catalog)];
+  const sumOk = () => o.items!.every((it) => isValidDecimal(String(it.quantity)) && isValidDecimal(String(it.unit_price)) && isValidDecimal(String(it.total_amount))
+    && !differs(String(it.total_amount), lineTotal(String(it.quantity), String(it.unit_price))));
+  if (o.items!.length && !sumOk()) {
+    o.items!.forEach((it, idx) => {
+      const okNow = isValidDecimal(String(it.quantity)) && isValidDecimal(String(it.unit_price)) && isValidDecimal(String(it.total_amount))
+        && !differs(String(it.total_amount), lineTotal(String(it.quantity), String(it.unit_price)));
+      if (okNow) return;
+      const ent = entCodes.find((m) => m[0] === it.bac_code) ?? entCodes[idx];
+      const entQty = ent ? [...(S.entrega ?? "").slice((ent.index ?? 0) + ent[0].length).matchAll(RE.decimal)].slice(0, 1).map((a) => parseArNumber(a[0])) : [];
+      const nums = [...(segNums[idx] ?? []), ...(idx === o.items!.length - 1 ? tailNums : [])];
+      const Q = [...new Set([...entQty, ...nums].filter((v): v is string => !!v && Number(v) > 0))];
+      const T = [...new Set([...nums, ...(o.items!.length === 1 && o.net_amount ? [o.net_amount] : [])].filter((v) => Number(v) > 0))];
+      let best: { q: string; p: string; t: string } | null = null;
+      for (const t of T.sort((a, b) => Number(b) - Number(a))) {
+        for (const q of Q) for (const p of nums) {
+          if (p === t || q === t || Number(p) <= 0) continue;
+          if (!differs(t, lineTotal(q, p))) { best = { q, p, t }; break; }
+        }
+        if (best) break;
+        // precio = total / cantidad cuando el precio no se leyó bien
+        for (const q of entQty.filter((v): v is string => !!v)) {
+          const p = (Number(t) / Number(q)).toFixed(2);
+          if (nums.includes(p) && !differs(t, lineTotal(q, p))) { best = { q, p, t }; break; }
+        }
+        if (best) break;
+      }
+      if (best) {
+        it.quantity = best.q; it.unit_price = best.p; it.total_amount = best.t;
+        for (const f of ["quantity", "unit_price", "total_amount"]) {
+          const k = review.indexOf(`items.${idx}.${f}`);
+          if (k >= 0) review.splice(k, 1);
+        }
+        warnings.push({ level: "info", path: `items.${idx}`, message: `Renglón ${it.line_number}: cantidad, precio y total se ajustaron para que cierren (${best.q} × ${best.p} = ${best.t}).` });
+      }
+    });
+  }
+  // Importe total mal leído (dígito de más) cuando los renglones cierran con el neto y no hay bonificación
+  const itemsSum = o.items!.reduce((a, it) => a + (Number(it.total_amount) || 0), 0);
+  if (o.net_amount && Math.abs(itemsSum - Number(o.net_amount)) <= 1 && (!Number(o.discount_amount) || o.discount_amount === "0.00")
+      && o.total_amount && Math.abs(Number(o.total_amount) - Number(o.net_amount)) > 1) {
+    warnings.push({ level: "info", path: "total_amount", message: `El importe total se leyó como ${o.total_amount}; se usó el neto ${o.net_amount}, que cierra con los renglones.` });
+    o.total_amount = o.net_amount;
   }
 
   // ---- Autorizadores

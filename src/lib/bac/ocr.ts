@@ -38,6 +38,26 @@ export function joinTiles(parts: string[]): string {
 }
 
 export async function ocrImage(buffer: Buffer): Promise<{ text: string; confidence: number }> {
+  return ocrImages([buffer]);
+}
+
+/** Varias imágenes (p. ej. una por página) con un solo motor de OCR; los textos se unen en orden. */
+export async function ocrImages(buffers: Buffer[]): Promise<{ text: string; confidence: number }> {
+  const worker = await createWorker("spa", 1, { langPath: langPath(), gzip: true, cachePath: "/tmp/tesseract" });
+  try {
+    await worker.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: "4" as never });
+    const texts: string[] = [], confs: number[] = [];
+    for (const b of buffers) {
+      const r = await ocrWith(worker, b);
+      texts.push(r.text); confs.push(r.confidence);
+    }
+    return { text: texts.join("\n"), confidence: confs.reduce((a, c) => a + c, 0) / Math.max(1, confs.length) };
+  } finally {
+    await worker.terminate();
+  }
+}
+
+async function ocrWith(worker: Awaited<ReturnType<typeof createWorker>>, buffer: Buffer): Promise<{ text: string; confidence: number }> {
   const meta = await sharp(buffer, { failOn: "none" }).rotate().metadata();
   if (!meta.width || !meta.height) throw new Error("No se pudo leer la imagen");
   // Capturas angostas se agrandan más; muy anchas, menos (límite de memoria)
@@ -52,9 +72,7 @@ export async function ocrImage(buffer: Buffer): Promise<{ text: string; confiden
     .toBuffer();
   const H = (await sharp(base).metadata()).height ?? 0;
 
-  const worker = await createWorker("spa", 1, { langPath: langPath(), gzip: true, cachePath: "/tmp/tesseract" });
-  try {
-    await worker.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: "4" as never });
+  {
     const parts: string[] = [];
     const confs: number[] = [];
     for (let top = 0; top < H; top += TILE - OVERLAP) {
@@ -66,7 +84,5 @@ export async function ocrImage(buffer: Buffer): Promise<{ text: string; confiden
       if (top + h >= H || parts.length >= 15) break;
     }
     return { text: joinTiles(parts), confidence: confs.reduce((a, b) => a + b, 0) / Math.max(1, confs.length) };
-  } finally {
-    await worker.terminate();
   }
 }

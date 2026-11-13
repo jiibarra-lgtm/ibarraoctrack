@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // App 100% dinámica y autenticada: sin prerender ni caché de componentes.
-  serverExternalPackages: ["sharp", "unpdf", "tesseract.js", "tesseract.js-core"],
+  serverExternalPackages: ["sharp", "unpdf", "tesseract.js", "tesseract.js-core", "@napi-rs/canvas"],
   // El OCR lee el idioma y el motor WASM desde node_modules en tiempo de ejecución
   outputFileTracingIncludes: {
     "/api/import/\\[id\\]/process": [

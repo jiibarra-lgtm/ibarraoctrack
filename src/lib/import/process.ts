@@ -4,8 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractText, getDocumentProxy } from "unpdf";
 import { parseBacText, validCuit } from "@/lib/bac/parse-text";
 import { aiAvailable, extractWithAi } from "@/lib/bac/ai";
-import { ocrImage } from "@/lib/bac/ocr";
-import { pdfToImage } from "@/lib/bac/pdf-images";
+import { ocrImage, ocrImages } from "@/lib/bac/ocr";
+import { pdfToImage, renderPdfPages } from "@/lib/bac/pdf-images";
 import { mergeExtractions } from "@/lib/bac/merge";
 import { fillMissingLineTotals, validateOrderMath } from "@/lib/bac/validate";
 import type { ExtractedOrder, ExtractionWarning } from "@/lib/bac/types";
@@ -84,11 +84,13 @@ export async function processImportJob(supabase: SupabaseClient, jobId: string, 
       rawText = text;
       if (text.replace(/\s/g, "").length > 200) textResult = parseBacText(text);
       else {
-        // Captura guardada como PDF (FireShot, impresión de imagen, escaneo): OCR de la imagen
+        // Sin texto: captura guardada como PDF (FireShot, escaneo) o "Microsoft Print to PDF", que guarda las letras como
+        // dibujos. Se dibuja cada página como imagen y se lee con OCR; si no se puede, se usa la imagen más grande del PDF.
         method = "ocr";
-        const img = await pdfToImage(pdf);
-        if (img) {
-          const { text: ocrText } = await ocrImage(img);
+        const pages = await renderPdfPages(pdf);
+        const img = pages.length ? null : await pdfToImage(pdf);
+        if (pages.length || img) {
+          const { text: ocrText } = pages.length ? await ocrImages(pages) : await ocrImage(img!);
           rawText = ocrText;
           textResult = parseBacText(ocrText);
         } else {

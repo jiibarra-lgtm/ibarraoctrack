@@ -1,6 +1,6 @@
 import "server-only";
 import sharp from "sharp";
-import { extractImages, type getDocumentProxy } from "unpdf";
+import { extractImages, renderPageAsImage, type getDocumentProxy } from "unpdf";
 
 type Pdf = Awaited<ReturnType<typeof getDocumentProxy>>;
 
@@ -39,4 +39,21 @@ export async function pdfToImage(pdf: Pdf, maxPages = 12): Promise<Buffer | null
     return c;
   });
   return sharp({ create: { width: W, height: H, channels: 3, background: "#ffffff" } }).composite(composite).png().toBuffer();
+}
+
+/**
+ * PDF impreso con "Microsoft Print to PDF" (u otros) que guarda el texto como dibujos y no como letras:
+ * se dibuja cada página como imagen para leerla con OCR. Devuelve una imagen por página.
+ */
+export async function renderPdfPages(pdf: Pdf, maxPages = 12, scale = 1.6): Promise<Buffer[]> {
+  const out: Buffer[] = [];
+  for (let n = 1; n <= Math.min(pdf.numPages, maxPages); n++) {
+    try {
+      const png = await renderPageAsImage(pdf, n, { canvasImport: () => import("@napi-rs/canvas"), scale });
+      out.push(Buffer.from(png));
+    } catch {
+      break;
+    }
+  }
+  return out;
 }

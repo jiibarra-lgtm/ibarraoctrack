@@ -247,7 +247,12 @@ export function parseBacText(raw: string): ExtractedOrder {
     if (!last) return [] as string[];
     const after = detSec.slice((last.index ?? 0) + last[0].length);
     const m = /unitario\s+Total([\s\S]*)$/i.exec(after);
-    return m ? [...m[1].matchAll(RE.decimal)].map((a) => parseArNumber(a[0])).filter((v): v is string => !!v) : [];
+    const out = m ? [...m[1].matchAll(RE.decimal)].map((a) => parseArNumber(a[0])).filter((v): v is string => !!v) : [];
+    // Impresión que parte la tabla a lo ancho: las columnas Cantidad / Precio / Total quedan más abajo,
+    // después de los totales ("Cantidad medida … unitario Total … 11.200,00 44.800,00")
+    for (const sp of text.matchAll(/Cantidad\s+medida(?![\s\S]{0,120}\d{2}\.\d{2}\.\d{3}\.\d{4})([\s\S]{0,400}?)(?=Son pesos|Detalle de entrega|Total documento|$)/gi))
+      for (const a of sp[1].matchAll(RE.decimal)) { const v = parseArNumber(a[0]); if (v) out.push(v); }
+    return out;
   })();
   codes.forEach((m, idx) => {
     const start = m.index ?? 0;
@@ -332,14 +337,21 @@ export function parseBacText(raw: string): ExtractedOrder {
       const entQty = ent ? [...(S.entrega ?? "").slice((ent.index ?? 0) + ent[0].length).matchAll(RE.decimal)].slice(0, 1).map((a) => parseArNumber(a[0])) : [];
       const nums = [...(segNums[idx] ?? []), ...(idx === o.items!.length - 1 ? tailNums : [])];
       const Q = [...new Set([...entQty, ...nums].filter((v): v is string => !!v && Number(v) > 0))];
-      const T = [...new Set([...nums, ...(o.items!.length === 1 && o.net_amount ? [o.net_amount] : [])].filter((v) => Number(v) > 0))];
+      const T = [...new Set([...nums, ...(o.items!.length === 1 ? [o.net_amount, o.total_amount].filter(Boolean) : [])].filter((v) => Number(v) > 0))];
       let best: { q: string; p: string; t: string } | null = null;
-      for (const t of T.sort((a, b) => Number(b) - Number(a))) {
-        for (const q of Q) for (const p of nums) {
-          if (p === t || q === t || Number(p) <= 0) continue;
-          if (!differs(t, lineTotal(q, p))) { best = { q, p, t }; break; }
+      const entQ = entQty.filter((v): v is string => !!v && Number(v) > 0);
+      // primero con la cantidad de la tabla de entrega (evita invertir cantidad y precio)
+      for (const pool of entQ.length ? [entQ, Q] : [Q]) {
+        for (const t of [...T].sort((a, b) => Number(b) - Number(a))) {
+          for (const q of pool) for (const p of nums) {
+            if (p === t || q === t || Number(p) <= 0) continue;
+            if (!differs(t, lineTotal(q, p))) { best = { q, p, t }; break; }
+          }
+          if (best) break;
         }
         if (best) break;
+      }
+      for (const t of best ? [] : T.sort((a, b) => Number(b) - Number(a))) {
         // precio = total / cantidad cuando el precio no se leyó bien
         for (const q of entQty.filter((v): v is string => !!v)) {
           const p = (Number(t) / Number(q)).toFixed(2);

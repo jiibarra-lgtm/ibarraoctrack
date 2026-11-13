@@ -6,6 +6,7 @@ import { EInvoiceDialog } from "@/components/billing/einvoice-dialog";
 import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/primitives";
+import { ContractActs } from "@/components/bac/contract-acts";
 import { StatusBadge } from "@/components/po/status-badge";
 import { isUuid } from "@/lib/utils";
 import type { PoStatus } from "@/lib/po/schema";
@@ -102,6 +103,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           </>
         }
       />
+      {o.bac_number && <ContractActs sb={sb} org={s.org.org_id} bacNumber={o.bac_number} canEdit={writable} />}
       <OrderTabs
         initialTab={tab}
         po={o}

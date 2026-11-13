@@ -7,9 +7,10 @@ import { Stat } from "@/components/ui/stat";
 import { formatDate, formatMoney } from "@/lib/format";
 import { monthLabel } from "@/lib/months";
 import { cn } from "@/lib/utils";
-import { ActiveToggle, AddArcaButton, CATEGORY_LABEL, CostDialog, EditCost, PaidToggle } from "./cost-ui";
+import { ActiveToggle, AddArcaButton, CostDialog, EditCost, PaidToggle } from "./cost-ui";
 import { CostInsights } from "./insights";
-import { CategorySelect, IgnoreToggle, VAR_CATEGORIES } from "./payee-ui";
+import { CategorySelect, IgnoreToggle } from "./payee-ui";
+import { CATEGORY_LABEL, VAR_CATEGORIES } from "@/lib/expense-categories";
 
 export const metadata: Metadata = { title: "Gastos fijos" };
 

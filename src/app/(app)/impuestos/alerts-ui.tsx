@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/primitives";
-import { saveSircrebRate } from "./tax-actions";
+import { markNoticeSeen, saveSircrebRate } from "./tax-actions";
 
 export function SircrebRateForm({ value }: { value: string }) {
   const router = useRouter();
@@ -19,5 +19,16 @@ export function SircrebRateForm({ value }: { value: string }) {
         if (!r.ok) toast.error(r.error); else { toast.success("Guardado"); router.refresh(); }
       }}>Guardar</Button>
     </div>
+  );
+}
+
+export function NoticeSeen({ id, label = "Visto" }: { id: string | null; label?: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <Button size="sm" variant="secondary" loading={busy} onClick={async () => {
+      setBusy(true); const r = await markNoticeSeen(id); setBusy(false);
+      if (!r.ok) toast.error(r.error); else router.refresh();
+    }}>{label}</Button>
   );
 }

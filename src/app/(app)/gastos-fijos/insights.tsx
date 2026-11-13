@@ -6,7 +6,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { monthLabel } from "@/lib/months";
 import { businessDaysInMonth } from "@/lib/taxes";
 import { cn } from "@/lib/utils";
-import { CostSettings, PersonalToggle } from "./insights-ui";
+import { CostSettings, PersonalToggle, SubscriptionButtons } from "./insights-ui";
 
 type Cost = { id: string; name: string; category: string; amount: string; frequency: number; due_day: number | null; active: boolean; supplier_cuit: string | null; is_personal: boolean };
 type Bill = { cost_id: string | null; period: string; due_date: string | null; amount: string | null; paid: boolean };
@@ -14,6 +14,7 @@ type V = { doc_number: string; issue_date: string; voucher_type: number; vat: st
 
 const shift = (ym: string, d: number) => { const [y, m] = ym.split("-").map(Number); return new Date(Date.UTC(y, m - 1 + d, 1)).toISOString().slice(0, 7); };
 const monthsBetween = (a: string, b: string) => (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 + Number(b.slice(5)) - Number(a.slice(5));
+const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
 const todayAr = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
 const pct = (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)}%`;
 const LETTER_A = new Set([1, 2, 3, 51, 52, 53, 201, 202, 203]);
@@ -23,10 +24,14 @@ const LETTER_B = new Set([6, 7, 8, 206, 207, 208]);
 export async function CostInsights({ sb, org, m, canEdit }: { sb: SupabaseClient; org: string; m: string; canEdit: boolean }) {
   const today = todayAr();
   const from = shift(m, -24);
-  const [{ data: costData }, { data: billData }, { data: setData }] = await Promise.all([
+  const [{ data: costData }, { data: billData }, { data: setData }, { data: payData }, { data: ruleData }, { data: stData }] = await Promise.all([
     sb.from("fixed_costs").select("id, name, category, amount, frequency, due_day, active, supplier_cuit, is_personal").eq("org_id", org),
     sb.from("fixed_cost_bills").select("cost_id, period, due_date, amount, paid").eq("org_id", org).gte("period", from).limit(5000),
     sb.from("tax_settings").select("inflation_monthly, cost_alert_pct").eq("org_id", org).maybeSingle(),
+    sb.from("payments_out_overview").select("payee, payee_key, amount, paid_at, final_category, ignored, cost_id").eq("org_id", org)
+      .in("kind", ["tarjeta", "debito_automatico"]).gte("paid_at", daysAgo(125)).limit(5000),
+    sb.from("payee_rules").select("payee_key").eq("org_id", org).eq("not_fixed", true).limit(2000),
+    sb.from("card_statements").select("card, due_date, total, paid").eq("org_id", org).gte("due_date", daysAgo(5)).order("due_date").limit(3),
   ]);
   const costs = ((costData ?? []) as Cost[]).filter((c) => c.active);
   const bills = (billData ?? []) as Bill[];
@@ -118,6 +123,21 @@ export async function CostInsights({ sb, org, m, canEdit }: { sb: SupabaseClient
   // Servicios sin CUIT de ARCA: no se puede confirmar el IVA computable
   const noCuit = business.filter((c) => !c.supplier_cuit && ["servicios", "telefonia", "software", "alquiler", "seguros", "honorarios"].includes(c.category));
 
+  // 25: suscripciones en la tarjeta (mismo comercio 2+ meses, monto parecido) que no son gasto fijo
+  type P = { payee: string; payee_key: string; amount: string; paid_at: string; final_category: string; ignored: boolean; cost_id: string | null };
+  const notFixed = new Set(((ruleData ?? []) as { payee_key: string }[]).map((r) => r.payee_key));
+  const byPayee = new Map<string, P[]>();
+  for (const p of (payData ?? []) as P[]) if (!p.cost_id && !p.ignored && !notFixed.has(p.payee_key) && !["comida", "compras", "proveedores", "ferreteria", "vehiculos"].includes(p.final_category))
+    byPayee.set(p.payee_key, [...(byPayee.get(p.payee_key) ?? []), p]);
+  const subs = [...byPayee.entries()].map(([key, ps]) => {
+    const months = new Set(ps.map((p) => p.paid_at.slice(0, 7)));
+    const amts = ps.map((p) => Number(p.amount)), lo = Math.min(...amts), hi = Math.max(...amts);
+    const last = [...ps].sort((a, b) => b.paid_at.localeCompare(a.paid_at))[0];
+    return { key, name: last.payee, amount: Number(last.amount), months: months.size, category: last.final_category, steady: hi <= lo * 1.3 };
+  }).filter((x) => x.months >= 2 && (x.steady || x.category === "software")).sort((a, b) => b.amount - a.amount);
+  const statements = (stData ?? []) as { card: string; due_date: string; total: string; paid: string }[];
+  const cardDue = statements.filter((st) => Number(st.total) - Number(st.paid) > 1);
+
   // 80: proyección 6 meses con inflación (los anuales caen en su mes)
   const proj = Array.from({ length: 6 }, (_, i) => {
     const p = shift(m, i + 1);
@@ -137,10 +157,18 @@ export async function CostInsights({ sb, org, m, canEdit }: { sb: SupabaseClient
         <Stat icon={Percent} label="Gastos personales" value={formatMoney(persTotal)} sub={`${personal.length} gastos marcados personales`} />
       </div>
 
-      {(missing.length > 0 || overdue.length > 0 || soon.length > 0) && (
+      {(missing.length > 0 || overdue.length > 0 || soon.length > 0 || cardDue.length > 0) && (
         <Card className="overflow-hidden">
           <CardHeader title="Para hacer" description="Facturas que no llegaron, vencidas sin pagar y renovaciones que se vienen" />
           <ul className="divide-y divide-border">
+            {cardDue.map((st) => {
+              const days = Math.round((Date.parse(st.due_date) - Date.parse(today)) / 864e5);
+              return (
+                <li key={`c${st.due_date}`} className="flex items-start gap-3 px-5 py-2.5 text-sm"><CalendarClock className={cn("mt-0.5 size-4 shrink-0", days <= 3 ? "text-warn" : "text-info")} />
+                  <div className="flex-1"><p className="font-medium">{st.card}: {formatMoney(Number(st.total) - Number(st.paid))} {days < 0 ? "vencido" : days === 0 ? "se debita hoy" : `se debita en ${days} días`}</p>
+                    <p className="text-xs text-fg-subtle">Vence el {formatDate(st.due_date)} · dejá la plata disponible en Mercado Pago</p></div></li>
+              );
+            })}
             {overdue.map((b, i) => (
               <li key={`o${i}`} className="flex items-start gap-3 px-5 py-2.5 text-sm"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
                 <div className="flex-1"><p className="font-medium">{costName.get(b.cost_id!)} venció sin pagar</p><p className="text-xs text-fg-subtle">Venció el {formatDate(b.due_date)} · {formatMoney(b.amount)} · {monthLabel(b.period)}</p></div></li>
@@ -218,6 +246,20 @@ export async function CostInsights({ sb, org, m, canEdit }: { sb: SupabaseClient
           </ul>
         </Card>
       </div>
+
+      {subs.length > 0 && (
+        <Card className="overflow-hidden">
+          <CardHeader title="Suscripciones que se cobran todos los meses" description="Mismo comercio en la tarjeta o débito automático 2 meses o más y no está cargado como gasto fijo" />
+          <ul className="divide-y divide-border">
+            {subs.slice(0, 20).map((x) => (
+              <li key={x.key} className="flex flex-col gap-2 px-5 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0"><p className="truncate font-medium">{x.name}</p><p className="text-xs text-fg-subtle">{formatMoney(x.amount)} por mes · {x.months} meses seguidos</p></div>
+                {canEdit && <SubscriptionButtons payeeKey={x.key} name={x.name} amount={String(x.amount)} category={x.category} />}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card className="overflow-hidden">
         <CardHeader title="Negocio o personal" description="Los personales no restan en el resultado del negocio ni en la proyección" />

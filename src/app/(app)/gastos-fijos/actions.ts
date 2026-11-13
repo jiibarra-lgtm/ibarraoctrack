@@ -108,3 +108,12 @@ export async function saveCostSettings(inflation: string, alertPct: string): Pro
   if (error) return { ok: false, error: friendlyDbError(error) };
   return done();
 }
+
+/** Suscripción detectada en la tarjeta → gasto fijo mensual (y los pagos de ese comercio quedan asociados). */
+export async function addSubscription(payeeKey: string, name: string, amount: string, category: string): Promise<R> {
+  const s = await requireOrg();
+  if (!can(s.org.role) || !payeeKey || payeeKey.length > 60) return { ok: false, error: "No permitido" };
+  const { error } = await s.supabase.rpc("add_subscription", { p_org: s.org.org_id, p_payee_key: payeeKey, p_name: name, p_amount: Number(amount) || 0, p_category: category });
+  if (error) return { ok: false, error: friendlyDbError(error) };
+  return done();
+}

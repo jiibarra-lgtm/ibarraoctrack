@@ -2,6 +2,7 @@ import { NextResponse, after, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { classifyMail, parseBacMail } from "@/lib/inbound/bac-mail";
+import { isTaxNoticeMail, parseTaxNotice, type TaxNotice } from "@/lib/inbound/tax-notices";
 import { isCardAlertMail, parseCardAlert, type CardAlert } from "@/lib/inbound/card-alerts";
 import { isCiudadMovementsMail, parseCiudad, type BankBalance, type BankMovement } from "@/lib/inbound/bank-ciudad";
 import { isMercadoLibreMail, parseMercadoLibreMail, type MlEvent } from "@/lib/inbound/mercadolibre";
@@ -57,6 +58,8 @@ export async function POST(req: NextRequest) {
   const mails: unknown[] = [];
   const movements: (BankMovement & { message_id: string; seen_at: string })[] = [];
   const cardAlerts: CardAlert[] = [];
+  const taxNotices: TaxNotice[] = [];
+  const acts: unknown[] = [];
   const balances: (BankBalance & { message_id: string })[] = [];
   const mlEvents: MlEvent[] = [];
   const bills: BillEvent[] = [];
@@ -71,7 +74,12 @@ export async function POST(req: NextRequest) {
       if (r.balance) balances.push({ ...r.balance, message_id: m.id });
       continue;
     }
-    // Tarjeta que no se pudo debitar entera
+    // Avisos fiscales (e-Ventanilla de ARCA, AGIP): alerta en Impuestos; el mail sigue a Correos
+    if (isTaxNoticeMail(m.from)) {
+      const n = parseTaxNotice({ id: m.id, from: m.from, subject: m.subject, body: m.body, date: date.toISOString() });
+      if (n) taxNotices.push(n);
+    }
+    // Tarjeta Mercado Pago: cierre, vencimiento, pagado o no se pudo debitar entera
     if (isCardAlertMail(m.from, m.subject)) {
       const a = parseCardAlert({ id: m.id, from: m.from, subject: m.subject, body: m.body, date: date.toISOString() });
       if (a) cardAlerts.push(a);
@@ -97,7 +105,8 @@ export async function POST(req: NextRequest) {
     }
     const inbound = { id: m.id, from: m.from, subject: m.subject, date: date.toISOString(), body: m.body, to: m.to ?? "" };
     const parsed = parseBacMail(inbound);
-    if (parsed) events.push({ message_id: parsed.message_id, kind: parsed.event.kind, received_at: parsed.received_at, subject: parsed.subject, data: parsed.event });
+    if (parsed?.event.kind === "acto") acts.push({ message_id: parsed.message_id, received_at: parsed.received_at, ...parsed.event });
+    else if (parsed) events.push({ message_id: parsed.message_id, kind: parsed.event.kind, received_at: parsed.received_at, subject: parsed.subject, data: parsed.event });
     const c = classifyMail(inbound, parsed);
     const from = nameEmail(m.from);
     const text = m.body.replace(/[\t\r]+/g, " ").replace(/[ ]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
@@ -116,8 +125,13 @@ export async function POST(req: NextRequest) {
     bills.length ? sb.rpc("ingest_bills", { p_token: body.token, p_bills: bills }) : Promise.resolve({ data: null, error: null }),
     payments.length ? sb.rpc("ingest_payments", { p_token: body.token, p_payments: payments }) : Promise.resolve({ data: null, error: null }),
   ]);
-  const ca = cardAlerts.length ? await sb.rpc("ingest_card_alerts", { p_token: body.token, p_alerts: cardAlerts }) : { data: 0, error: null };
-  const err = ca.error ?? ev.error ?? ml.error ?? bk.error ?? me.error ?? bl.error ?? py.error;
+  const none = { data: 0, error: null };
+  const [ca, tn, ac] = await Promise.all([
+    cardAlerts.length ? sb.rpc("ingest_card_alerts", { p_token: body.token, p_alerts: cardAlerts }) : Promise.resolve(none),
+    taxNotices.length ? sb.rpc("ingest_tax_notices", { p_token: body.token, p_notices: taxNotices }) : Promise.resolve(none),
+    acts.length ? sb.rpc("ingest_bac_acts", { p_token: body.token, p_acts: acts }) : Promise.resolve(none),
+  ]);
+  const err = ca.error ?? tn.error ?? ac.error ?? ev.error ?? ml.error ?? bk.error ?? me.error ?? bl.error ?? py.error;
   if (err) {
     const auth = /token/i.test(err.message);
     return NextResponse.json({ error: auth ? "Token inválido" : "No se pudo guardar" }, { status: auth ? 401 : 500 });

@@ -1,15 +1,11 @@
 "use client";
 import * as React from "react";
+import { VAR_CATEGORIES } from "@/lib/expense-categories";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { EyeOff, Eye } from "lucide-react";
 import { setPayeeRule } from "./actions";
 
-export const VAR_CATEGORIES: Record<string, string> = {
-  comida: "Comida y supermercado", vehiculos: "Vehículos y combustible", ferreteria: "Ferretería y materiales", salud: "Salud y farmacia",
-  servicios: "Servicios", telefonia: "Teléfono e internet", software: "Sistemas y suscripciones", seguros: "Seguros", impuestos: "Impuestos",
-  bancos: "Bancos y tarjetas", sueldos: "Sueldos", alquiler: "Alquiler", honorarios: "Honorarios", proveedores: "Pagos a proveedores", compras: "Compras online", otros: "Otros",
-};
 
 export function CategorySelect({ payeeKey, value }: { payeeKey: string; value: string }) {
   const router = useRouter();

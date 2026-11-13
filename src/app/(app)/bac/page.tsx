@@ -9,6 +9,7 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { formatDate, formatMoney } from "@/lib/format";
 import type { InboxRow } from "@/lib/bac-track";
 import { cn } from "@/lib/utils";
+import { ContractActs } from "@/components/bac/contract-acts";
 
 export const metadata: Metadata = { title: "Órdenes BAC" };
 
@@ -40,6 +41,8 @@ export default async function BacInboxPage({ searchParams }: { searchParams: Pro
         <Stat icon={FileCheck2} label="Perfeccionadas" value={String(all.filter((r) => r.perfected_at).length)} />
         <Stat icon={ClipboardCheck} label="Con PRD emitido" value={String(all.filter((r) => r.prd_number).length)} href="/bac?f=prd" />
       </div>
+
+      <ContractActs sb={s.supabase} org={s.org.org_id} canEdit={["admin", "finanzas", "compras"].includes(s.org.role)} />
 
       <Card className="mt-5 overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">

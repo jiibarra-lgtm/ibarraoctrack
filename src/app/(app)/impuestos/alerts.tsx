@@ -6,7 +6,7 @@ import { monthLabel } from "@/lib/months";
 import { businessDay, iibbBalances } from "@/lib/taxes";
 import { cn } from "@/lib/utils";
 import { monthRows, type Monthly, type Withholding } from "./tax-tabs";
-import { SircrebRateForm } from "./alerts-ui";
+import { NoticeSeen, SircrebRateForm } from "./alerts-ui";
 
 const N = (x: unknown) => Number(x ?? 0) || 0;
 const nowAr = () => new Date(Date.now() - 3 * 3600e3).toISOString();
@@ -19,11 +19,16 @@ export async function TaxAlerts({ sb, org, monthly, wh, iibbRate, iibbDay, sircr
 }) {
   const now = nowAr(), today = now.slice(0, 10), cur = now.slice(0, 7), prev = shift(cur, -1);
   const since = daysAgoIso(30);
-  const [{ data: att }, { data: obs }] = await Promise.all([
+  const [{ data: att }, { data: obs }, { data: notData }] = await Promise.all([
     sb.from("einvoice_attempts").select("kind, receiver, total, error, created_at").eq("org_id", org).gte("created_at", since).order("created_at", { ascending: false }).limit(10),
     sb.from("arca_emissions").select("voucher_type, point_of_sale, number, receiver_name, total, observations, created_at").eq("org_id", org).not("observations", "is", null).gte("created_at", since).order("created_at", { ascending: false }).limit(10),
+    sb.from("tax_notices_overview").select("id, at, source, system, title, severity, kind, vep_number, seen_at, paid_movement_id").eq("org_id", org)
+      .is("seen_at", null).gte("at", daysAgoIso(90)).order("at", { ascending: false }).limit(30),
   ]);
-  type Item = { tone: "danger" | "warn" | "info"; title: string; detail: string };
+  type Notice = { id: string; at: string; source: string; system: string; title: string; severity: "danger" | "warn" | "info"; kind: string; vep_number: string | null; seen_at: string | null; paid_movement_id: string | null };
+  const notices = (notData ?? []) as Notice[];
+  const unseen = notices.filter((n) => !n.seen_at);
+  type Item = { tone: "danger" | "warn" | "info"; title: string; detail: string; noticeId?: string };
   const items: Item[] = [];
 
   // 1: facturas rechazadas u observadas por ARCA
@@ -31,6 +36,22 @@ export async function TaxAlerts({ sb, org, monthly, wh, iibbRate, iibbDay, sircr
     items.push({ tone: "danger", title: `ARCA rechazó una ${a.kind === "nota_credito" ? "nota de crédito" : "factura"} a ${a.receiver}`, detail: `${formatDateTime(a.created_at)} · ${formatMoney(a.total)} · ${a.error}` });
   for (const o of (obs ?? []) as { voucher_type: number; point_of_sale: number; number: number; receiver_name: string; total: string; observations: string; created_at: string }[])
     items.push({ tone: "warn", title: `Factura ${String(o.point_of_sale).padStart(5, "0")}-${String(o.number).padStart(8, "0")} autorizada con observaciones`, detail: `${o.receiver_name} · ${formatMoney(o.total)} · ${o.observations}` });
+
+  // 11-14: avisos de ARCA (Domicilio Fiscal Electrónico) y AGIP
+  const HINT: Record<string, string> = {
+    falta_presentacion: "Te falta presentar una declaración jurada (probablemente del período anterior). Entrá a Domicilio Fiscal Electrónico para ver cuál y presentala para evitar la multa.",
+    intimacion: "Es una intimación o fiscalización: tiene plazo para responder. Leela hoy en Domicilio Fiscal Electrónico.",
+    plan: "Novedad de un plan de pagos: revisá que la cuota esté debitada para que no caduque.",
+    embargo: "Hay un embargo o una ejecución fiscal en curso: contactá al mandatario o a tu contador.",
+    dfe: "Leela en ARCA → Domicilio Fiscal Electrónico (las notificaciones se dan por leídas a los pocos días aunque no la abras).",
+    vep: "Se generó un VEP: pagalo antes del vencimiento.",
+    otro: "Revisá el mail.",
+  };
+  for (const n of unseen.slice(0, 12)) {
+    const paid = n.vep_number && n.paid_movement_id;
+    items.push({ tone: paid ? "info" : n.severity, title: `${n.title}${n.vep_number ? ` · VEP ${n.vep_number}` : ""}`,
+      detail: `${formatDateTime(n.at)} · ${paid ? "Se encontró el débito en el banco: pagado." : HINT[n.kind] ?? HINT.otro}`, noticeId: n.id });
+  }
 
   // 40: anticipo de IIBB del mes anterior
   const rows = monthRows(monthly, wh);
@@ -65,12 +86,13 @@ export async function TaxAlerts({ sb, org, monthly, wh, iibbRate, iibbDay, sircr
   const Icon = { danger: AlertTriangle, warn: AlertTriangle, info: Info };
   return (
     <Card className="mb-5 overflow-hidden">
-      <CardHeader title="Avisos de ARCA e impuestos" action={<CalendarClock className="size-4 text-fg-subtle" />} />
+      <CardHeader title="Avisos de ARCA e impuestos" action={unseen.length > 1 && canEdit ? <NoticeSeen id={null} label="Marcar todos vistos" /> : <CalendarClock className="size-4 text-fg-subtle" />} />
       <ul className="divide-y divide-border">
         {items.map((a, i) => { const I = Icon[a.tone]; return (
           <li key={i} className="flex items-start gap-3 px-5 py-2.5 text-sm">
             <I className={cn("mt-0.5 size-4 shrink-0", a.tone === "danger" ? "text-danger" : a.tone === "warn" ? "text-warn" : "text-info")} />
-            <div><p className="font-medium">{a.title}</p><p className="text-xs text-fg-subtle">{a.detail}</p></div>
+            <div className="flex-1"><p className="font-medium">{a.title}</p><p className="text-xs text-fg-subtle">{a.detail}</p></div>
+            {a.noticeId && canEdit && <NoticeSeen id={a.noticeId} />}
           </li>
         ); })}
       </ul>

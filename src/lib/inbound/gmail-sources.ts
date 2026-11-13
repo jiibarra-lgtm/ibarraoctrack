@@ -16,7 +16,10 @@ export const GMAIL_SOURCES: GmailSource[] = [
   { key: "pagos", days: 180, mode: "mail", q: PAYMENT_QUERY },
   // Banco completo: todos los avisos del Ciudad (movimientos + saldo) y débitos de tarjeta que no se cubrieron
   { key: "banco", days: 400, mode: "mail", q: '{from:avisos.bancociudad.com.ar subject:"pudimos debitar"}' },
+  // Tarjeta Mercado Pago (cierre, vencimiento, débitos), avisos fiscales (ARCA e-Ventanilla, AGIP) y actos administrativos del BAC
+  { key: "tarjeta", days: 400, mode: "mail", q: 'from:mercadopago.com.ar {subject:"debitaremos el total" subject:"débito automático para pagar tu tarjeta" subject:"pudimos debitar" subject:"nada que pagar"}' },
+  { key: "fiscal", days: 730, mode: "mail", q: '{from:eventanilla@arca.gob.ar from:eventanilla@afip.gov.ar from:agip.gov.ar from:agip.gob.ar (from:notificacionesbac@buenosaires.gob.ar subject:"acto administrativo")}' },
   { key: "facturas", days: 730, mode: "pdf", q: INVOICE_QUERY },
 ];
 
-export const GMAIL_SOURCES_VERSION = "2026-11-12a";
+export const GMAIL_SOURCES_VERSION = "2026-11-12b";

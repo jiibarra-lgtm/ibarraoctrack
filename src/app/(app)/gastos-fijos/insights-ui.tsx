@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
-import { saveCostSettings, setCostPersonal } from "./actions";
+import { addSubscription, saveCostSettings, setCostPersonal, setPayeeRule } from "./actions";
 
 export function PersonalToggle({ id, personal }: { id: string; personal: boolean }) {
   const router = useRouter();
@@ -30,6 +30,21 @@ export function CostSettings({ inflation, alertPct }: { inflation: string; alert
         setBusy(true); const r = await saveCostSettings(inf, al); setBusy(false);
         if (!r.ok) toast.error(r.error); else { toast.success("Guardado"); router.refresh(); }
       }}>Guardar</Button>
+    </div>
+  );
+}
+
+export function SubscriptionButtons({ payeeKey, name, amount, category }: { payeeKey: string; name: string; amount: string; category: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState(false);
+  const run = async (fn: () => Promise<{ ok: boolean; error?: string }>, msg: string) => {
+    setBusy(true); const r = await fn(); setBusy(false);
+    if (!r.ok) toast.error(r.error ?? "No se pudo"); else { toast.success(msg); router.refresh(); }
+  };
+  return (
+    <div className="flex gap-1">
+      <Button size="sm" variant="secondary" disabled={busy} onClick={() => run(() => addSubscription(payeeKey, name, amount, category), `${name} quedó como gasto fijo`)}>Es gasto fijo</Button>
+      <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => setPayeeRule(payeeKey, { not_fixed: true }), "Listo, no se vuelve a sugerir")}>No</Button>
     </div>
   );
 }

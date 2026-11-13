@@ -28,6 +28,7 @@ const numLabel = (r: { letter: string | null; point_of_sale: number | null; numb
   r.number ? `FC ${r.letter ?? ""} ${String(r.point_of_sale ?? 0).padStart(5, "0")}-${String(r.number).padStart(8, "0")}`.replace("  ", " ") : "Sin número";
 const mailUrl = (id: string | null) => (id ? `https://mail.google.com/mail/u/0/#all/${id}` : null);
 const clean = (q: string) => q.replace(/[,()*%\\]/g, " ").trim().slice(0, 60);
+const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
 const currentMonth = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
 const fmtCuit = (c: string | null) => (c && c.length === 11 ? `${c.slice(0, 2)}-${c.slice(2, 10)}-${c.slice(10)}` : c ?? "");
 
@@ -67,6 +68,12 @@ export default async function SupplierPricesPage({ searchParams }: { searchParam
   const month = currentMonth();
   const monthInvs = invs.filter((i) => i.issue_date?.startsWith(month));
   const review = invs.filter((i) => i.quality !== "ok").length;
+  // Subas: última compra de cada producto contra la compra anterior al mismo proveedor (últimos 60 días)
+  const { data: recentPrices } = await s.supabase.from("supplier_product_prices").select("id, description, supplier_name, unit_final, prev_final, issue_date, mail_id, pack")
+    .eq("org_id", org).gte("issue_date", daysAgo(60)).not("prev_final", "is", null).limit(2000);
+  const rises = ((recentPrices ?? []) as Pick<Price, "id" | "description" | "supplier_name" | "unit_final" | "prev_final" | "issue_date" | "mail_id" | "pack">[])
+    .map((r) => ({ ...r, pct: Number(r.prev_final) ? (Number(r.unit_final) / Number(r.prev_final) - 1) * 100 : 0 }))
+    .filter((r) => r.pct >= 3).sort((a, b) => b.pct - a.pct);
   const { count: productCount } = await s.supabase.from("supplier_product_prices").select("id", { count: "exact", head: true }).eq("org_id", org);
 
   let prices: Price[] = [];
@@ -104,6 +111,27 @@ export default async function SupplierPricesPage({ searchParams }: { searchParam
         <Stat icon={Factory} label="Proveedores" value={String(suppliers)} />
         <Stat icon={AlertTriangle} label="Para revisar" value={String(review)} tone={review ? "warn" : undefined} sub={review ? "renglones que no cierran" : "todo cierra"} href="/precios-proveedores?t=facturas" />
       </div>
+
+      {rises.length > 0 && (
+        <Card className="mt-5 overflow-hidden">
+          <div className="border-b border-border px-4 py-3 sm:px-5">
+            <p className="font-semibold">Subieron de precio ({rises.length})</p>
+            <p className="text-xs text-fg-subtle">Última factura de los últimos 60 días contra la compra anterior del mismo producto al mismo proveedor. Revisá el margen de las OC que lo usan.</p>
+          </div>
+          <ul className="max-h-80 divide-y divide-border overflow-y-auto">
+            {rises.slice(0, 40).map((r) => (
+              <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm sm:px-5">
+                <div className="min-w-0"><p className="truncate font-medium">{r.description}</p>
+                  <p className="text-xs text-fg-subtle">{r.supplier_name} · {formatDate(r.issue_date)}{r.mail_id && <> · <a className="underline" href={mailUrl(r.mail_id)!} target="_blank" rel="noreferrer">ver factura</a></>}</p></div>
+                <div className="shrink-0 text-right tabular">
+                  <p className={cn("font-semibold", r.pct >= 10 ? "text-danger" : "text-warn")}>▲ {r.pct.toFixed(1)}%</p>
+                  <p className="text-[11px] text-fg-subtle">{formatMoney(r.prev_final)} → {formatMoney(r.unit_final)}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card className="mt-5 overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">

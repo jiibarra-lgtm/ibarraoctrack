@@ -8,13 +8,16 @@ import { Stat } from "@/components/ui/stat";
 import { formatDate, formatDateTime, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { DirectionButtons } from "./ui";
+import { VAR_CATEGORIES } from "@/lib/expense-categories";
 
 export const metadata: Metadata = { title: "Banco" };
 
 type Mov = { id: string; account: string; mov_date: string; detail: string; amount: string; kind: string; direction: "in" | "out" | null; direction_source: string | null;
   counterpart_cuit: string | null; counterpart_name: string | null; explained: boolean; invoice_paid: string | null; supplier_invoice: string | null; invoices: string | null };
 type Bal = { account: string; as_of: string; balance: string };
-type CardAlert = { message_id: string; at: string; card: string; debited: string | null; missing: string };
+type CardAlert = { message_id: string; at: string; card: string; kind: string; debited: string | null; missing: string | null };
+type Statement = { card: string; due_date: string; total: string; paid: string; closed_at: string };
+type Consumo = { paid_at: string; amount: string; payee: string; payee_key: string; final_category: string; ignored: boolean; card: string | null };
 type Pay = { kind: string; paid_at: string; amount: string; card: string | null; due_date: string | null; payee: string };
 
 const KIND_LABEL: Record<string, string> = {
@@ -35,13 +38,17 @@ export default async function BancoPage({ searchParams }: { searchParams: Promis
   const sb = s.supabase, org = s.org.org_id;
   const canEdit = canBill(s.org.role);
   const today = nowAr(), month = today.slice(0, 7);
-  const [{ data: movData }, { data: balData }, { data: alertData }, { data: payData }] = await Promise.all([
+  const [{ data: movData }, { data: balData }, { data: alertData }, { data: payData }, { data: stData }, { data: conData }] = await Promise.all([
     sb.from("bank_movements_overview").select("id, account, mov_date, detail, amount, kind, direction, direction_source, counterpart_cuit, counterpart_name, explained, invoice_paid, supplier_invoice, invoices")
       .eq("org_id", org).gte("mov_date", daysAgo(400)).order("mov_date", { ascending: false }).limit(5000),
     sb.from("bank_balances").select("account, as_of, balance").eq("org_id", org).gte("as_of", daysAgo(120)).order("as_of", { ascending: false }).limit(500),
     sb.from("card_alerts").select("*").eq("org_id", org).gte("at", daysAgo(60)).order("at", { ascending: false }),
     sb.from("payments_out").select("kind, paid_at, amount, card, due_date, payee").eq("org_id", org).in("kind", ["tarjeta", "resumen_tarjeta", "debito_automatico"]).gte("paid_at", daysAgo(150)).order("paid_at", { ascending: false }).limit(2000),
+    sb.from("card_statements").select("*").eq("org_id", org).gte("due_date", daysAgo(200)).order("due_date", { ascending: false }).limit(12),
+    sb.from("payments_out_overview").select("paid_at, amount, payee, payee_key, final_category, ignored, card").eq("org_id", org).eq("kind", "tarjeta").gte("paid_at", `${month}-01`).limit(2000),
   ]);
+  const statements = (stData ?? []) as Statement[];
+  const consumos = ((conData ?? []) as Consumo[]);
   const movs = (movData ?? []) as Mov[];
   const bals = (balData ?? []) as Bal[];
   const alerts = (alertData ?? []) as CardAlert[];
@@ -84,7 +91,16 @@ export default async function BancoPage({ searchParams }: { searchParams: Promis
     warn.push({ tone: "warn", title: m.kind === "cheque_rechazado" ? "Cheque rechazado" : "Transferencia devuelta", detail: `${formatDate(m.mov_date)} · ${formatMoney(m.amount)} · ${m.detail}` });
   const intMonth = sumOf(monthMovs.filter((m) => m.kind === "interes_descubierto"));
   if (intMonth > 0) warn.push({ tone: "warn", title: "Intereses por descubierto este mes", detail: `${formatMoney(intMonth)} pagados por estar en rojo` });
-  for (const a of alerts) warn.push({ tone: "danger", title: `${a.card}: no se pudo debitar todo`, detail: `${formatDateTime(a.at)} · debitado ${formatMoney(a.debited)} · faltan ${formatMoney(a.missing)}` });
+  for (const a of alerts.filter((x) => x.kind === "parcial")) warn.push({ tone: "danger", title: `${a.card}: no se pudo debitar todo`, detail: `${formatDateTime(a.at)} · debitado ${formatMoney(a.debited)} · faltan ${formatMoney(a.missing)}` });
+  // Tarjeta: aviso 3 días antes del débito si no está pagada, y resúmenes vencidos con saldo
+  for (const st of statements) {
+    const left = Number(st.total) - Number(st.paid);
+    const days = Math.round((Date.parse(st.due_date) - Date.parse(today)) / 864e5);
+    if (left > 1 && days >= 0 && days <= 3)
+      warn.push({ tone: "warn", title: `${st.card}: se debitan ${formatMoney(left)} ${days === 0 ? "hoy" : days === 1 ? "mañana" : `en ${days} días`}`, detail: `Vence el ${formatDate(st.due_date)}. Dejá la plata disponible en Mercado Pago${balance ? ` (en el Ciudad tenés ${formatMoney(balance)})` : ""}.` });
+    else if (left > 1 && days < 0 && days > -40)
+      warn.push({ tone: "danger", title: `${st.card}: quedan ${formatMoney(left)} sin pagar`, detail: `Venció el ${formatDate(st.due_date)}; total ${formatMoney(st.total)}, debitado ${formatMoney(st.paid)}. Genera intereses.` });
+  }
   if (unknown.length) warn.push({ tone: "warn", title: `${unknown.length} transferencias sin saber si entraron o salieron`, detail: "Marcalas una vez y después se reconocen solas por CUIT/CBU." });
 
   // Costos del banco por mes (últimos 6)
@@ -181,6 +197,39 @@ export default async function BancoPage({ searchParams }: { searchParams: Promis
               );
             })}
             {!summaries.length && <li className="px-5 py-4 text-sm text-fg-subtle">No llegaron resúmenes de tarjeta en los últimos meses.</li>}
+          </ul>
+        </Card>
+      </div>
+
+      <div className="mb-5 grid gap-5 xl:grid-cols-2">
+        <Card className="overflow-hidden">
+          <CardHeader title="Tarjeta Mercado Pago" description="Cada cierre con su total, vencimiento y cuánto se debitó (leído de los avisos de Mercado Pago)" />
+          <ul className="divide-y divide-border">
+            {statements.map((st) => {
+              const left = Number(st.total) - Number(st.paid);
+              return (
+                <li key={st.due_date} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
+                  <div><p className="font-medium">Vence {formatDate(st.due_date)}</p><p className="text-xs text-fg-subtle">Cerró el {formatDate(st.closed_at)}</p></div>
+                  <div className="text-right tabular"><p className="font-semibold">{formatMoney(st.total)}</p>
+                    <p className={cn("text-[11px]", left <= 1 ? "text-accent" : st.due_date < today ? "font-medium text-danger" : "text-fg-subtle")}>{left <= 1 ? "pagado" : st.due_date < today ? `faltan ${formatMoney(left)}` : Number(st.paid) > 0 ? `debitado ${formatMoney(st.paid)}` : "por debitar"}</p></div>
+                </li>
+              );
+            })}
+            {!statements.length && <li className="px-5 py-4 text-sm text-fg-subtle">Todavía no llegaron avisos de cierre de la tarjeta.</li>}
+          </ul>
+        </Card>
+        <Card className="overflow-hidden">
+          <CardHeader title="Consumos con tarjeta por rubro (este mes)" description="Del negocio cuentan como gasto; los marcados personales quedan aparte" action={<Link href="/gastos-fijos?v=variables" className="text-xs underline">Clasificar</Link>} />
+          <ul className="divide-y divide-border">
+            {Object.entries(consumos.reduce<Record<string, { biz: number; pers: number; n: number }>>((a, c) => {
+              const x = (a[c.final_category] ??= { biz: 0, pers: 0, n: 0 }); if (c.ignored) x.pers += Number(c.amount); else x.biz += Number(c.amount); x.n++; return a;
+            }, {})).sort((a, b) => b[1].biz + b[1].pers - a[1].biz - a[1].pers).map(([k, v]) => (
+              <li key={k} className="flex items-center justify-between gap-3 px-5 py-2 text-sm">
+                <span>{VAR_CATEGORIES[k] ?? k} <span className="text-xs text-fg-subtle">· {v.n}</span></span>
+                <span className="text-right tabular"><span className="font-medium">{formatMoney(v.biz)}</span>{v.pers > 0 && <span className="ml-2 text-xs text-fg-subtle">+ {formatMoney(v.pers)} personal</span>}</span>
+              </li>
+            ))}
+            {!consumos.length && <li className="px-5 py-4 text-sm text-fg-subtle">Sin consumos con tarjeta leídos este mes (llegan de los avisos &quot;Pagaste&quot; de Santander).</li>}
           </ul>
         </Card>
       </div>

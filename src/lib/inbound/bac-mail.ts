@@ -9,8 +9,10 @@ export type BacEvent =
   | { kind: "oc_perfeccionada"; bac_number: string; process_number: string | null; process_name: string | null }
   | { kind: "prd"; bac_number: string; prd_number: string }
   | { kind: "pago"; invoice_type: string; point_of_sale: string; number: string; invoice_date: string | null }
+  | { kind: "acto"; act: BacAct; bac_number: string | null; contract_number: string | null; act_number: string | null; process_number: string | null; process_name: string | null }
   | { kind: "publicacion"; source: "bac" | "comprar"; process_number: string; unit_code: string | null; unit_name: string | null; title: string | null; opening_date: string | null };
 
+export type BacAct = "ampliacion" | "prorroga" | "rescision" | "penalidad" | "disminucion" | "otro";
 export type ParsedMail = { message_id: string; received_at: string; subject: string; event: BacEvent };
 
 const OC = /\b(\d{2,5}-\d{3,7}-OC\d{2})\b/i;
@@ -55,6 +57,18 @@ export function parseBacMail(m: InboundMail): ParsedMail | null {
 
   if (!from.includes("notificacionesbac") && !from.includes("buenosairescompras")) return null;
 
+  // "Acto administrativo de ampliación - documento contractual original 455-7296-OC26", "Acto administrativo prórroga - convenio marco 623-38-CM26"
+  if (/^acto administrativo/i.test(subject)) {
+    const act: BacAct = /ampliaci[oó]n/i.test(subject) ? "ampliacion" : /pr[oó]rroga/i.test(subject) ? "prorroga" : /rescisi[oó]n/i.test(subject) ? "rescision"
+      : /penalidad|multa|sanci[oó]n/i.test(subject) ? "penalidad" : /disminuci[oó]n|reducci[oó]n/i.test(subject) ? "disminucion" : "otro";
+    const oc = OC.exec(subject) ?? OC.exec(body);
+    const cm = /\b(\d{2,5}-\d{1,5}-CM\d{2})\b/i.exec(subject) ?? /\b(\d{2,5}-\d{1,5}-CM\d{2})\b/i.exec(body);
+    const num = /acto administrativo N[º°o]?\s*([A-Z]{2,4}-\d{4}-\d{5,10}-[\s-]*-?[A-Z]{2,12})/i.exec(body);
+    const proc = /(?:proceso de compra|convenio marco)\s+(\d{2,5}-\d{1,7}-[A-Z]{2,5}\d{2})\s+(.+?)(?:,\s*a fin de|\s+a fin de|$)/i.exec(body);
+    return { ...base, event: { kind: "acto", act, bac_number: oc?.[1]?.toUpperCase() ?? null, contract_number: cm?.[1]?.toUpperCase() ?? null,
+      act_number: num ? num[1].replace(/\s+/g, "").replace(/--+/g, "-") : null, process_number: proc?.[1]?.toUpperCase() ?? null, process_name: tidyName(proc?.[2])?.slice(0, 300) ?? null } };
+  }
+
   if (/perfeccionamiento/i.test(subject) || /ha sido perfeccionado/i.test(body)) {
     const oc = /Documento n[uú]mero:\s*(\d{2,5}-\d{3,7}-OC\d{2})/i.exec(body) ?? OC.exec(text);
     if (!oc) return null;
@@ -83,14 +97,14 @@ export function parseBacMail(m: InboundMail): ParsedMail | null {
 export type MailCategory = "orden" | "perfeccionamiento" | "prd" | "pago" | "licitacion" | "organismo" | "otro";
 
 const CAT_BY_KIND: Record<BacEvent["kind"], MailCategory> = {
-  oc_generada: "orden", oc_perfeccionada: "perfeccionamiento", prd: "prd", pago: "pago", publicacion: "licitacion",
+  oc_generada: "orden", oc_perfeccionada: "perfeccionamiento", prd: "prd", pago: "pago", publicacion: "licitacion", acto: "orden",
 };
 
 /** Categoría y referencias (OC / proceso) de cualquier mail de trabajo. */
 export function classifyMail(m: InboundMail, parsed: ParsedMail | null): { category: MailCategory; bac_number: string | null; process_number: string | null } {
   const text = `${m.subject}\n${m.body}`;
   const oc = parsed && "bac_number" in parsed.event ? parsed.event.bac_number : (OC.exec(text)?.[1]?.toUpperCase() ?? null);
-  const proc = parsed?.event.kind === "publicacion" ? parsed.event.process_number : (PROC.exec(text)?.[1]?.toUpperCase() ?? null);
+  const proc = parsed?.event.kind === "publicacion" || parsed?.event.kind === "acto" ? parsed.event.process_number : (PROC.exec(text)?.[1]?.toUpperCase() ?? null);
   if (parsed) return { category: CAT_BY_KIND[parsed.event.kind], bac_number: oc, process_number: proc };
   const from = m.from.toLowerCase();
   const gov = /gob\.ar|gov\.ar|bue\.edu\.ar/.test(from) || /gob\.ar|gov\.ar|bue\.edu\.ar/.test(m.to ?? "");

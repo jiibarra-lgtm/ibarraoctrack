@@ -56,3 +56,14 @@ export async function saveSircrebRate(raw: string): Promise<R> {
   revalidatePath("/impuestos");
   return { ok: true };
 }
+
+/** Marca un aviso fiscal (o todos, sin id) como visto. */
+export async function markNoticeSeen(id: string | null): Promise<R> {
+  const s = await requireOrg();
+  if (!canBill(s.org.role)) return { ok: false, error: "Sólo administración y finanzas" };
+  if (id !== null && !/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: "Aviso inválido" };
+  const { error } = await s.supabase.rpc("tax_notice_seen", { p_org: s.org.org_id, p_id: id });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/impuestos");
+  return { ok: true };
+}

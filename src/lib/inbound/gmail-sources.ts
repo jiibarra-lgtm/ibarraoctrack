@@ -19,7 +19,9 @@ export const GMAIL_SOURCES: GmailSource[] = [
   // Tarjeta Mercado Pago (cierre, vencimiento, débitos), avisos fiscales (ARCA e-Ventanilla, AGIP) y actos administrativos del BAC
   { key: "tarjeta", days: 400, mode: "mail", q: 'from:mercadopago.com.ar {subject:"debitaremos el total" subject:"débito automático para pagar tu tarjeta" subject:"pudimos debitar" subject:"nada que pagar"}' },
   { key: "fiscal", days: 730, mode: "mail", q: '{from:eventanilla@arca.gob.ar from:eventanilla@afip.gov.ar from:agip.gov.ar from:agip.gob.ar (from:notificacionesbac@buenosaires.gob.ar subject:"acto administrativo")}' },
+  // Ventanas de actualización de precios / incremento de stock de los convenios marco
+  { key: "convenios", days: 90, mode: "mail", q: 'from:notificacionesbac@buenosaires.gob.ar subject:"Inicio período"' },
   { key: "facturas", days: 730, mode: "pdf", q: INVOICE_QUERY },
 ];
 
-export const GMAIL_SOURCES_VERSION = "2026-11-12b";
+export const GMAIL_SOURCES_VERSION = "2026-11-13a";

@@ -2,6 +2,8 @@ import { NextResponse, after, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { classifyMail, parseBacMail } from "@/lib/inbound/bac-mail";
+import { parseConvenioWindow, type ConvenioWindow } from "@/lib/inbound/convenio-window";
+import { sendPendingPushes } from "@/lib/push";
 import { isTaxNoticeMail, parseTaxNotice, type TaxNotice } from "@/lib/inbound/tax-notices";
 import { isCardAlertMail, parseCardAlert, type CardAlert } from "@/lib/inbound/card-alerts";
 import { isCiudadMovementsMail, parseCiudad, type BankBalance, type BankMovement } from "@/lib/inbound/bank-ciudad";
@@ -59,6 +61,7 @@ export async function POST(req: NextRequest) {
   const movements: (BankMovement & { message_id: string; seen_at: string })[] = [];
   const cardAlerts: CardAlert[] = [];
   const taxNotices: TaxNotice[] = [];
+  const windows: ConvenioWindow[] = [];
   const acts: unknown[] = [];
   const balances: (BankBalance & { message_id: string })[] = [];
   const mlEvents: MlEvent[] = [];
@@ -74,6 +77,9 @@ export async function POST(req: NextRequest) {
       if (r.balance) balances.push({ ...r.balance, message_id: m.id });
       continue;
     }
+    // Ventana de actualización de precios / stock de un convenio marco
+    const win = parseConvenioWindow({ id: m.id, from: m.from, subject: m.subject, body: m.body });
+    if (win) windows.push(win);
     // Avisos fiscales (e-Ventanilla de ARCA, AGIP): alerta en Impuestos; el mail sigue a Correos
     if (isTaxNoticeMail(m.from)) {
       const n = parseTaxNotice({ id: m.id, from: m.from, subject: m.subject, body: m.body, date: date.toISOString() });
@@ -126,12 +132,14 @@ export async function POST(req: NextRequest) {
     payments.length ? sb.rpc("ingest_payments", { p_token: body.token, p_payments: payments }) : Promise.resolve({ data: null, error: null }),
   ]);
   const none = { data: 0, error: null };
-  const [ca, tn, ac] = await Promise.all([
+  const [ca, tn, ac, cw] = await Promise.all([
     cardAlerts.length ? sb.rpc("ingest_card_alerts", { p_token: body.token, p_alerts: cardAlerts }) : Promise.resolve(none),
     taxNotices.length ? sb.rpc("ingest_tax_notices", { p_token: body.token, p_notices: taxNotices }) : Promise.resolve(none),
     acts.length ? sb.rpc("ingest_bac_acts", { p_token: body.token, p_acts: acts }) : Promise.resolve(none),
+    windows.length ? sb.rpc("ingest_convenio_windows", { p_token: body.token, p_windows: windows }) : Promise.resolve(none),
   ]);
-  const err = ca.error ?? tn.error ?? ac.error ?? ev.error ?? ml.error ?? bk.error ?? me.error ?? bl.error ?? py.error;
+  if (windows.length) after(() => sendPendingPushes(sb, body.token).catch(() => null));
+  const err = cw.error ?? ca.error ?? tn.error ?? ac.error ?? ev.error ?? ml.error ?? bk.error ?? me.error ?? bl.error ?? py.error;
   if (err) {
     const auth = /token/i.test(err.message);
     return NextResponse.json({ error: auth ? "Token inválido" : "No se pudo guardar" }, { status: auth ? 401 : 500 });

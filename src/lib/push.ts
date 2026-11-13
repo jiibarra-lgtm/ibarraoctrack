@@ -37,7 +37,7 @@ export async function sendPendingPushes(sb: SupabaseClient, token: string) {
   const ok = new Set<string>(), failed = new Set<string>(), gone = new Set<string>();
   const sent: { id: string; type: string }[] = [];
   for (const n of box.notifications) {
-    const payload = JSON.stringify({ ...message(n), url: "/productos" });
+    const payload = JSON.stringify({ ...message(n), url: "/precios-stock" });
     let any = false;
     for (const s of box.subscriptions) {
       try {

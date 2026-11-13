@@ -2,7 +2,7 @@ import {
   LayoutDashboard, FileText, Upload, Truck, ShoppingCart, Receipt, Wallet, Landmark, Building2, Factory,
   Package, LineChart, Calculator, FileBarChart, FolderOpen, Bell, Settings, Users, Trophy, CalendarRange, CircleDollarSign,
   Inbox, Mail, Gavel, ShoppingBag, ClipboardList, Percent, WalletCards, type LucideIcon,
-  Tags,
+  Tags, CalendarClock,
   Boxes,
   Scale,
 } from "lucide-react";
@@ -26,6 +26,7 @@ export const NAV: NavGroup[] = [
     label: "Operación",
     items: [
       { href: "/compras", label: "Compras", icon: ShoppingCart },
+      { href: "/precios-stock", label: "Precios y stock", icon: CalendarClock },
       { href: "/precios-proveedores", label: "Precios de proveedores", icon: Tags },
       { href: "/mercadolibre", label: "Mercado Libre", icon: ShoppingBag },
       { href: "/costos", label: "Costos", icon: CircleDollarSign },

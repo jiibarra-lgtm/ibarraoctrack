@@ -21,15 +21,17 @@ export default async function CollectionsPage() {
   const sb = s.supabase;
   const year = todayISO().slice(0, 4);
   const month = todayISO().slice(0, 7);
-  const [open, { data: cols }, { data: pays }, billable] = await Promise.all([
+  const [open, { data: cols }, { data: pays }, billable, { data: orgRow }] = await Promise.all([
     loadInvoices(sb, s.org.org_id, { onlyOpen: true }),
     sb.from("collections").select("*, sales_invoices(invoice_type, point_of_sale, number, currency)").eq("org_id", s.org.org_id)
       .order("payment_date", { ascending: false }).limit(200),
     sb.from("bac_payments_overview").select("*").eq("org_id", s.org.org_id).order("notified_at", { ascending: false }).limit(300),
     loadBillableOrders(sb, s.org.org_id),
+    sb.from("organizations").select("ops_start_date").eq("id", s.org.org_id).maybeSingle(),
   ]);
   type Pay = { id: string; invoice_type: string; point_of_sale: string; number: string; invoice_date: string | null; notified_at: string; invoice_loaded: boolean; purchase_order_id: string | null; total_amount: string | null };
-  const payments = (pays ?? []) as Pay[];
+  const start = (orgRow as { ops_start_date: string | null } | null)?.ops_start_date ?? "2000-01-01";
+  const payments = ((pays ?? []) as Pay[]).filter((p) => !p.notified_at || p.notified_at.slice(0, 10) >= start);
   const missingDoc = payments.filter((p) => !p.invoice_loaded);
   const orderOptions = billable.map((b) => ({ id: b.purchase_order_id, label: b.order?.label ?? "—", customer: b.order?.customer ?? null, to_invoice: b.to_invoice, currency: b.currency }));
   const collections = (cols ?? []) as (CollectionRow & { sales_invoices: { invoice_type: string; point_of_sale: string | null; number: string | null; currency: string } })[];

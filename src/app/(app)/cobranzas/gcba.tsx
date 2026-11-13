@@ -17,29 +17,32 @@ const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().sl
 /** Cobros del GCBA detectados en el Banco Ciudad y cruzados solos con cada factura (aviso de SIGAF + retenciones). */
 export async function GcbaCollections({ sb, org, canEdit }: { sb: SupabaseClient; org: string; canEdit: boolean }) {
   const since = daysAgo(400);
-  const [{ data: icData }, { data: movData }, { data: matchData }] = await Promise.all([
+  const [{ data: icData }, { data: movData }, { data: matchData }, { data: orgData }] = await Promise.all([
     sb.from("invoice_collections").select("*").eq("org_id", org).gte("issue_date", since).order("issue_date", { ascending: false }).limit(3000),
     sb.from("bank_movements").select("id, mov_date, amount, detail").eq("org_id", org).eq("kind", "gcba").order("mov_date", { ascending: false }).limit(500),
     sb.from("bank_matches").select("bank_movement_id").eq("org_id", org).limit(5000),
+    sb.from("organizations").select("ops_start_date").eq("id", org).maybeSingle(),
   ]);
+  // La conciliación arranca en la fecha de inicio (lo anterior no se muestra como pendiente)
+  const start = (orgData as { ops_start_date: string | null } | null)?.ops_start_date ?? "2000-01-01";
   const ic = (icData ?? []) as IC[];
   const movs = (movData ?? []) as Mov[];
   if (!movs.length) return null;
   const matched = new Set(((matchData ?? []) as { bank_movement_id: string }[]).map((m) => m.bank_movement_id));
-  const unmatched = movs.filter((m) => !matched.has(m.id));
+  const unmatched = movs.filter((m) => !matched.has(m.id) && m.mov_date >= start);
   const paid = ic.filter((x) => x.paid_on).sort((a, b) => b.paid_on!.localeCompare(a.paid_on!));
   const today = todayAr();
   const month = today.slice(0, 7);
   const paidMonth = paid.filter((x) => x.paid_on!.startsWith(month));
   // pendientes: facturas a organismos (CUIT 30/33/34) sin cobro, que el GCBA suele pagar
   const gcbaCuits = new Set(paid.map((x) => x.doc_number));
-  const pending = ic.filter((x) => !x.paid_on && (gcbaCuits.has(x.doc_number) || x.sigaf_notified)).sort((a, b) => a.issue_date.localeCompare(b.issue_date));
+  const pending = ic.filter((x) => !x.paid_on && x.issue_date >= start && (gcbaCuits.has(x.doc_number) || x.sigaf_notified)).sort((a, b) => a.issue_date.localeCompare(b.issue_date));
   const avgDays = paid.length ? Math.round(paid.reduce((a, x) => a + (x.days_to_pay ?? 0), 0) / paid.length) : null;
   const ageOf = (d: string) => Math.round((Date.parse(today) - Date.parse(d)) / 864e5);
   const late = avgDays !== null ? pending.filter((x) => ageOf(x.issue_date) > avgDays * 1.5) : [];
   const sumN = (xs: IC[], k: keyof IC) => xs.reduce((a, x) => a + Number(x[k] ?? 0), 0);
   // candidatas para depósitos que no cerraron solos
-  const open = ic.filter((x) => !x.paid_on).slice(0, 400).map((x) => ({ id: x.id, label: `${num(x)} · ${formatDate(x.issue_date)} · ${x.name.slice(0, 28)} · ${formatMoney(x.total)}`, total: Number(x.total) }));
+  const open = ic.filter((x) => !x.paid_on && x.issue_date >= start).slice(0, 400).map((x) => ({ id: x.id, label: `${num(x)} · ${formatDate(x.issue_date)} · ${x.name.slice(0, 28)} · ${formatMoney(x.total)}`, total: Number(x.total) }));
 
   return (
     <div className="mb-6 space-y-5">

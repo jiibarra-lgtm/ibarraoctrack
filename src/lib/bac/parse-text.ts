@@ -177,7 +177,9 @@ export function validCuit(cuit: string): boolean {
 
 // ---------------------------------------------------------------------------
 export function parseBacText(raw: string): ExtractedOrder {
-  const text = raw.replace(/\r\n/g, "\n").replace(/ /g, " ");
+  const text = raw.replace(/\r\n/g, "\n").replace(/ /g, " ")
+    // OCR: códigos de catálogo con coma en vez de punto ("18.10.003,0004.8")
+    .replace(/\b(\d{2})[.,](\d{2})[.,](\d{3})[.,](\d{4})[.,](\d{1,3})\b/g, "$1.$2.$3.$4.$5");
   const flat = clean(text.replace(/\n+/g, " "));
   const S = splitSections(text);
   const review: string[] = [];
@@ -369,6 +371,8 @@ export function parseBacText(raw: string): ExtractedOrder {
       }
     });
   }
+  rebuildFromOcr(text, o, review, warnings);
+
   // Importe total mal leído (dígito de más) cuando los renglones cierran con el neto y no hay bonificación
   const itemsSum = o.items!.reduce((a, it) => a + (Number(it.total_amount) || 0), 0);
   if (o.net_amount && Math.abs(itemsSum - Number(o.net_amount)) <= 1 && (!Number(o.discount_amount) || o.discount_amount === "0.00")
@@ -396,4 +400,115 @@ export function parseBacText(raw: string): ExtractedOrder {
   }
 
   return { order: o, review, warnings };
+}
+
+/**
+ * OCR de varias páginas: renglones repetidos por el corte de página, renglones que sólo aparecen en
+ * la tabla de entrega, columnas que quedan lejos de su renglón. Si los renglones no cierran con el
+ * importe neto, se rearman: cada renglón (de detalle o de entrega) toma su cantidad y busca el primer
+ * par precio/total que cierre después de su código; si queda uno solo sin resolver, se completa con
+ * lo que falta para el neto. El resultado sólo se usa si la suma da exactamente el neto.
+ */
+function rebuildFromOcr(text: string, o: PurchaseOrderInput, review: string[], warnings: ExtractedOrder["warnings"]) {
+  const target = o.net_amount || o.total_amount;
+  const items = o.items ?? [];
+  if (!target || !items.length) return;
+  const ok = (it: { quantity: unknown; unit_price: unknown; total_amount: unknown }) =>
+    isValidDecimal(String(it.quantity)) && isValidDecimal(String(it.unit_price)) && isValidDecimal(String(it.total_amount))
+    && !differs(String(it.total_amount), lineTotal(String(it.quantity), String(it.unit_price)));
+  const sumOf = (arr: { total_amount: unknown }[]) => arr.reduce((a, it) => a + (Number(it.total_amount) || 0), 0);
+  const keys = new Set(items.map((it) => `${it.line_number}|${it.bac_code}`));
+  if (items.every(ok) && Math.abs(sumOf(items) - Number(target)) <= 0.01 && keys.size === items.length) return;
+
+  const entAt = text.search(/Detalle\s+de\s+entrega/i);
+  const detAt = Math.max(0, text.search(/Detalle\s+del\s+documento/i));
+  const pre = text.slice(detAt, entAt > detAt ? entAt : text.length);
+  const ent = entAt > detAt ? text.slice(entAt) : "";
+  const rows = (src: string) => [...src.matchAll(RE.catalog)].map((m, i, all) => {
+    const lo = /(?:^|\s)(\d{1,4})\s+(\d{1,3})\s*$/.exec(src.slice(Math.max(0, (m.index ?? 0) - 40), m.index));
+    const end = i + 1 < all.length ? (all[i + 1].index ?? src.length) : src.length;
+    return { code: m[0], line: lo ? Number(lo[1]) : null, at: m.index ?? 0, seg: src.slice((m.index ?? 0) + m[0].length, end) };
+  });
+  const det = rows(pre), entr = rows(ent);
+  const firstNum = (seg: string) => {
+    const a = [...seg.matchAll(RE.decimal)][0];
+    return a ? parseArNumber(a[0]) : null;
+  };
+
+  type Row = { line: number; code: string; at: number; qs: string[]; desc: string; entDesc: string };
+  const list: Row[] = [];
+  for (const r of [...det, ...entr.map((e) => ({ ...e, at: -1 }))]) {
+    if (r.line == null) continue;
+    let row = list.find((x) => x.line === r.line && x.code === r.code);
+    if (!row) {
+      const desc = clean(r.seg.split(/(?<![\d.,])\d[\d.]*,\d{2}/)[0].replace(/\s+/g, " ")).slice(0, 300);
+      row = { line: r.line, code: r.code, at: r.at, qs: [], desc, entDesc: "" };
+      list.push(row);
+    }
+    if (r.at < 0 && !row.entDesc) row.entDesc = clean(r.seg.split(/(?<![\d.,])\d[\d.]*,\d{2}/)[0].replace(/\s+/g, " ")).slice(0, 300);
+    const q = firstNum(r.seg);
+    // la cantidad de la tabla de entrega es la más confiable
+    if (q && Number(q) > 0 && !row.qs.includes(q)) {
+      if (r.at < 0) row.qs.unshift(q);
+      else row.qs.push(q);
+    }
+  }
+  if (!list.length) return;
+  list.sort((a, b) => a.line - b.line);
+
+  const pool = [...pre.matchAll(RE.decimal)].map((a) => ({ at: a.index ?? 0, v: parseArNumber(a[0]) }))
+    .filter((n): n is { at: number; v: string } => !!n.v && Number(n.v) > 0);
+  const used = new Set<number>();
+  const rank = (r: Row, n: { at: number }) => (r.at < 0 ? n.at : (n.at < r.at ? 1e9 : 0) + n.at);
+  const solve = (r: Row) => {
+    const order = [...pool].sort((a, b) => rank(r, a) - rank(r, b));
+    for (const q of r.qs) {
+      for (let i = 0; i < order.length; i++) {
+        const p = order[i];
+        if (used.has(p.at)) continue;
+        // el total va a continuación del precio (mismo renglón de la tabla)
+        const t = order.slice(i + 1, i + 4).find((n) => !used.has(n.at) && n.at > p.at && !differs(n.v, lineTotal(q, p.v)));
+        if (t) {
+          used.add(p.at);
+          used.add(t.at);
+          return { q, p: p.v, t: t.v };
+        }
+      }
+    }
+    return null;
+  };
+  // primero los renglones ubicados en la tabla de detalle; después los que sólo figuran en la entrega
+  const solved: ({ q: string; p: string; t: string } | null)[] = list.map(() => null);
+  for (const pass of [true, false]) list.forEach((r, i) => { if ((r.at >= 0) === pass) solved[i] = solve(r); });
+  const missing = solved.map((s, i) => (s ? -1 : i)).filter((i) => i >= 0);
+  if (missing.length === 1) {
+    const i = missing[0];
+    const rest = Number(target) - solved.reduce((a, s) => a + (s ? Number(s.t) : 0), 0);
+    for (const q of list[i].qs) {
+      const p = (rest / Number(q)).toFixed(2);
+      if (rest > 0 && pool.some((n) => n.v === p) && !differs(rest.toFixed(2), lineTotal(q, p))) {
+        solved[i] = { q, p, t: rest.toFixed(2) };
+        break;
+      }
+    }
+  }
+  if (solved.some((s) => !s)) return;
+  const total = solved.reduce((a, s) => a + Number(s!.t), 0);
+  if (Math.abs(total - Number(target)) > 0.01) return;
+
+  o.items = list.map((r, i) => {
+    const prev = items.find((it) => it.line_number === r.line && it.bac_code === r.code);
+    const it = prev ? { ...prev } : { ...emptyItem(r.line), bac_code: r.code, description_original: r.desc };
+    if (r.entDesc && (!it.description_original || /^(Especificaciones|Unidad|Cantidad|Precio|Rengl)/i.test(it.description_original))) it.description_original = r.entDesc;
+    it.quantity = solved[i]!.q;
+    it.unit_price = solved[i]!.p;
+    it.total_amount = solved[i]!.t;
+    return it;
+  });
+  for (let k = review.length - 1; k >= 0; k--) if (review[k].startsWith("items.")) review.splice(k, 1);
+  o.items.forEach((it, i) => {
+    if (!it.description_original) review.push(`items.${i}.description_original`);
+  });
+  for (let k = warnings.length - 1; k >= 0; k--) if (warnings[k].path?.startsWith("items")) warnings.splice(k, 1);
+  warnings.push({ level: "info", path: "items", message: `Renglones rearmados desde la lectura de las páginas: ${o.items.length} renglones que suman el neto (${target}).` });
 }

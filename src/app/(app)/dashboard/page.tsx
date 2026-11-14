@@ -6,10 +6,11 @@ import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { StatusBadge } from "@/components/po/status-badge";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoney, todayISO } from "@/lib/format";
 import { sum } from "@/lib/money";
 import type { PoStatus } from "@/lib/po/schema";
 import { MonthlyChart } from "./monthly-chart";
+import { loadMonthStages, MonthStagesCard } from "./month-stages";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -20,10 +21,15 @@ function monthsBack(n: number) {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - (n - 1), 1)).toISOString().slice(0, 10);
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ mes?: string; iva?: string }> }) {
+  const sp = await searchParams;
   const s = await requireOrg();
   const org = s.org.org_id;
   const from = monthsBack(12);
+  const current = todayISO().slice(0, 7);
+  const ym = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.mes ?? "") && sp.mes! <= current ? sp.mes! : current;
+  const iva = sp.iva === "sin" ? "sin" : "con";
+  const stagesP = loadMonthStages(s.supabase, org, ym);
 
   const [totals, monthly, top, recent, pending, profits, delSummary, upcoming] = await Promise.all([
     s.supabase.rpc("po_totals", { p_org: org }),
@@ -83,6 +89,7 @@ export default async function DashboardPage() {
   ]);
   const receivable = sum(openInv.filter((i) => i.currency === main).map((i) => String(i.balance)));
   const overdueAmt = sum(openInv.filter((i) => i.currency === main && i.collection_status === "vencida").map((i) => String(i.balance)));
+  const stages = await stagesP;
   const urgent = alerts.filter((a) => a.level === "danger");
   const empty = nTotal === 0 && rows.length === 0;
 
@@ -105,6 +112,7 @@ export default async function DashboardPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-5">
+          {stages && <MonthStagesCard data={stages} ym={ym} current={current} iva={iva} />}
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Kpi icon={Wallet} label="Total adjudicado" value={formatMoney(awarded, main)} sub={`${nTotal} órdenes vigentes`} href="/ordenes" />
             <Kpi icon={Activity} label="En curso" value={formatMoney(activeAmt, main)} sub={`${nActive} órdenes activas`} href="/ordenes?estado=en_ejecucion" />

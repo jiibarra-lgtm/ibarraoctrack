@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import { baParts, fmtQty, type RemitoSheetData } from "@/lib/remitos";
+import { formatMoney } from "@/lib/format";
 
 const ROWS = 16;
 const ink = "#111";
@@ -15,6 +16,11 @@ export function RemitoSheet({ data, qrSvg }: { data: RemitoSheetData; qrSvg?: st
   const { d, m, y, hm } = baParts(data.issuedAt);
   const it = data.issuer;
   const rows = [...data.items, ...Array.from({ length: Math.max(0, ROWS - data.items.length) }, () => null)];
+  // Remito valorizado: si algún renglón trae precio, se agregan precio unitario, subtotal y total
+  const priced = data.items.some((r) => r.unit_price !== null && r.unit_price !== undefined && r.unit_price !== "");
+  const cols = priced ? "4.6fr 1.2fr 1.7fr 1.9fr 2.4fr" : "6.2fr 1.5fr 3.8fr";
+  const sub = (r: RemitoSheetData["items"][number]) => (r.unit_price ? Number(r.quantity) * Number(r.unit_price) : null);
+  const total = data.items.reduce((a, r) => a + (sub(r) ?? 0), 0);
   return (
     <div className="remito-sheet" style={{ width: "8.5in", minHeight: "11in", padding: "0.42in 0.42in 0.3in", background: "#fff", color: ink, fontFamily: "Inter, 'Helvetica Neue', Arial, sans-serif", fontFeatureSettings: "\"calt\" 0", position: "relative", boxSizing: "border-box", printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }}>
       {data.voided && (
@@ -74,18 +80,29 @@ export function RemitoSheet({ data, qrSvg }: { data: RemitoSheetData; qrSvg?: st
       {/* Renglones */}
       <div style={{ border: line, position: "relative" }}>
         <img src="/brand/remito-marca.jpg" alt="" aria-hidden style={{ position: "absolute", left: "10%", top: "34%", width: "80%", opacity: 0.9, pointerEvents: "none" }} />
-        <div style={{ display: "grid", gridTemplateColumns: "6.2fr 1.5fr 3.8fr", background: "#222", color: "#fff", fontSize: 11, fontWeight: 700 }}>
+        <div style={{ display: "grid", gridTemplateColumns: cols, background: "#222", color: "#fff", fontSize: 11, fontWeight: 700 }}>
           <div style={{ padding: "8px 10px" }}>DESCRIPCIÓN</div>
           <div style={{ padding: "8px 0", textAlign: "center" }}>CANTIDAD</div>
+          {priced && <div style={{ padding: "8px 0", textAlign: "center" }}>P. UNITARIO</div>}
+          {priced && <div style={{ padding: "8px 0", textAlign: "center" }}>SUBTOTAL</div>}
           <div style={{ padding: "8px 0", textAlign: "center" }}>DETALLE</div>
         </div>
         {rows.map((r, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "6.2fr 1.5fr 3.8fr", minHeight: 27, fontSize: 11.5, background: i % 2 ? "rgba(235,235,235,0.75)" : "rgba(255,255,255,0.6)", borderTop: soft, position: "relative" }}>
+          <div key={i} style={{ display: "grid", gridTemplateColumns: cols, minHeight: 27, fontSize: 11.5, background: i % 2 ? "rgba(235,235,235,0.75)" : "rgba(255,255,255,0.6)", borderTop: soft, position: "relative" }}>
             <div style={{ padding: "6px 10px", borderRight: soft, wordBreak: "break-word" }}>{r?.description}</div>
             <div style={{ padding: "6px 0", textAlign: "center", borderRight: soft, fontWeight: 600 }}>{r ? fmtQty(r.quantity) : ""}</div>
+            {priced && <div style={{ padding: "6px 6px", textAlign: "right", borderRight: soft, fontVariantNumeric: "tabular-nums" }}>{r?.unit_price ? formatMoney(r.unit_price) : ""}</div>}
+            {priced && <div style={{ padding: "6px 6px", textAlign: "right", borderRight: soft, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{r && sub(r) !== null ? formatMoney(sub(r)!) : ""}</div>}
             <div style={{ padding: "6px 10px", wordBreak: "break-word" }}>{r?.detail}</div>
           </div>
         ))}
+        {priced && (
+          <div style={{ display: "grid", gridTemplateColumns: cols, borderTop: line, fontSize: 12.5, fontWeight: 800, background: "#fff", position: "relative" }}>
+            <div style={{ padding: "8px 10px", gridColumn: "1 / span 3", textAlign: "right" }}>TOTAL</div>
+            <div style={{ padding: "8px 6px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatMoney(total)}</div>
+            <div />
+          </div>
+        )}
       </div>
 
       {data.notes && <div style={{ fontSize: 10.5, marginTop: 8 }}><b>Observaciones:</b> {data.notes}</div>}

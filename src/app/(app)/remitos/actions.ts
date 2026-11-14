@@ -5,6 +5,7 @@ import { requireOrg, canWrite } from "@/lib/session";
 import { friendlyDbError } from "@/lib/errors";
 import { isUuid } from "@/lib/utils";
 import { loadDeliveryItems } from "@/lib/delivery-load";
+import { parseArNumber } from "@/lib/money";
 
 const canEmit = (role: string) => canWrite(role as never) || role === "logistica";
 
@@ -14,6 +15,7 @@ const Line = z.object({
   detail: z.string().trim().max(300).optional().default(""),
   purchase_order_item_id: z.string().uuid().optional().or(z.literal("")),
   product_id: z.string().uuid().optional().or(z.literal("")),
+  unit_price: z.string().trim().max(20).optional().default(""),
 });
 const Payload = z.object({
   recipient_name: z.string().trim().min(1, "Indicá el destinatario").max(300),
@@ -45,11 +47,18 @@ export async function emitRemito(input: EmitPayload): Promise<{ ok: true; id: st
   if (!items.length) return { ok: false, error: "Agregá al menos un producto con cantidad" };
   if (items.some((i) => !Number.isFinite(Number(i.quantity)))) return { ok: false, error: "Hay una cantidad inválida" };
   const { date, time, ...rest } = v;
+  const prices = items.map((i, idx) => ({ line_no: idx + 1, unit_price: i.unit_price ? parseArNumber(i.unit_price) : null })).filter((x) => x.unit_price !== null);
+  if (prices.some((x) => !Number.isFinite(Number(x.unit_price)) || Number(x.unit_price) < 0)) return { ok: false, error: "Hay un precio inválido" };
   const { data, error } = await s.supabase.rpc("emit_remito", {
     p_org: s.org.org_id,
-    p_payload: { ...rest, items, issued_at: `${date}T${time}:00-03:00` },
+    p_payload: { ...rest, items: items.map((i) => ({ description: i.description, quantity: i.quantity, detail: i.detail, purchase_order_item_id: i.purchase_order_item_id, product_id: i.product_id })), issued_at: `${date}T${time}:00-03:00` },
   });
   if (error) return { ok: false, error: friendlyDbError(error) };
+  // Remito valorizado: precio por renglón (las líneas se numeran en el mismo orden)
+  if (prices.length) {
+    const { error: pe } = await s.supabase.rpc("remito_set_prices", { p_org: s.org.org_id, p_remito: data, p_prices: prices });
+    if (pe) return { ok: false, error: `Remito emitido, pero no se guardaron los precios: ${friendlyDbError(pe)}` };
+  }
   revalidatePath("/remitos");
   if (v.purchase_order_id) revalidatePath(`/ordenes/${v.purchase_order_id}`);
   return { ok: true, id: data as string };
@@ -58,7 +67,7 @@ export async function emitRemito(input: EmitPayload): Promise<{ ok: true; id: st
 export type OrderForRemito = {
   id: string; number: string; customer_id: string | null; customer_name: string | null; customer_address: string | null; customer_cuit: string | null;
   delivery_place: string | null; dependencia: string | null;
-  items: { id: string; line: number; description: string; quantity: string; pending: string }[];
+  items: { id: string; line: number; description: string; quantity: string; pending: string; unit_price: string | null }[];
 };
 
 /** Busca una OC por número (BAC o interno) para completar el remito. */
@@ -73,15 +82,17 @@ export async function findOrderForRemito(q: string): Promise<OrderForRemito | nu
     .order("issue_date", { ascending: false }).limit(1);
   const po = rows?.[0];
   if (!po) return null;
-  const [items, cust] = await Promise.all([
+  const [items, cust, { data: prices }] = await Promise.all([
     loadDeliveryItems(s.supabase, po.id),
     po.customer_id ? s.supabase.from("customers").select("address, cuit").eq("id", po.customer_id).maybeSingle() : Promise.resolve({ data: null }),
+    s.supabase.from("purchase_order_items").select("id, unit_price").eq("purchase_order_id", po.id),
   ]);
+  const price = new Map((prices ?? []).map((x) => [x.id as string, x.unit_price === null ? null : String(x.unit_price)]));
   return {
     id: po.id, number: po.bac_number ?? po.display_number, customer_id: po.customer_id, customer_name: po.customer_name,
     customer_address: cust.data?.address ?? null, customer_cuit: cust.data?.cuit ?? null,
     delivery_place: po.delivery_place, dependencia: po.dependencia,
-    items: items.map((i) => ({ id: i.id, line: i.line_number, description: i.description, quantity: i.quantity, pending: String(Math.max(0, Number(i.quantity) - Number(i.committed))) })),
+    items: items.map((i) => ({ id: i.id, line: i.line_number, description: i.description, quantity: i.quantity, pending: String(Math.max(0, Number(i.quantity) - Number(i.committed))), unit_price: price.get(i.id) ?? null })),
   };
 }
 

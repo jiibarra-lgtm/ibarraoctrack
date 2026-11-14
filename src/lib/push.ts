@@ -6,20 +6,23 @@ import { formatDate } from "@/lib/format";
 type Outbox = {
   public_key: string | null; private_key: string | null;
   subscriptions: { endpoint: string; p256dh: string; auth: string }[];
-  notifications: { id: string; type: "open" | "closing"; contract: string; name: string | null; ends_on: string; stock: boolean }[];
+  notifications: { id: string; type: "open" | "closing" | "oc_missing"; contract: string; name: string | null; ends_on: string; stock: boolean }[];
 };
 
 const SUBJECT = "https://ibarraoctrack.vercel.app";
 
 function message(n: Outbox["notifications"][number]) {
+  if (n.type === "oc_missing") {
+    return { title: `OC sin cargar · ${n.contract}`, body: `${n.name ?? "BAC"}: perfeccionada el ${formatDate(n.ends_on)} y todavía no subiste el PDF. El plazo de entrega ya corre.`, tag: `oc-missing-${n.contract}`, url: "/ordenes/importar" };
+  }
   const what = n.name ? `${n.name} (${n.contract})` : `convenio ${n.contract}`;
   return n.type === "open"
-    ? { title: "Abrió la actualización de precios", body: `${what}: podés actualizar precios${n.stock ? " y stock" : ""} hasta el ${formatDate(n.ends_on)}.`, tag: `conv-open-${n.contract}` }
-    : { title: "Mañana cierra la actualización de precios", body: `${what}: último día el ${formatDate(n.ends_on)}. Si vas a cambiar precios, hacelo hoy.`, tag: `conv-close-${n.contract}` };
+    ? { title: "Abrió la actualización de precios", body: `${what}: podés actualizar precios${n.stock ? " y stock" : ""} hasta el ${formatDate(n.ends_on)}.`, tag: `conv-open-${n.contract}`, url: "/precios-stock" }
+    : { title: "Mañana cierra la actualización de precios", body: `${what}: último día el ${formatDate(n.ends_on)}. Si vas a cambiar precios, hacelo hoy.`, tag: `conv-close-${n.contract}`, url: "/precios-stock" };
 }
 
 /**
- * Manda los avisos pendientes (ventana de precios que abre hoy / cierra mañana) a todos los dispositivos suscriptos.
+ * Manda los avisos pendientes (ventana de precios que abre hoy / cierra mañana, OC perfeccionada sin cargar) a todos los dispositivos suscriptos.
  * Corre en cada pasada del script de Gmail con su token. La primera vez genera las claves VAPID y las guarda en la base.
  */
 export async function sendPendingPushes(sb: SupabaseClient, token: string) {
@@ -37,7 +40,7 @@ export async function sendPendingPushes(sb: SupabaseClient, token: string) {
   const ok = new Set<string>(), failed = new Set<string>(), gone = new Set<string>();
   const sent: { id: string; type: string }[] = [];
   for (const n of box.notifications) {
-    const payload = JSON.stringify({ ...message(n), url: "/precios-stock" });
+    const payload = JSON.stringify(message(n));
     let any = false;
     for (const s of box.subscriptions) {
       try {

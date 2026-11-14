@@ -9,10 +9,14 @@ import { Card } from "@/components/ui/primitives";
 import { RemitoSheet } from "@/components/remito/remito-sheet";
 import { waLink, type RemitoIssuer } from "@/lib/remitos";
 import { cn } from "@/lib/utils";
+import { formatMoney } from "@/lib/format";
+import { parseArNumber } from "@/lib/money";
+
+const num = (v: string) => Number(parseArNumber(v) ?? 0);
 import { emitRemito, findOrderForRemito, searchProducts, type OrderForRemito } from "./actions";
 
 export type PlaceOption = { key: string; name: string; address: string | null; cuit: string | null; iva: string | null; place_id?: string; customer_id?: string };
-type Row = { key: string; description: string; quantity: string; detail: string; purchase_order_item_id?: string; product_id?: string; line?: number; max?: string };
+type Row = { key: string; description: string; quantity: string; detail: string; price: string; purchase_order_item_id?: string; product_id?: string; line?: number; max?: string };
 
 const uid = () => Math.random().toString(36).slice(2);
 const label = "mb-1 block text-[11px] font-semibold uppercase tracking-wide text-fg-subtle";
@@ -36,6 +40,8 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
   const [oc, setOc] = React.useState<OrderForRemito | null>(null);
   const [ocBusy, setOcBusy] = React.useState(false);
   const [registerDelivery, setRegisterDelivery] = React.useState(true);
+  const [priced, setPriced] = React.useState(false);
+  const [pct, setPct] = React.useState("");
   const [qr, setQr] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
 
@@ -68,7 +74,7 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
     const pending = r.items.filter((i) => Number(i.pending) > 0);
     setRows((prev) => [
       ...prev.filter((p) => !p.purchase_order_item_id),
-      ...(pending.length ? pending : r.items).map((i) => ({ key: uid(), description: i.description, quantity: String(Number(i.pending) > 0 ? Number(i.pending) : Number(i.quantity)), detail: "", purchase_order_item_id: i.id, line: i.line, max: i.pending })),
+      ...(pending.length ? pending : r.items).map((i) => ({ key: uid(), description: i.description, quantity: String(Number(i.pending) > 0 ? Number(i.pending) : Number(i.quantity)), detail: "", price: i.unit_price ? String(Number(i.unit_price)).replace(".", ",") : "", purchase_order_item_id: i.id, line: i.line, max: i.pending })),
     ]);
     toast.success(`OC ${r.number}: ${pending.length || r.items.length} renglones cargados`);
   }, []);
@@ -87,7 +93,7 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
       recipient_name: rec.name, recipient_address: rec.address, recipient_cuit: rec.cuit, recipient_iva: rec.iva,
       place_id: placeId ?? "", customer_id: customerId ?? "", purchase_order_id: oc?.id ?? "",
       register_delivery: !!oc && registerDelivery, save_place: savePlace && !placeId, provisional, date, time, notes,
-      items: rows.map((x) => ({ description: x.description, quantity: x.quantity, detail: x.detail, purchase_order_item_id: x.purchase_order_item_id ?? "", product_id: x.product_id ?? "" })),
+      items: rows.map((x) => ({ description: x.description, quantity: x.quantity, detail: x.detail, unit_price: priced ? x.price : "", purchase_order_item_id: x.purchase_order_item_id ?? "", product_id: x.product_id ?? "" })),
     });
     setSaving(false);
     if (!r.ok) return toast.error(r.error);
@@ -95,7 +101,15 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
     router.push(`/remitos/${r.id}?nuevo=1`);
   };
 
-  const filled = rows.filter((r) => r.description.trim() && Number(r.quantity.replace(",", ".")) > 0);
+  const filled = rows.filter((r) => r.description.trim() && num(r.quantity) > 0);
+  const total = priced ? filled.reduce((a, r) => a + num(r.quantity) * num(r.price), 0) : 0;
+  // Entrega parcial: completa las cantidades de los renglones de la OC con un % de lo pendiente
+  const fill = (factor: number | null) => setRows((rs) => rs.map((r) => {
+    if (!r.purchase_order_item_id) return r;
+    const base = Number(r.max ?? 0);
+    if (factor === null) return { ...r, quantity: "0" };
+    return { ...r, quantity: String(Math.max(0, Math.round(base * factor))) };
+  }));
   const ready = rec.name.trim() && filled.length > 0;
   const over = rows.filter((r) => r.max && Number(r.quantity.replace(",", ".")) > Number(r.max) && Number(r.max) > 0);
 
@@ -158,9 +172,26 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
         {/* Productos */}
         <Card className="p-5">
           <h3 className="mb-3 text-sm font-bold tracking-wide">PRODUCTOS</h3>
-          <ProductSearch onPick={(p) => setRows((r) => [...r, { key: uid(), description: p.description, quantity: "1", detail: "", product_id: p.id }])} />
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-2 rounded-full border border-card-border px-3 py-1.5 text-xs font-medium">
+              <input type="checkbox" checked={priced} onChange={(e) => setPriced(e.target.checked)} className="size-4 accent-[var(--brand)]" /> Remito valorizado (precio y total)
+            </label>
+            {oc && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-fg-subtle">Cantidades de la OC:</span>
+                <button type="button" onClick={() => fill(1)} className="rounded-full border border-card-border px-2.5 py-1 hover:bg-surface-2">Todo lo pendiente</button>
+                <button type="button" onClick={() => fill(0.5)} className="rounded-full border border-card-border px-2.5 py-1 hover:bg-surface-2">Mitad</button>
+                <button type="button" onClick={() => fill(null)} className="rounded-full border border-card-border px-2.5 py-1 hover:bg-surface-2">En cero</button>
+                <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); const v = num(pct); if (v > 0 && v <= 100) fill(v / 100); }}>
+                  <input value={pct} onChange={(e) => setPct(e.target.value)} inputMode="decimal" placeholder="%" aria-label="Porcentaje de lo pendiente" className="h-7 w-14 rounded-full border border-card-border bg-field px-2 text-center" />
+                  <button type="submit" className="rounded-full border border-card-border px-2.5 py-1 hover:bg-surface-2">Aplicar %</button>
+                </form>
+              </div>
+            )}
+          </div>
+          <ProductSearch onPick={(p) => setRows((r) => [...r, { key: uid(), description: p.description, quantity: "1", detail: "", price: "", product_id: p.id }])} />
           <div className="mt-3 hidden grid-cols-[minmax(0,1fr)_96px_minmax(0,0.6fr)_32px] gap-2 border-b-2 border-fg/80 pb-1.5 text-[11px] font-bold uppercase text-fg-subtle sm:grid">
-            <span>Descripción</span><span>Cantidad</span><span>Detalle</span><span />
+            <span>Descripción</span><span>Cantidad</span><span>{priced ? "Precio unit. · Detalle" : "Detalle"}</span><span />
           </div>
           <ul className="divide-y divide-border">
             {rows.map((r) => (
@@ -171,12 +202,16 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
                 </div>
                 <input value={r.quantity} onChange={(e) => setRow(r.key, "quantity", e.target.value)} inputMode="decimal" aria-label="Cantidad"
                   className={cn(field, "h-9 text-center tabular", r.max && Number(r.quantity.replace(",", ".")) > Number(r.max) && Number(r.max) > 0 && "border-warn")} />
-                <input value={r.detail} onChange={(e) => setRow(r.key, "detail", e.target.value)} placeholder="Marca, lote, presentación…" aria-label="Detalle" className={cn(field, "col-span-2 h-9 sm:col-span-1")} />
+                <div className={cn("col-span-2 flex gap-2 sm:col-span-1")}>
+                  {priced && <input value={r.price} onChange={(e) => setRow(r.key, "price", e.target.value)} inputMode="decimal" placeholder="$ unit." aria-label="Precio unitario" className={cn(field, "h-9 w-28 shrink-0 text-right tabular")} />}
+                  <input value={r.detail} onChange={(e) => setRow(r.key, "detail", e.target.value)} placeholder="Marca, lote, presentación…" aria-label="Detalle" className={cn(field, "h-9 min-w-0")} />
+                </div>
                 <button type="button" onClick={() => setRows((x) => x.filter((y) => y.key !== r.key))} className="row-start-1 grid h-9 place-items-center text-fg-subtle hover:text-danger sm:row-start-auto" style={{ gridColumn: "3" }} aria-label="Quitar"><Trash2 className="size-4" /></button>
               </li>
             ))}
           </ul>
-          <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={() => setRows((r) => [...r, { key: uid(), description: "", quantity: "1", detail: "" }])}><Plus /> Fila vacía</Button>
+          <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={() => setRows((r) => [...r, { key: uid(), description: "", quantity: "1", detail: "", price: "" }])}><Plus /> Fila vacía</Button>
+          {priced && <p className="mt-3 text-right text-sm">Total del remito: <span className="font-semibold tabular">{formatMoney(total)}</span></p>}
           {over.length > 0 && <p className="mt-2 text-xs text-warn">Ojo: {over.length === 1 ? "un renglón supera" : `${over.length} renglones superan`} lo pendiente de la OC.</p>}
         </Card>
 
@@ -194,7 +229,7 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
             <div style={{ transform: "scale(0.56)", transformOrigin: "top left", width: 816 }}>
               <RemitoSheet qrSvg={qr} data={{
                 label: null, provisional, issuedAt: `${date}T${time}:00-03:00`, recipient: rec,
-                items: filled, notes, issuer, poNumber: oc?.number ?? null,
+                items: filled.map((r) => ({ description: r.description, quantity: String(num(r.quantity)), detail: r.detail, unit_price: priced && r.price.trim() ? String(num(r.price)) : null })), notes, issuer, poNumber: oc?.number ?? null,
               }} />
             </div>
           </div>

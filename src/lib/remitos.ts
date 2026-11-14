@@ -1,6 +1,6 @@
 /** Tipos compartidos del módulo de remitos (cliente y servidor). */
 export type RemitoIssuer = { name: string; address: string; phones: string; iva: string; cuit: string; iibb: string; start: string; whatsapp: string | null };
-export type RemitoLine = { description: string; quantity: string; detail: string };
+export type RemitoLine = { description: string; quantity: string; detail: string; unit_price?: string | null };
 export type RemitoStatus = "emitido" | "entregado" | "firmado" | "anulado";
 
 export type RemitoSheetData = {

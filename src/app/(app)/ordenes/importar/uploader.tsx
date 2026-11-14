@@ -3,12 +3,13 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { FileUp, ImageIcon, Camera, Sparkles, ShieldCheck, Calculator, AlertTriangle } from "lucide-react";
+import { FileUp, ImageIcon, Camera, Sparkles, ShieldCheck, Calculator, AlertTriangle, FolderUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/primitives";
 import { sha256Hex, uploadPrivate, validateFile } from "@/lib/upload";
 import { cn } from "@/lib/utils";
 import { checkDuplicate, registerImport } from "./actions";
+import { BatchList, filesFromDrop, onlyOrders, useBatchImport } from "./batch";
 
 type Dup = NonNullable<Awaited<ReturnType<typeof checkDuplicate>>>;
 
@@ -19,6 +20,17 @@ export function Uploader({ orgId, aiEnabled }: { orgId: string; aiEnabled: boole
   const [drag, setDrag] = React.useState(false);
   const [stage, setStage] = React.useState<null | "hash" | "upload" | "register">(null);
   const [dup, setDup] = React.useState<Dup | null>(null);
+  const folderInput = React.useRef<HTMLInputElement>(null);
+  const batch = useBatchImport(orgId);
+
+  // Varios archivos o una carpeta: se importan todos seguidos sin salir de esta pantalla
+  const many = async (files: File[]) => {
+    const list = onlyOrders(files);
+    if (!list.length) return toast.error("No encontré PDF ni imágenes en lo que elegiste.");
+    if (list.length === 1 && files.length === 1) return handle(list[0]);
+    const n = await batch.start(list);
+    toast.success(`Terminé con ${n} archivos`);
+  };
 
   const handle = async (file: File | undefined) => {
     if (!file) return;
@@ -46,7 +58,7 @@ export function Uploader({ orgId, aiEnabled }: { orgId: string; aiEnabled: boole
     }
   };
 
-  const busy = stage !== null;
+  const busy = stage !== null || batch.running;
   const stageLabel = { hash: "Verificando duplicados…", upload: "Subiendo de forma privada…", register: "Preparando la lectura…" };
 
   return (
@@ -54,23 +66,27 @@ export function Uploader({ orgId, aiEnabled }: { orgId: string; aiEnabled: boole
       <Card
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
         onDragLeave={() => setDrag(false)}
-        onDrop={(e) => { e.preventDefault(); setDrag(false); handle(e.dataTransfer.files?.[0]); }}
+        onDrop={async (e) => { e.preventDefault(); setDrag(false); void many(await filesFromDrop(e.dataTransfer)); }}
         className={cn("border-2 border-dashed transition-colors", drag ? "border-primary bg-info-soft/60" : "border-border-strong/70")}
       >
         <CardBody className="flex flex-col items-center px-6 py-12 text-center sm:py-16">
           <div className="mb-4 grid size-12 place-items-center rounded-xl bg-primary/10 text-primary"><FileUp className="size-6" /></div>
-          <p className="text-base font-medium">{busy ? stageLabel[stage!] : "Arrastrá la captura o el PDF de la orden"}</p>
+          <p className="text-base font-medium">{stage ? stageLabel[stage] : batch.running ? "Importando las órdenes…" : "Arrastrá los PDF o la carpeta con las órdenes"}</p>
           <p className="mt-1 max-w-md text-sm text-fg-muted">
-            PNG, JPG o PDF de la pantalla <span className="font-medium text-fg">“Ver documento contractual”</span> de BAC. Máximo 25 MB.
+            PNG, JPG o PDF de la pantalla <span className="font-medium text-fg">“Ver documento contractual”</span> de BAC. Podés subir varios o una carpeta entera: las repetidas se saltean. Máximo 25 MB c/u.
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
-            <Button onClick={() => fileInput.current?.click()} loading={busy}><ImageIcon /> Elegir archivo</Button>
+            <Button onClick={() => fileInput.current?.click()} loading={busy}><ImageIcon /> Elegir archivos</Button>
+            <Button variant="secondary" className="max-sm:hidden" onClick={() => folderInput.current?.click()} disabled={busy}><FolderUp /> Elegir carpeta</Button>
             <Button variant="secondary" className="sm:hidden" onClick={() => camInput.current?.click()} disabled={busy}><Camera /> Sacar foto</Button>
           </div>
-          <input ref={fileInput} type="file" hidden accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(e) => { handle(e.target.files?.[0]); e.target.value = ""; }} />
+          <input ref={fileInput} type="file" hidden multiple accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(e) => { const f = [...(e.target.files ?? [])]; e.target.value = ""; void many(f); }} />
+          <input ref={folderInput} type="file" hidden multiple {...{ webkitdirectory: "", directory: "" }} onChange={(e) => { const f = [...(e.target.files ?? [])]; e.target.value = ""; void many(f); }} />
           <input ref={camInput} type="file" hidden accept="image/*" capture="environment" onChange={(e) => { handle(e.target.files?.[0]); e.target.value = ""; }} />
         </CardBody>
       </Card>
+
+      <BatchList items={batch.items} running={batch.running} />
 
       {dup && (
         <Card className="border-warn/50 bg-warn-soft/50">

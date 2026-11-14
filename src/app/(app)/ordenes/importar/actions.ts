@@ -90,12 +90,13 @@ export async function discardImport(jobId: string) {
 }
 
 /** Reabre un trabajo para reprocesar (por ejemplo, después de configurar la IA). */
-export async function retryImport(jobId: string) {
+export async function retryImport(jobId: string, includeDiscarded = false) {
   const s = await requireOrg();
   if (!isUuid(jobId)) return { ok: false as const, error: "Importación inválida" };
+  if (includeDiscarded && !canWrite(s.org.role)) return { ok: false as const, error: "Tu rol no permite importar órdenes." };
   const { error } = await s.supabase.from("import_jobs")
-    .update({ status: "pendiente", attempts: 0, last_error: null, locked_at: null })
-    .eq("id", jobId).in("status", ["error", "revision"]);
+    .update({ status: "pendiente", attempts: 0, last_error: null, locked_at: null, finished_at: null })
+    .eq("id", jobId).in("status", includeDiscarded ? ["error", "revision", "descartado"] : ["error", "revision"]);
   if (error) return { ok: false as const, error: friendlyDbError(error) };
   return { ok: true as const };
 }

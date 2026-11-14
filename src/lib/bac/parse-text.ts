@@ -312,6 +312,15 @@ export function parseBacText(raw: string): ExtractedOrder {
       const seg = entSec.slice((m.index ?? 0) + m[0].length, idx + 1 < ecodes.length ? ecodes[idx + 1].index : entSec.length);
       const target = o.items!.find((it) => it.bac_code === m[0]) ?? o.items![idx];
       if (!target) return;
+      // descripción que el OCR dejó lejos de la tabla de detalle: se toma la de la tabla de entrega
+      if (!target.description_original) {
+        const d = clean(seg.split(/(?<![\d.,])\d[\d.]*,\d{2}/)[0].replace(/\s+/g, " ")).slice(0, 300);
+        if (d.length >= 4) {
+          target.description_original = d;
+          const k = review.indexOf(`items.${o.items!.indexOf(target)}.description_original`);
+          if (k >= 0) review.splice(k, 1);
+        }
+      }
       const plazo = /Durante\s+l[oa]s?\s+\d+\s+a\s+partir\s+de\s+D[ií]as\s+(?:h[áa]biles|corridos)/i.exec(seg.replace(/\s+/g, " "));
       if (plazo) target.delivery_term = clean(plazo[0]);
       const ph = /(?<![\d.,])(\d{8,10})(?![\d.,])/.exec(seg);

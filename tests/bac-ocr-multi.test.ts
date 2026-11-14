@@ -27,6 +27,11 @@ describe.skipIf(!existsSync(join(dir, cases[0][0])))("OCR de OCs con varios reng
     for (const it of order.items!) expect((Number(it.quantity) * Number(it.unit_price)).toFixed(2)).toBe(Number(it.total_amount).toFixed(2));
     expect(review).toEqual([]);
   });
+  it("descripción tomada de la tabla de entrega cuando el OCR la separa del renglón", () => {
+    const { order, review } = parseBacText(readFileSync(join(dir, "ocr-414-19088-OC26.txt"), "utf8"));
+    expect(order.items![0].description_original).toMatch(/^BOLSA PARA OBITO/);
+    expect(review).toEqual([]);
+  });
   it("renglón que sólo figura en la entrega toma lo que falta para el neto", () => {
     const { order } = parseBacText(readFileSync(join(dir, "ocr-432-18757-OC26.txt"), "utf8"));
     expect(order.items!.find((it) => it.line_number === 2)).toMatchObject({ quantity: "12.00", unit_price: "92400.00", total_amount: "1108800.00" });

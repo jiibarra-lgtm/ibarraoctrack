@@ -1,17 +1,34 @@
 import "server-only";
 import webpush from "web-push";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 
 type Outbox = {
   public_key: string | null; private_key: string | null;
   subscriptions: { endpoint: string; p256dh: string; auth: string }[];
-  notifications: { id: string; type: "open" | "closing" | "oc_missing"; contract: string; name: string | null; ends_on: string; stock: boolean }[];
+  notifications: { id: string; type: "open" | "closing" | "oc_missing" | "weekly"; contract: string; name: string | null; ends_on: string; stock: boolean; data?: Weekly }[];
 };
+
+type Weekly = { due: number; late: number; receivable: number; overdue: number; new_orders: number; new_amount: number; missing: number };
+
+/** Texto del resumen de los lunes: sólo lo que tiene algo para hacer. */
+export function weeklyBody(w: Weekly): string {
+  const parts: string[] = [];
+  if (w.due) parts.push(`${w.due} entrega${w.due === 1 ? "" : "s"} vence${w.due === 1 ? "" : "n"} esta semana`);
+  if (w.late) parts.push(`${w.late} atrasada${w.late === 1 ? "" : "s"}`);
+  if (w.missing) parts.push(`${w.missing} OC sin cargar`);
+  if (w.overdue) parts.push(`${formatMoney(w.overdue)} vencido por cobrar`);
+  else if (w.receivable) parts.push(`${formatMoney(w.receivable)} por cobrar`);
+  parts.push(w.new_orders ? `${w.new_orders} OC nueva${w.new_orders === 1 ? "" : "s"} la semana pasada (${formatMoney(w.new_amount)})` : "sin OC nuevas la semana pasada");
+  return parts.join(" · ");
+}
 
 const SUBJECT = "https://ibarraoctrack.vercel.app";
 
 function message(n: Outbox["notifications"][number]) {
+  if (n.type === "weekly" && n.data) {
+    return { title: "Tu semana en OC Track", body: weeklyBody(n.data), tag: `weekly-${n.ends_on}`, url: "/dashboard" };
+  }
   if (n.type === "oc_missing") {
     return { title: `OC sin cargar · ${n.contract}`, body: `${n.name ?? "BAC"}: perfeccionada el ${formatDate(n.ends_on)} y todavía no subiste el PDF. El plazo de entrega ya corre.`, tag: `oc-missing-${n.contract}`, url: "/ordenes/importar" };
   }

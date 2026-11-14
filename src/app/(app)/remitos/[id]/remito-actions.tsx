@@ -2,17 +2,19 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Ban, CheckCircle2, FileSignature, Loader2, MessageSquarePlus, Printer } from "lucide-react";
+import { Ban, Camera, CheckCircle2, FileSignature, Loader2, MessageSquarePlus, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/overlays";
 import { Textarea } from "@/components/ui/primitives";
 import { uploadPrivate } from "@/lib/upload";
+import { compressPhoto } from "@/lib/image-compress";
 import { attachSignedRemito, remitoAction } from "../actions";
 
 export function RemitoActions({ id, orgId, status, canEdit }: { id: string; orgId: string; status: string; canEdit: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState<string | null>(null);
   const file = React.useRef<HTMLInputElement>(null);
+  const cam = React.useRef<HTMLInputElement>(null);
   const voided = status === "anulado";
 
   const run = async (k: "entregado") => {
@@ -25,10 +27,11 @@ export function RemitoActions({ id, orgId, status, canEdit }: { id: string; orgI
   };
 
   const onSigned = async (fl: FileList | null) => {
-    const f = fl?.[0];
-    if (!f) return;
+    const raw = fl?.[0];
+    if (!raw) return;
     setBusy("firmado");
     try {
+      const f = await compressPhoto(raw);
       const up = await uploadPrivate(f, orgId, `remitos/${id}`);
       const r = await attachSignedRemito({ remitoId: id, storagePath: up.path, title: up.title, mimeType: up.mimeType as never, size: up.size, sha256: up.sha256 });
       if (!r.ok) toast.error(r.error);
@@ -38,6 +41,7 @@ export function RemitoActions({ id, orgId, status, canEdit }: { id: string; orgI
     } finally {
       setBusy(null);
       if (file.current) file.current.value = "";
+      if (cam.current) cam.current.value = "";
     }
   };
 
@@ -48,6 +52,8 @@ export function RemitoActions({ id, orgId, status, canEdit }: { id: string; orgI
         <>
           {status === "emitido" && <Button variant="secondary" onClick={() => run("entregado")} loading={busy === "entregado"}><CheckCircle2 /> Marcar entregado</Button>}
           <input ref={file} type="file" hidden accept="application/pdf,image/*" onChange={(e) => onSigned(e.target.files)} />
+          <input ref={cam} type="file" hidden accept="image/*" capture="environment" onChange={(e) => onSigned(e.target.files)} />
+          <Button variant="secondary" className="sm:hidden" onClick={() => cam.current?.click()} disabled={busy === "firmado"}><Camera /> Foto del firmado</Button>
           <Button variant="secondary" onClick={() => file.current?.click()} disabled={busy === "firmado"}>
             {busy === "firmado" ? <Loader2 className="animate-spin" /> : <FileSignature />} {status === "firmado" ? "Reemplazar copia firmada" : "Subir copia firmada"}
           </Button>

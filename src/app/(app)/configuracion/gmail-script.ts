@@ -18,12 +18,33 @@ const REFS = /(my_purchases\\/\\d+|purchaseId=\\d+|filterPurchase=\\d+|ventas\\/
 const LOTE = 25;                    // hilos por búsqueda
 const LIMITE_MS = 4.5 * 60 * 1000;  // Google corta a los 6 minutos: frenamos antes y seguimos en la próxima corrida
 
-// 1) Ejecutá "instalar" una sola vez (pide permiso para leer Gmail).
+// 1) Ejecutá "instalar" una sola vez (pide permiso para leer Gmail y guardar la copia semanal en tu Drive).
 //    La primera vez trae el historial en varias tandas: sigue sola cada 10 minutos hasta terminar.
 function instalar() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('sincronizar').timeBased().everyMinutes(10).create();
+  // Copia de seguridad en tu Google Drive todos los lunes a las 7 (pide permiso para crear archivos en Drive)
+  ScriptApp.newTrigger('copiaSeguridad').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).create();
   sincronizar();
+}
+
+// 3) Copia semanal: un Excel con todas tus órdenes, entregas, remitos, facturas y cobros en la carpeta
+//    "OC Track - Copias de seguridad" de tu Drive. Se guardan las últimas 12 (tres meses).
+function copiaSeguridad() {
+  var r = UrlFetchApp.fetch(URL.replace(/\/gmail$/, '/backup'), {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ token: TOKEN })
+  });
+  if (r.getResponseCode() !== 200) throw new Error('OC Track copia de seguridad respondió ' + r.getResponseCode());
+  var nombre = 'OC Track - Copias de seguridad';
+  var it = DriveApp.getFoldersByName(nombre);
+  var carpeta = it.hasNext() ? it.next() : DriveApp.createFolder(nombre);
+  var d = new Date();
+  var dia = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  carpeta.createFile(r.getBlob().setName('oc-track-backup-' + dia + '.xlsx'));
+  var archivos = [], fs = carpeta.getFiles();
+  while (fs.hasNext()) archivos.push(fs.next());
+  archivos.sort(function (a, b) { return b.getDateCreated() - a.getDateCreated(); });
+  archivos.slice(12).forEach(function (f) { f.setTrashed(true); });
 }
 
 // Vuelve a traer todo desde cero (no duplica: la app ignora lo que ya tiene).

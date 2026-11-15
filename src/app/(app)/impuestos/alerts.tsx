@@ -14,16 +14,23 @@ const daysAgoIso = (n: number) => new Date(Date.now() - n * 864e5).toISOString()
 const shift = (ym: string, d: number) => { const [y, m] = ym.split("-").map(Number); return new Date(Date.UTC(y, m - 1 + d, 1)).toISOString().slice(0, 7); };
 
 /** Avisos de ARCA e impuestos: facturas rechazadas u observadas, anticipo de IIBB, saldo a favor que crece y SIRCREB de más. */
-export async function TaxAlerts({ sb, org, monthly, wh, iibbRate, iibbDay, sircrebRate, canEdit }: {
+export async function TaxAlerts({ sb, org, monthly, wh, iibbRate, iibbDay, sircrebRate, canEdit, annualLimit, annualLabel }: {
   sb: SupabaseClient; org: string; monthly: Monthly[]; wh: Withholding[]; iibbRate: number; iibbDay: number; sircrebRate: number | null; canEdit: boolean;
+  annualLimit?: number | null; annualLabel?: string | null;
 }) {
   const now = nowAr(), today = now.slice(0, 10), cur = now.slice(0, 7), prev = shift(cur, -1);
   const since = daysAgoIso(30);
-  const [{ data: att }, { data: obs }, { data: notData }] = await Promise.all([
+  const [{ data: att }, { data: obs }, { data: notData }, { data: mails }, { data: cbus }, { data: risks }, { data: mailOnly }] = await Promise.all([
     sb.from("einvoice_attempts").select("kind, receiver, total, error, created_at").eq("org_id", org).gte("created_at", since).order("created_at", { ascending: false }).limit(10),
     sb.from("arca_emissions").select("voucher_type, point_of_sale, number, receiver_name, total, observations, created_at").eq("org_id", org).not("observations", "is", null).gte("created_at", since).order("created_at", { ascending: false }).limit(10),
     sb.from("tax_notices_overview").select("id, at, source, system, title, severity, kind, vep_number, seen_at, paid_movement_id").eq("org_id", org)
       .is("seen_at", null).gte("at", daysAgoIso(90)).order("at", { ascending: false }).limit(30),
+    sb.from("mail_public_insights").select("id, from_name, from_email, subject, received_at, kind, oc_ref, purchase_order_id, over_48h").eq("org_id", org)
+      .eq("unanswered", true).not("kind", "is", null).gte("received_at", daysAgoIso(14)).order("received_at", { ascending: false }).limit(30),
+    sb.from("supplier_bank_changes").select("domain, cbu, previous_cbu, first_seen, from_name").eq("org_id", org).limit(5),
+    sb.from("supplier_risks").select("cuit, name, risk, apocrifo_since, padron_status").eq("org_id", org).not("risk", "is", null).limit(5),
+    sb.from("purchase_arca_check").select("id, name, total, issue_date").eq("org_id", org).eq("side", "mail").eq("matched", false)
+      .lte("issue_date", daysAgoIso(10).slice(0, 10)).gte("issue_date", daysAgoIso(75).slice(0, 10)).limit(20),
   ]);
   type Notice = { id: string; at: string; source: string; system: string; title: string; severity: "danger" | "warn" | "info"; kind: string; vep_number: string | null; seen_at: string | null; paid_movement_id: string | null };
   const notices = (notData ?? []) as Notice[];
@@ -51,6 +58,38 @@ export async function TaxAlerts({ sb, org, monthly, wh, iibbRate, iibbDay, sircr
     const paid = n.vep_number && n.paid_movement_id;
     items.push({ tone: paid ? "info" : n.severity, title: `${n.title}${n.vep_number ? ` · VEP ${n.vep_number}` : ""}`,
       detail: `${formatDateTime(n.at)} · ${paid ? "Se encontró el débito en el banco: pagado." : HINT[n.kind] ?? HINT.otro}`, noticeId: n.id });
+  }
+
+  // 82 · 83: reclamos de organismos y mails sin responder hace más de 48 h
+  type PM = { id: string; from_name: string | null; from_email: string; subject: string; received_at: string; kind: string; oc_ref: string | null; over_48h: boolean };
+  const pm = (mails ?? []) as PM[];
+  for (const r of pm.filter((x) => x.kind === "reclamo").slice(0, 3))
+    items.push({ tone: "danger", title: `Reclamo de ${r.from_name || r.from_email}${r.oc_ref ? ` · OC ${r.oc_ref}` : ""}: sin responder`, detail: `${formatDateTime(r.received_at)} · "${r.subject}" · respondelo hoy desde Correos` });
+  const late = pm.filter((x) => x.kind !== "reclamo" && x.over_48h);
+  if (late.length) items.push({ tone: "warn", title: `${late.length} mail${late.length > 1 ? "s" : ""} de organismos sin responder hace más de 48 h`,
+    detail: late.slice(0, 3).map((x) => `${x.kind === "entrega" ? "Entrega" : x.kind === "conformidad" ? "Conformidad" : "Cotización"}: ${x.from_name || x.from_email}${x.oc_ref ? ` (OC ${x.oc_ref})` : ""}`).join(" · ") });
+
+  // 86: cambio de CBU de un proveedor
+  for (const c of ((cbus ?? []) as { domain: string; cbu: string; previous_cbu: string | null; first_seen: string; from_name: string | null }[]).slice(0, 2))
+    items.push({ tone: "danger", title: `${c.from_name ?? c.domain} mandó un CBU nuevo`, detail: `${formatDate(c.first_seen)} · nuevo ${c.cbu} (antes ${c.previous_cbu}) · confirmalo por teléfono antes de transferir` });
+
+  // 55: proveedor apócrifo o dado de baja
+  for (const r of (risks ?? []) as { cuit: string; name: string | null; risk: string; apocrifo_since: string | null; padron_status: string | null }[])
+    items.push({ tone: "danger", title: `${r.name ?? r.cuit}: ${r.risk === "apocrifo" ? "figura en la base de facturas apócrifas" : `CUIT ${String(r.padron_status).toLowerCase()} en ARCA`}`,
+      detail: `CUIT ${r.cuit} · sus facturas pueden no darte crédito de IVA ni ser deducibles. Hablalo con tu contador antes de seguir comprándole.` });
+
+  // 26: facturas del mail que ARCA no tiene después de 10 días
+  const mo = (mailOnly ?? []) as { id: string; name: string | null; total: string; issue_date: string }[];
+  if (mo.length) items.push({ tone: "warn", title: `${mo.length} factura${mo.length > 1 ? "s" : ""} de proveedores que llegaron por mail y no aparecen en ARCA`,
+    detail: `${mo.slice(0, 3).map((x) => `${x.name} ${formatMoney(x.total)}`).join(" · ")} · más de 10 días: consultá al proveedor (puede estar anulada o ser apócrifa)` });
+
+  // 53: límite anual de facturación
+  if (annualLimit) {
+    const y = cur.slice(0, 4);
+    const ytd = monthly.filter((x) => x.direction === "emitido" && x.month.startsWith(y)).reduce((a, x) => a + N(x.total), 0);
+    const pct = (ytd / annualLimit) * 100;
+    if (pct >= 80) items.push({ tone: pct >= 100 ? "danger" : "warn", title: `Facturaste el ${pct.toFixed(0)}% del límite anual${annualLabel ? ` (${annualLabel})` : ""}`,
+      detail: `${formatMoney(ytd)} de ${formatMoney(annualLimit)} en ${y}` });
   }
 
   // 40: anticipo de IIBB del mes anterior

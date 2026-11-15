@@ -35,7 +35,7 @@ export const NAV: NavGroup[] = [
       { href: "/stock", label: "Stock", icon: Boxes },
       { href: "/facturacion", label: "Facturación", icon: Receipt },
       { href: "/cobranzas", label: "Cobranzas", icon: Wallet },
-      { href: "/impuestos", label: "Impuestos", icon: Percent },
+      { href: "/impuestos", label: "Impuestos y ARCA", icon: Percent },
       { href: "/gastos-fijos", label: "Gastos fijos", icon: WalletCards },
       { href: "/banco", label: "Banco", icon: Scale },
       { href: "/finanzas", label: "Finanzas", icon: Landmark },

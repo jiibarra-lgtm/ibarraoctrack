@@ -30,6 +30,8 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
   const s = await requireOrg();
   const canEdit = ["admin", "finanzas", "compras"].includes(s.org.role);
   const next = `${shift(m, 1)}-01`;
+  // Facturas de servicios que ya están en ARCA (luz, gas, teléfono, internet, sistemas) → se cargan solas como gasto fijo del mes
+  if (canEdit) await s.supabase.rpc("fixed_bills_sync", { p_org: s.org.org_id }).then(() => null, () => null);
   const [{ data: costs }, { data: bills }, { data: sugg }, { data: monthly }, { data: pays }] = await Promise.all([
     s.supabase.from("fixed_costs").select("*").eq("org_id", s.org.org_id).order("category").order("name"),
     s.supabase.from("fixed_cost_bills").select("*").eq("org_id", s.org.org_id).eq("period", m),

@@ -12,16 +12,17 @@ import { ComprobantesUploader } from "./uploader";
 import { ProfitCalc } from "./profit-calc";
 import { after } from "next/server";
 import { canBill } from "@/lib/billing";
-import { refreshPadron, syncEmitted } from "@/lib/tax-sync";
+import { autoMaintainArca, refreshPadron, syncEmitted } from "@/lib/tax-sync";
+import { CircuitoTab, ComprasTab, JurisdiccionesTab, ObligacionesTab, ProveedoresTab } from "./arca-tabs";
 import { SyncEmittedButton } from "./tax-ui";
 import { CierreTab, GananciasTab, LibroTab, RetencionesTab, VencimientosTab, type TaxSettings, type Withholding } from "./tax-tabs";
 
-const VIEWS = [["iva", "IVA del mes"], ["libro", "Libro IVA Digital"], ["retenciones", "Retenciones y saldos"], ["ganancias", "Ganancias"], ["vencimientos", "Vencimientos y padrón"], ["cierre", "Cierre de mes"]] as const;
+const VIEWS = [["iva", "IVA del mes"], ["circuito", "Circuito de facturas"], ["compras", "Compras vs ARCA"], ["obligaciones", "Obligaciones y VEP"], ["jurisdicciones", "IIBB y jurisdicciones"], ["proveedores", "Proveedores"], ["libro", "Libro IVA Digital"], ["retenciones", "Retenciones y saldos"], ["ganancias", "Ganancias"], ["vencimientos", "Vencimientos y padrón"], ["cierre", "Cierre de mes"]] as const;
 const DEFAULT_SETTINGS = { iibb_rate: 3, iibb_day: 15, autonomos: false, autonomos_day: 5, gni: 5151802.5, special_deduction: 5151802.5, other_deductions: 0, ganancias_paid: 0, padron: null, padron_previous: null, padron_checked_at: null, padron_error: null, emitted_synced_at: null, emitted_sync_error: null };
 const ageMin = (iso: string | null) => (iso ? (Date.now() - Date.parse(iso)) / 60000 : Infinity);
 const nowArIso = () => new Date(Date.now() - 3 * 3600e3).toISOString();
 
-export const metadata: Metadata = { title: "Impuestos" };
+export const metadata: Metadata = { title: "Impuestos y ARCA" };
 
 type V = {
   id: string; direction: "emitido" | "recibido"; issue_date: string; voucher_type: number; point_of_sale: number; number: number;
@@ -41,7 +42,7 @@ const ars = (v: V, k: "vat" | "total" | "net_taxed" | "other_taxes") => Number(v
 const sum = (xs: V[], k: Parameters<typeof ars>[1]) => xs.reduce((a, v) => a + ars(v, k), 0);
 const neto = (xs: V[]) => xs.reduce((a, v) => a + (Number(v.net_taxed) + Number(v.net_untaxed) + Number(v.exempt)) * Number(v.exchange_rate || 1) * Number(v.sign), 0);
 
-export default async function ImpuestosPage({ searchParams }: { searchParams: Promise<{ m?: string; t?: string; q?: string; v?: string }> }) {
+export default async function ImpuestosPage({ searchParams }: { searchParams: Promise<{ m?: string; t?: string; q?: string; v?: string; etapa?: string }> }) {
   const sp = await searchParams;
   const s = await requireOrg();
   const org = s.org.org_id;
@@ -63,6 +64,8 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
     if (ageMin(settings.emitted_synced_at) > 30) after(() => syncEmitted(sb, org).catch(() => null));
     if (ageMin(settings.padron_checked_at) > 24 * 60) after(() => refreshPadron(sb, org).catch(() => null));
   }
+  // Vínculos factura ↔ OC, padrón de proveedores y base de apócrifos (cada uno se fija solo si le toca)
+  if (billing) { const sb = s.supabase; after(() => autoMaintainArca(sb, org, Boolean(st.has_cert)).catch(() => null)); }
   // Resumen por mes desde la base (no hay límite de filas) y sólo los comprobantes del mes elegido
   const { data: mon } = await s.supabase.from("arca_monthly").select("*").eq("org_id", s.org.org_id).order("month", { ascending: false }).limit(500);
   const monthly = (mon ?? []) as { month: string; direction: "emitido" | "recibido"; vouchers: number; total: string; vat: string; net: string; other_taxes: string }[];
@@ -137,9 +140,17 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
   const noArca = sis.filter((x) => !x.arca_voucher_id);
   const extraCredit = noArca.filter((x) => x.letter === "A").reduce((a, x) => a + Math.max(0, Number(x.total ?? 0) - Number(x.net ?? x.items_net ?? x.total ?? 0)), 0);
 
+  const monthPicker = (
+    <div className="mt-1 flex flex-wrap gap-1.5">
+      {months.slice(0, 18).map((k) => (
+        <Link key={k} href={`/impuestos?${new URLSearchParams({ m: k, v: view })}`} className={cn("rounded-full px-3 py-1 text-xs font-medium", k === m ? "bg-primary text-primary-fg" : "bg-field text-fg-muted hover:text-fg")}>{monthLabel(k)}</Link>
+      ))}
+    </div>
+  );
+
   return (
     <>
-      <PageHeader title="Impuestos" description="IVA, Libro IVA Digital, retenciones, Ganancias y vencimientos, armados con tus comprobantes de ARCA. Las notas de crédito restan."
+      <PageHeader title="Impuestos y ARCA" description="IVA, IIBB, VEP, retenciones y Ganancias armados con tus comprobantes de ARCA, cruzados con las OC del BAC, los mails y el banco. Las notas de crédito restan."
         actions={billing && st.has_cert ? <SyncEmittedButton /> : undefined} />
 
       <div className="mb-4 flex flex-wrap gap-1.5">
@@ -148,10 +159,17 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
         ))}
       </div>
       <TaxAlerts sb={s.supabase} org={org} monthly={monthly} wh={wh} iibbRate={Number(settings.iibb_rate)} iibbDay={Number(settings.iibb_day)}
-        sircrebRate={(tsData as { sircreb_rate?: string | null } | null)?.sircreb_rate != null ? Number((tsData as { sircreb_rate: string }).sircreb_rate) : null} canEdit={billing} />
+        sircrebRate={(tsData as { sircreb_rate?: string | null } | null)?.sircreb_rate != null ? Number((tsData as { sircreb_rate: string }).sircreb_rate) : null} canEdit={billing}
+        annualLimit={(tsData as { annual_limit?: string | null } | null)?.annual_limit ? Number((tsData as { annual_limit: string }).annual_limit) : null}
+        annualLabel={(tsData as { annual_limit_label?: string | null } | null)?.annual_limit_label ?? null} />
       {settings.emitted_sync_error && view === "iva" && <p className="mb-3 text-xs text-warn">No se pudieron traer los emitidos de ARCA: {settings.emitted_sync_error}</p>}
 
-      {view === "libro" ? <LibroTab m={m} monthly={monthly} />
+      {view === "circuito" ? <CircuitoTab sb={s.supabase} org={org} etapa={sp.etapa} canEdit={writable} />
+        : view === "compras" ? <ComprasTab sb={s.supabase} org={org} />
+        : view === "obligaciones" ? <ObligacionesTab sb={s.supabase} org={org} ownCuit={ownCuit} monthly={monthly} wh={wh} iibbRate={Number(settings.iibb_rate)} iibbDay={Number(settings.iibb_day)} />
+        : view === "jurisdicciones" ? <>{monthPicker}<JurisdiccionesTab sb={s.supabase} org={org} m={m} emitted={em} wh={wh} monthly={monthly} recibidosOther={percep} settings={(tsData ?? {}) as { annual_limit?: string | null; annual_limit_label?: string | null }} canEdit={billing} /></>
+        : view === "proveedores" ? <ProveedoresTab sb={s.supabase} org={org} canEdit={billing} hasCert={Boolean(st.has_cert)} />
+        : view === "libro" ? <LibroTab m={m} monthly={monthly} />
         : view === "retenciones" ? <RetencionesTab monthly={monthly} wh={wh} settings={settings} />
         : view === "ganancias" ? <GananciasTab monthly={monthly} wh={wh} settings={settings} fixedYear={fixedMonthly * 12} canEdit={billing} />
         : view === "vencimientos" ? <VencimientosTab cuit={ownCuit} settings={settings} canEdit={billing} />

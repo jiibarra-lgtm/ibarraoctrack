@@ -20,6 +20,11 @@ const CAT_STYLE: Record<string, string> = {
   pago: "bg-accent-soft text-accent", licitacion: "bg-warn-soft text-warn", organismo: "bg-surface-2 text-fg-muted", otro: "bg-surface-2 text-fg-muted",
 };
 const CAT_LABEL = Object.fromEntries(CATS) as Record<string, string>;
+// Lo que piden los organismos (pedido de entrega, reclamo, conformidad, cotización) y si falta responder
+const KINDS = [["reclamo", "Reclamos"], ["entrega", "Pedidos de entrega"], ["conformidad", "Conformidades"], ["cotizacion", "Cotizaciones"], ["sinresp", "Sin responder +48 h"]] as const;
+const KIND_STYLE: Record<string, string> = { reclamo: "bg-danger-soft text-danger", entrega: "bg-info-soft text-brand", conformidad: "bg-accent-soft text-accent", cotizacion: "bg-warn-soft text-warn" };
+const KIND_LABEL: Record<string, string> = { reclamo: "Reclamo", entrega: "Entrega", conformidad: "Conformidad", cotizacion: "Cotización" };
+type Insight = { id: string; kind: string | null; oc_ref: string | null; purchase_order_id: string | null; unanswered: boolean; over_48h: boolean };
 
 type MailRow = {
   id: string; thread_id: string | null; message_id: string; from_email: string | null; from_name: string | null; to_emails: string | null;
@@ -27,13 +32,18 @@ type MailRow = {
   process_number: string | null; attachments: { name: string; size?: number }[]; is_read: boolean;
 };
 
-export default async function MailPage({ searchParams }: { searchParams: Promise<{ c?: string; q?: string; id?: string; org?: string }> }) {
-  const { c = "todos", q = "", id, org = "" } = await searchParams;
+export default async function MailPage({ searchParams }: { searchParams: Promise<{ c?: string; q?: string; id?: string; org?: string; k?: string }> }) {
+  const { c = "todos", q = "", id, org = "", k: kRaw = "" } = await searchParams;
+  const k = KINDS.some(([x]) => x === kRaw) ? kRaw : "";
   const s = await requireOrg();
   const sb = s.supabase;
+  const { data: insData } = await sb.from("mail_public_insights").select("id, kind, oc_ref, purchase_order_id, unanswered, over_48h").eq("org_id", s.org.org_id).limit(3000);
+  const insights = new Map(((insData ?? []) as Insight[]).map((x) => [x.id, x]));
+  const kindIds = k ? [...insights.values()].filter((x) => (k === "sinresp" ? x.kind && x.unanswered && x.over_48h : x.kind === k)).map((x) => x.id) : null;
   let list = sb.from("mail_messages").select("id, thread_id, message_id, from_email, from_name, subject, received_at, snippet, category, bac_number, process_number, attachments, is_read")
     .eq("org_id", s.org.org_id).order("received_at", { ascending: false }).limit(300);
   if (c !== "todos") list = list.eq("category", c);
+  if (kindIds) list = list.in("id", kindIds.length ? kindIds.slice(0, 300) : ["00000000-0000-0000-0000-000000000000"]);
   const orgCode = /^\d{2,5}$/.test(org) ? org : "";
   if (orgCode) list = list.like("bac_number", `${orgCode}-%`);
   const term = q.trim().replace(/[%,()]/g, " ");
@@ -55,7 +65,7 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
   const mails = (rows ?? []) as MailRow[];
   const m = sel as MailRow | null;
   const qs = (extra: Record<string, string>) => {
-    const p = new URLSearchParams({ ...(c !== "todos" ? { c } : {}), ...(q ? { q } : {}), ...(orgCode ? { org: orgCode } : {}), ...extra });
+    const p = new URLSearchParams({ ...(c !== "todos" ? { c } : {}), ...(q ? { q } : {}), ...(orgCode ? { org: orgCode } : {}), ...(k ? { k } : {}), ...extra });
     return `/correos${p.toString() ? `?${p}` : ""}`;
   };
   const gmail = (x: MailRow) => `https://mail.google.com/mail/u/0/#all/${x.thread_id ?? x.message_id}`;
@@ -77,8 +87,19 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
             <div className="flex gap-1.5 overflow-x-auto pb-0.5">
               {CATS.map(([k, l]) => (
                 <Link key={k} href={`/correos?${new URLSearchParams({ ...(k !== "todos" ? { c: k } : {}), ...(q ? { q } : {}), ...(orgCode ? { org: orgCode } : {}) })}`}
-                  className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-medium", c === k ? "bg-primary text-primary-fg" : "bg-field text-fg-muted hover:text-fg")}>{l}</Link>
+                  className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-medium", c === k && !kindIds ? "bg-primary text-primary-fg" : "bg-field text-fg-muted hover:text-fg")}>{l}</Link>
               ))}
+            </div>
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+              {KINDS.map(([kk, l]) => {
+                const n = [...insights.values()].filter((x) => (kk === "sinresp" ? x.kind && x.unanswered && x.over_48h : x.kind === kk && x.unanswered)).length;
+                return (
+                  <Link key={kk} href={`/correos?${new URLSearchParams({ ...(k === kk ? {} : { k: kk }), ...(q ? { q } : {}), ...(orgCode ? { org: orgCode } : {}) })}`}
+                    className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-medium", k === kk ? "bg-primary text-primary-fg" : kk === "reclamo" && n ? "bg-danger-soft text-danger" : "bg-field text-fg-muted hover:text-fg")}>
+                    {l}{n ? ` · ${n}` : ""}
+                  </Link>
+                );
+              })}
             </div>
           </div>
           {!mails.length ? (
@@ -96,6 +117,7 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
                     <p className="mt-0.5 truncate text-sm">{x.subject || "(sin asunto)"}</p>
                     <div className="mt-1 flex items-center gap-1.5">
                       <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-medium", CAT_STYLE[x.category])}>{CAT_LABEL[x.category] ?? "Otro"}</span>
+                      {insights.get(x.id)?.kind && <span className={cn("rounded-md px-1.5 py-0.5 text-[10px] font-medium", KIND_STYLE[insights.get(x.id)!.kind!])}>{KIND_LABEL[insights.get(x.id)!.kind!]}{insights.get(x.id)!.unanswered ? " · sin responder" : ""}</span>}
                       {x.bac_number && <span className="truncate text-[11px] text-fg-subtle"><span className="font-mono">{x.bac_number}</span>{names.get(x.bac_number.split("-")[0]) ? ` · ${names.get(x.bac_number.split("-")[0])!.replace(/^\d+\s*-\s*/, "")}` : ""}</span>}
                       {x.attachments?.length > 0 && <Paperclip className="ml-auto size-3.5 shrink-0 text-fg-subtle" />}
                     </div>
@@ -130,6 +152,8 @@ export default async function MailPage({ searchParams }: { searchParams: Promise
                 <div className="flex flex-wrap gap-1.5">
                   <span className={cn("rounded-md px-2 py-0.5 text-xs font-medium", CAT_STYLE[m.category])}>{CAT_LABEL[m.category] ?? "Otro"}</span>
                   {m.bac_number && <Link href={`/bac/${m.bac_number}`} className="rounded-md border border-card-border bg-field px-2 py-0.5 font-mono text-xs hover:border-brand">{m.bac_number} →</Link>}
+                  {insights.get(m.id)?.kind && <span className={cn("rounded-md px-2 py-0.5 text-xs font-medium", KIND_STYLE[insights.get(m.id)!.kind!])}>{KIND_LABEL[insights.get(m.id)!.kind!]}{insights.get(m.id)!.unanswered ? " · sin responder" : " · respondido"}</span>}
+                  {insights.get(m.id)?.purchase_order_id && <Link href={`/ordenes/${insights.get(m.id)!.purchase_order_id}`} className="rounded-md border border-card-border bg-field px-2 py-0.5 text-xs hover:border-brand">OC {insights.get(m.id)!.oc_ref} →</Link>}
                   {m.process_number && <span className="rounded-md border border-card-border bg-field px-2 py-0.5 font-mono text-xs">{m.process_number}</span>}
                 </div>
                 {m.attachments?.length > 0 && (

@@ -53,9 +53,9 @@ export function SupplierCostPicker({ itemId, convenioLineId, description, linked
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setPick(null); }}>
       <DialogTrigger asChild>
-        <Button type="button" size="sm" variant={linkedLabel ? "secondary" : "ghost"} disabled={disabled} title={linkedLabel ? `Costo de: ${linkedLabel}` : "Tomar el costo de un producto comprado"}
-          className={cn("h-8 px-2", linkedLabel && "text-accent")}>
-          <Link2 />
+        <Button type="button" size="sm" variant="secondary" disabled={disabled} title={linkedLabel ? `Costo de: ${linkedLabel}` : "Tomar el costo de un producto comprado"}
+          className={cn("h-8 shrink-0 px-2.5 text-xs", linkedLabel && "border-accent/40 text-accent")}>
+          <Link2 /> {linkedLabel ? "Vinculado" : "De compras"}
         </Button>
       </DialogTrigger>
       <DialogContent title="Tomar el costo de un producto comprado" description={description}>

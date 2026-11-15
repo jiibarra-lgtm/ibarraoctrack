@@ -7,6 +7,8 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Catalog } from "./catalog";
 import { CostInput, ImportConvenio } from "./ui";
+import { SupplierCostPicker } from "@/components/supplier-cost-picker";
+import { sourceLabels } from "@/lib/cost-sources";
 
 export const metadata: Metadata = { title: "Productos" };
 
@@ -53,6 +55,11 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   const label = (k: string, n?: string | null) => NAMES[k] ?? n ?? k;
   const link = (p: Record<string, string | undefined>) => `/productos?${new URLSearchParams(Object.entries({ c, v: view, q: sp.q, ...p }).filter(([, v]) => v) as [string, string][]).toString()}`;
   const open = wins.filter((w) => w.starts_on <= today && w.ends_on >= today);
+  // De qué compra sale el costo de cada renglón (si se vinculó)
+  const { data: srcData } = await s.supabase.from("convenio_lines").select("id, cost_source_item_id, cost_source_divisor").eq("org_id", org).eq("contract_number", c ?? "").not("cost_source_item_id", "is", null);
+  const srcRows = (srcData ?? []) as { id: string; cost_source_item_id: string | null; cost_source_divisor: string | null }[];
+  const srcLabels = await sourceLabels(s.supabase, srcRows);
+  const srcOf = new Map(srcRows.map((r) => [r.id, srcLabels.get(String(r.cost_source_item_id)) ?? null]));
 
   return (
     <>
@@ -121,7 +128,10 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                     <div className="col-span-2 grid grid-cols-4 items-center gap-2 lg:contents">
                       <p className="text-right tabular"><span className="text-[11px] text-fg-subtle lg:hidden">Tu precio </span>{price !== null ? formatMoney(price) : "—"}</p>
                       <p className={cn("text-right tabular", beaten && "text-warn")}><span className="text-[11px] text-fg-subtle lg:hidden">Otro </span>{l.best_other_price !== null ? formatMoney(l.best_other_price) : "—"}</p>
-                      <div className="flex justify-end">{l.is_mine || l.cost !== null ? <CostInput key={`${l.id}-${l.cost}`} id={l.id} value={l.cost} disabled={!canEdit} /> : <span className="text-fg-subtle">—</span>}</div>
+                      <div className="flex flex-col items-end gap-1">{l.is_mine || l.cost !== null ? <>
+                        <CostInput key={`${l.id}-${l.cost}`} id={l.id} value={l.cost} disabled={!canEdit} />
+                        <SupplierCostPicker itemId={null} convenioLineId={l.id} description={`${l.product_name} ${l.my_spec ?? ""}`} linkedLabel={srcOf.get(l.id) ?? null} disabled={!canEdit} />
+                      </> : <span className="text-fg-subtle">—</span>}</div>
                       <p className={cn("text-right font-medium tabular", margin === null ? "text-fg-subtle" : margin < 10 ? "text-danger" : margin < 20 ? "text-warn" : "text-accent")}>{margin !== null ? `${margin.toFixed(0)}%` : "—"}</p>
                     </div>
                   </li>

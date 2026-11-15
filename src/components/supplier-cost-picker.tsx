@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/overlays";
 import { Input } from "@/components/ui/primitives";
 import { formatDate, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { linkSupplierCost, searchSupplierItems, type SupplierPick } from "@/app/(app)/analitica/mes/actions";
+import { linkSupplierCost, linkSupplierCostConvenio, searchSupplierItems, type SupplierPick } from "@/app/(app)/analitica/mes/actions";
 
 const STOP = new Set(["de", "del", "la", "el", "los", "las", "con", "para", "por", "x", "tipo", "marca", "color", "medida", "unidad", "unidades", "uni", "und", "cm", "mm", "mts"]);
 /** Primeras palabras útiles de la descripción del renglón, para la búsqueda inicial. */
@@ -19,7 +19,8 @@ const suggest = (d: string) => d.normalize("NFD").replace(/[̀-ͯ]/g, "").replac
  * El costo sin IVA queda = neto unitario de la factura ÷ cuántas unidades de la OC salen de una comprada.
  */
 export function SupplierCostPicker({ itemId, convenioLineId, description, linkedLabel, disabled }: {
-  itemId: string; convenioLineId: string | null; description: string; linkedLabel?: string | null; disabled: boolean;
+  /** Renglón de una OC; si es null, el costo va al renglón del convenio (Productos). */
+  itemId: string | null; convenioLineId: string | null; description: string; linkedLabel?: string | null; disabled: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -43,7 +44,8 @@ export function SupplierCostPicker({ itemId, convenioLineId, description, linked
 
   const save = async (source: string | null) => {
     setBusy(true);
-    const r = await linkSupplierCost(itemId, source, d || 1, convenioLineId);
+    const r = itemId ? await linkSupplierCost(itemId, source, d || 1, convenioLineId)
+      : convenioLineId ? await linkSupplierCostConvenio(convenioLineId, source, d || 1) : { ok: false as const, error: "Sin renglón" };
     setBusy(false);
     if (!r.ok) return toast.error(r.error);
     toast.success(source ? `Costo tomado de la compra: ${formatMoney("cost" in r ? r.cost : 0)} c/u sin IVA` : "Se quitó el vínculo con la compra");

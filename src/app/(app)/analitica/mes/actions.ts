@@ -73,3 +73,23 @@ export async function linkSupplierCost(itemId: string, sourceId: string | null, 
   revalidatePath("/ordenes");
   return { ok: true as const, cost };
 }
+
+/** Igual que linkSupplierCost pero para el renglón del convenio (Productos): el costo se aplica a todas sus OC sin costo propio. */
+export async function linkSupplierCostConvenio(lineId: string, sourceId: string | null, divisor: number) {
+  const s = await requireOrg();
+  if (!["admin", "finanzas", "compras"].includes(s.org.role) || !isUuid(lineId) || (sourceId && !isUuid(sourceId))) return { ok: false as const, error: "No permitido" };
+  if (sourceId && (!Number.isFinite(divisor) || divisor <= 0 || divisor > 1e6)) return { ok: false as const, error: "Cantidad inválida" };
+  let cost: number | null = null;
+  if (sourceId) {
+    const { data: src } = await s.supabase.from("supplier_invoice_items").select("unit_net").eq("id", sourceId).eq("org_id", s.org.org_id).maybeSingle();
+    if (!src) return { ok: false as const, error: "Producto no encontrado" };
+    cost = Math.round((Number(src.unit_net) / divisor) * 100) / 100;
+    const { error } = await s.supabase.rpc("convenio_set_cost", { p_org: s.org.org_id, p_line: lineId, p_cost: cost });
+    if (error) return { ok: false as const, error: friendlyDbError(error) };
+  }
+  const { error } = await s.supabase.rpc("convenio_set_cost_source", { p_org: s.org.org_id, p_line: lineId, p_source: sourceId, p_divisor: sourceId ? divisor : null });
+  if (error) return { ok: false as const, error: friendlyDbError(error) };
+  revalidatePath("/productos");
+  revalidatePath("/analitica/mes");
+  return { ok: true as const, cost: cost ?? 0 };
+}

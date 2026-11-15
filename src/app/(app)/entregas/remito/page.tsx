@@ -19,7 +19,7 @@ export default async function RemitoUploadPage({ searchParams }: { searchParams:
       <div className="max-w-2xl">
         <DocUploader orgId={s.org.org_id} kind="remito" purchaseOrderId={poId} folder="remitos"
           title="Foto o PDF del remito" hint="Que se lean bien los números y el código o la descripción de cada producto."
-          jobHref={(id) => `/entregas/remito/${id}`} />
+          jobBase="/entregas/remito" />
       </div>
     </>
   );

@@ -34,10 +34,11 @@ export async function compressPhoto(file: File): Promise<File> {
 }
 
 export function DocUploader({
-  orgId, kind, purchaseOrderId, title, hint, jobHref, folder,
+  orgId, kind, purchaseOrderId, title, hint, jobBase, folder,
 }: {
   orgId: string; kind: Kind; purchaseOrderId?: string; title: string; hint: string;
-  jobHref: (jobId: string) => string; folder: string;
+  /** Ruta base del trabajo de lectura: se le agrega /<id> */
+  jobBase: string; folder: string;
 }) {
   const router = useRouter();
   const fileInput = React.useRef<HTMLInputElement>(null);
@@ -61,7 +62,7 @@ export function DocUploader({
       setBusy("Leyendo…");
       const res = await registerImport({ kind, purchaseOrderId, storagePath: up.path, title: up.title, mimeType: up.mimeType as never, size: up.size, sha256: up.sha256 });
       if (!res.ok) throw new Error(res.error);
-      router.push(jobHref(res.jobId));
+      router.push(`${jobBase}/${res.jobId}`);
     } catch (e) {
       toast.error((e as Error).message);
       setBusy(null);
@@ -92,7 +93,7 @@ export function DocUploader({
         <Card className="border-warn/50 bg-warn-soft/50">
           <CardBody className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="flex items-start gap-2 text-sm"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" /> Este archivo ya se subió como “{dup.title}”. No se duplicó.</p>
-            {dup.jobId && <Button asChild size="sm" variant="secondary"><Link href={jobHref(dup.jobId)}>Ver</Link></Button>}
+            {dup.jobId && <Button asChild size="sm" variant="secondary"><Link href={`${jobBase}/${dup.jobId}`}>Ver</Link></Button>}
           </CardBody>
         </Card>
       )}

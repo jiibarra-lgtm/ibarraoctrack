@@ -17,6 +17,9 @@ export default async function PurchasesPage() {
     .select("id, doc_type, point_of_sale, number, invoice_date, total_amount, net_amount, currency, status, paid, suppliers(name), purchase_items(id, purchase_allocations(id))")
     .eq("org_id", s.org.org_id).order("invoice_date", { ascending: false }).limit(300);
   const writable = canWrite(s.org.role);
+  // Facturas de proveedores que llegaron por mail (se leen solas y alimentan Precios de proveedores y Stock)
+  const { data: mail } = await s.supabase.from("supplier_invoices").select("id, supplier_name, letter, point_of_sale, number, issue_date, total, kind")
+    .eq("org_id", s.org.org_id).eq("hidden", false).order("issue_date", { ascending: false, nullsFirst: false }).limit(40);
 
   return (
     <>
@@ -30,7 +33,7 @@ export default async function PurchasesPage() {
       />
       <Card className="overflow-hidden">
         {!rows?.length ? (
-          <EmptyState icon={<ShoppingCart />} title="Todavía no hay compras" description="Subí la foto o el PDF de una factura de proveedor y la leemos."
+          <EmptyState icon={<ShoppingCart />} title="Todavía no hay compras vinculadas a órdenes" description="Subí la foto o el PDF de una factura de proveedor para repartirla entre las OC. Las que llegan por mail están abajo."
             action={writable && <Button asChild><Link href="/compras/importar"><Upload /> Subir factura</Link></Button>} />
         ) : (
           <ul className="divide-y divide-border">
@@ -57,6 +60,28 @@ export default async function PurchasesPage() {
           </ul>
         )}
       </Card>
+      {(mail ?? []).length > 0 && (
+        <Card className="mt-5 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4">
+            <div>
+              <p className="font-semibold">Facturas que llegaron por mail</p>
+              <p className="text-xs text-fg-subtle">Se leen solas: sus precios están en Precios de proveedores y los productos ya entraron al stock. Para el costo de una OC usá el botón &quot;De compras&quot; del renglón.</p>
+            </div>
+            <Button asChild size="sm" variant="secondary"><Link href="/precios-proveedores?t=facturas">Ver todas</Link></Button>
+          </div>
+          <ul className="mt-3 divide-y divide-border">
+            {(mail ?? []).map((x) => (
+              <li key={x.id} className="flex items-center gap-4 px-5 py-2.5 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{x.supplier_name ?? "—"}</p>
+                  <p className="text-xs text-fg-subtle">{x.kind === "factura" ? "Factura" : x.kind ?? "Comprobante"} {x.letter ?? ""} {x.point_of_sale ? `${String(x.point_of_sale).padStart(5, "0")}-${String(x.number ?? 0).padStart(8, "0")}` : "s/n"} · {x.issue_date ? formatDate(x.issue_date) : "sin fecha"}</p>
+                </div>
+                <span className="font-medium tabular">{formatMoney(x.total)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </>
   );
 }

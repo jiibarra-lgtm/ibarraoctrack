@@ -17,7 +17,7 @@ export default async function ImportInvoicePage() {
       <div className="max-w-2xl">
         <DocUploader orgId={s.org.org_id} kind="factura_proveedor" folder="facturas-proveedor"
           title="Arrastrá la factura o sacale una foto" hint="PDF de la factura electrónica o foto nítida del comprobante. Máximo 25 MB."
-          jobHref={(id) => `/compras/importar/${id}`} />
+          jobBase="/compras/importar" />
       </div>
     </>
   );

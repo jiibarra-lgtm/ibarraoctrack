@@ -31,7 +31,7 @@ function instalar() {
 // 3) Copia semanal: un Excel con todas tus órdenes, entregas, remitos, facturas y cobros en la carpeta
 //    "OC Track - Copias de seguridad" de tu Drive. Se guardan las últimas 12 (tres meses).
 function copiaSeguridad() {
-  var r = UrlFetchApp.fetch(URL.replace(/\/gmail$/, '/backup'), {
+  var r = UrlFetchApp.fetch(URL.replace(/\\/gmail$/, '/backup'), {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true, payload: JSON.stringify({ token: TOKEN })
   });
   if (r.getResponseCode() !== 200) throw new Error('OC Track copia de seguridad respondió ' + r.getResponseCode());

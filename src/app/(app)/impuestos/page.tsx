@@ -164,8 +164,8 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
         annualLabel={(tsData as { annual_limit_label?: string | null } | null)?.annual_limit_label ?? null} />
       {settings.emitted_sync_error && view === "iva" && <p className="mb-3 text-xs text-warn">No se pudieron traer los emitidos de ARCA: {settings.emitted_sync_error}</p>}
 
-      {view === "circuito" ? <CircuitoTab sb={s.supabase} org={org} etapa={sp.etapa} canEdit={writable} />
-        : view === "compras" ? <ComprasTab sb={s.supabase} org={org} />
+      {view === "circuito" ? <>{monthPicker}<CircuitoTab sb={s.supabase} org={org} m={m} etapa={sp.etapa} canEdit={writable} /></>
+        : view === "compras" ? <>{monthPicker}<ComprasTab sb={s.supabase} org={org} m={m} /></>
         : view === "obligaciones" ? <ObligacionesTab sb={s.supabase} org={org} ownCuit={ownCuit} monthly={monthly} wh={wh} iibbRate={Number(settings.iibb_rate)} iibbDay={Number(settings.iibb_day)} />
         : view === "jurisdicciones" ? <>{monthPicker}<JurisdiccionesTab sb={s.supabase} org={org} m={m} emitted={em} wh={wh} monthly={monthly} recibidosOther={percep} settings={(tsData ?? {}) as { annual_limit?: string | null; annual_limit_label?: string | null }} canEdit={billing} /></>
         : view === "proveedores" ? <ProveedoresTab sb={s.supabase} org={org} canEdit={billing} hasCert={Boolean(st.has_cert)} />

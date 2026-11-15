@@ -6,16 +6,26 @@ import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Card, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { PO_STATUSES } from "@/lib/po/schema";
+import { monthLabel } from "@/lib/months";
+import { cn } from "@/lib/utils";
 import { OrdersTable, type OrderRow } from "./orders-table";
 import { OrdersFilters } from "./orders-filters";
 
 export const metadata: Metadata = { title: "Órdenes de compra" };
 
-type SP = { q?: string; estado?: string; organismo?: string; desde?: string; hasta?: string };
+type SP = { q?: string; estado?: string; organismo?: string; desde?: string; hasta?: string; mes?: string };
+const nextMonth = (m: string) => { const [y, mm] = m.split("-").map(Number); return new Date(Date.UTC(y, mm, 1)).toISOString().slice(0, 10); };
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const s = await requireOrg();
+  // Filtro por mes de emisión: por defecto el último mes con órdenes (salvo que busques o filtres por fechas)
+  const { data: dates } = await s.supabase.from("purchase_orders").select("issue_date").eq("org_id", s.org.org_id).not("status", "in", "(anulada,borrador)").not("issue_date", "is", null).limit(5000);
+  const perMonth = new Map<string, number>();
+  for (const d of (dates ?? []) as { issue_date: string }[]) { const k = d.issue_date.slice(0, 7); perMonth.set(k, (perMonth.get(k) ?? 0) + 1); }
+  const monthsList = [...perMonth.keys()].sort().reverse();
+  const otherFilters = Boolean(sp.q || sp.desde || sp.hasta);
+  const mes = sp.mes === "todos" ? null : sp.mes && /^\d{4}-\d{2}$/.test(sp.mes) ? sp.mes : otherFilters ? null : monthsList[0] ?? null;
 
   let query = s.supabase
     .from("purchase_orders_overview")
@@ -29,6 +39,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   if (sp.organismo) query = query.eq("customer_id", sp.organismo);
   if (sp.desde && /^\d{4}-\d{2}-\d{2}$/.test(sp.desde)) query = query.gte("issue_date", sp.desde);
   if (sp.hasta && /^\d{4}-\d{2}-\d{2}$/.test(sp.hasta)) query = query.lte("issue_date", sp.hasta);
+  if (mes) query = query.gte("issue_date", `${mes}-01`).lt("issue_date", nextMonth(mes));
   if (sp.q) {
     const t = sp.q.replace(/[%,()*]/g, " ").trim().slice(0, 80);
     if (t) query = query.or(`bac_number.ilike.*${t}*,expediente_number.ilike.*${t}*,process_number.ilike.*${t}*,customer_name.ilike.*${t}*,dependencia.ilike.*${t}*`);
@@ -39,7 +50,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     s.supabase.from("customers").select("id, name").eq("org_id", s.org.org_id).order("name").limit(500),
   ]);
   const writable = canWrite(s.org.role);
-  const hasFilters = Boolean(sp.q || sp.estado || sp.organismo || sp.desde || sp.hasta);
+  const hasFilters = Boolean(sp.q || sp.estado || sp.organismo || sp.desde || sp.hasta || mes);
 
   return (
     <>
@@ -54,6 +65,13 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         )}
       />
       <Suspense><OrdersFilters customers={customers ?? []} /></Suspense>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {[...monthsList.slice(0, 12).map((k) => [k, `${monthLabel(k)} (${perMonth.get(k)})`] as const), ["todos", "Todos los meses"] as const].map(([k, l]) => {
+          const active = k === "todos" ? !mes : mes === k;
+          const qs = new URLSearchParams(Object.entries({ ...sp, mes: k }).filter(([, v]) => v) as [string, string][]);
+          return <Link key={k} href={`/ordenes?${qs}`} className={cn("rounded-full px-3 py-1 text-xs font-medium", active ? "bg-primary text-primary-fg" : "bg-field text-fg-muted hover:text-fg")}>{l}</Link>;
+        })}
+      </div>
       <Card className="mt-4 overflow-hidden">
         {error ? (
           <EmptyState title="No se pudieron cargar las órdenes" description={error.message} />

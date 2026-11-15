@@ -31,14 +31,17 @@ const STAGES: [Stage, string, "danger" | "warn" | "info" | "accent" | "neutral"]
   ["sin_oc", "Sin OC", "warn"], ["sin_prd", "OC sin PRD", "neutral"], ["con_prd", "Con PRD", "info"], ["pago_avisado", "Pago avisado (SIGAF)", "accent"], ["cobrada", "Cobrada", "accent"],
 ];
 
-export async function CircuitoTab({ sb, org, etapa, canEdit }: { sb: SupabaseClient; org: string; etapa?: string; canEdit: boolean }) {
-  const { data } = await sb.from("invoice_circuit").select("*").eq("org_id", org).gte("issue_date", daysAgo(200)).order("issue_date", { ascending: false }).limit(600);
+const monthRange = (m: string) => [`${m}-01`, `${shift(m, 1)}-01`] as const;
+
+export async function CircuitoTab({ sb, org, m, etapa, canEdit }: { sb: SupabaseClient; org: string; m: string; etapa?: string; canEdit: boolean }) {
+  const [from, to] = monthRange(m);
+  const { data } = await sb.from("invoice_circuit").select("*").eq("org_id", org).gte("issue_date", from).lt("issue_date", to).order("issue_date", { ascending: false }).limit(1000);
   const all = (data ?? []) as Circ[];
   const sel = STAGES.find(([k]) => k === etapa)?.[0];
   const rows = (sel ? all.filter((r) => r.stage === sel) : all.filter((r) => r.stage !== "cobrada")).slice(0, 200);
   const by = (k: Stage) => all.filter((r) => r.stage === k);
   const sumT = (xs: Circ[]) => xs.reduce((a, r) => a + N(r.total), 0);
-  const href = (e?: string) => `/impuestos?${new URLSearchParams({ v: "circuito", ...(e ? { etapa: e } : {}) })}`;
+  const href = (e?: string) => `/impuestos?${new URLSearchParams({ v: "circuito", m, ...(e ? { etapa: e } : {}) })}`;
   return (
     <div className="mt-5 space-y-5">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -48,7 +51,7 @@ export async function CircuitoTab({ sb, org, etapa, canEdit }: { sb: SupabaseCli
         <Stat icon={Wallet} label="Pago avisado, falta el depósito" value={String(by("pago_avisado").length)} sub={formatMoney(sumT(by("pago_avisado")))} tone="accent" href={href("pago_avisado")} />
       </div>
       <Card className="overflow-hidden">
-        <CardHeader title="Circuito de cada factura" description="Factura de ARCA → OC del BAC → PRD (mail del BAC) → aviso de pago del SIGAF → depósito en el banco. Se vinculan solas por CUIT del cliente, fecha e importe; si no, vinculala a mano." />
+        <CardHeader title={`Circuito de las facturas de ${monthLabel(m)}`} description="Factura de ARCA → OC del BAC → PRD (mail del BAC) → aviso de pago del SIGAF → depósito en el banco. Se vinculan solas por CUIT del cliente, fecha e importe; si no, vinculala a mano." />
         <div className="flex flex-wrap gap-1.5 border-b border-border px-5 pb-3">
           <Link href={href()} className={cn("rounded-full px-3 py-1 text-xs font-medium", !sel ? "bg-primary text-primary-fg" : "bg-field text-fg-muted")}>Pendientes ({all.length - by("cobrada").length})</Link>
           {STAGES.map(([k, l]) => <Link key={k} href={href(k)} className={cn("rounded-full px-3 py-1 text-xs font-medium", sel === k ? "bg-primary text-primary-fg" : "bg-field text-fg-muted")}>{l} ({by(k).length})</Link>)}
@@ -107,12 +110,12 @@ function PcList({ xs, empty }: { xs: PC[]; empty: string }) {
   );
 }
 
-export async function ComprasTab({ sb, org }: { sb: SupabaseClient; org: string }) {
-  const since = daysAgo(120);
+export async function ComprasTab({ sb, org, m }: { sb: SupabaseClient; org: string; m: string }) {
+  const [since, to] = monthRange(m);
   const [{ data }, { data: pend }] = await Promise.all([
-    sb.from("purchase_arca_check").select("*").eq("org_id", org).gte("issue_date", since).order("issue_date", { ascending: false }).limit(1000),
+    sb.from("purchase_arca_check").select("*").eq("org_id", org).gte("issue_date", since).lt("issue_date", to).order("issue_date", { ascending: false }).limit(1000),
     sb.from("supplier_invoices").select("total, net, items_net, letter, issue_date").eq("org_id", org).eq("hidden", false).eq("source", "mail").eq("kind", "factura")
-      .is("arca_voucher_id", null).gte("issue_date", daysAgo(60)).limit(500),
+      .is("arca_voucher_id", null).gte("issue_date", since).lt("issue_date", to).limit(500),
   ]);
   const rows = (data ?? []) as PC[];
   const ok = rows.filter((r) => r.side === "mail" && r.matched);
@@ -123,10 +126,10 @@ export async function ComprasTab({ sb, org }: { sb: SupabaseClient; org: string 
   return (
     <div className="mt-5 space-y-5">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={CheckCircle2} label="Coinciden mail y ARCA" value={String(ok.length)} tone="accent" sub="últimos 4 meses" />
+        <Stat icon={CheckCircle2} label="Coinciden mail y ARCA" value={String(ok.length)} tone="accent" sub={monthLabel(m)} />
         <Stat icon={Mail} label="Llegaron por mail, ARCA no las tiene" value={String(mailOnly.length)} tone={mailOnly.length ? "warn" : undefined} sub={formatMoney(mailOnly.reduce((a, r) => a + N(r.total), 0))} />
         <Stat icon={FileQuestion} label="En ARCA sin el PDF" value={String(arcaOnly.length)} tone={arcaOnly.length ? "warn" : undefined} sub={formatMoney(arcaOnly.reduce((a, r) => a + N(r.total), 0))} />
-        <Stat icon={Percent} label="IVA crédito que ARCA todavía no muestra" value={formatMoney(credit)} sub="facturas A del mail de los últimos 60 días" />
+        <Stat icon={Percent} label="IVA crédito que ARCA todavía no muestra" value={formatMoney(credit)} sub={`facturas A del mail de ${monthLabel(m)}`} />
       </div>
       <Card><CardHeader title="Llegaron por mail y no están en Mis Comprobantes Recibidos" description="Puede ser que ARCA todavía no la procesó (tarda unos días), que el proveedor la anuló o que es apócrifa. Si pasan 10 días, consultala con el proveedor." /><PcList xs={mailOnly} empty="Todas las facturas del mail están en ARCA." /></Card>
       <Card><CardHeader title="Están en ARCA y no llegó el PDF por mail" description="Sólo de proveedores que suelen mandar la factura por mail. Pedíselas: sin el PDF no se cargan los precios ni el stock." /><PcList xs={arcaOnly} empty="No falta ningún PDF." /></Card>

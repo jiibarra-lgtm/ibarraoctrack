@@ -227,16 +227,16 @@ export function parseSupplierInvoice(pages: string[][], hints: { ownCuit?: strin
 
   // Fecha de emisión
   let issue_date: string | null = null;
-  const dateLines = lines.filter((l) => /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(l));
+  const dateLines = lines.filter((l) => /\d{1,2}\/\d{1,2}\/\d{2,4}|\b\d{1,2}-\d{1,2}-\d{4}\b/.test(l));
   const skipDate = /inicio|activ|vto|venc|desde|hasta|imputar|pagar|pago|cae|nacim/i;
-  const prefer = dateLines.find((l) => /emisi[oó]n|fecha/i.test(l) && !/inicio|vto|venc/i.test(l.slice(0, l.search(/\d{1,2}\/\d{1,2}\/\d{2,4}/))));
+  const prefer = dateLines.find((l) => /emisi[oó]n|fecha/i.test(l) && !/inicio|vto|venc/i.test(l.slice(0, l.search(/\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/))));
   for (const l of [prefer, ...dateLines].filter(Boolean) as string[]) {
-    const re = /(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})\b/g;
+    const re = /\b(\d{1,2})(?:\/(\d{1,2})\/(\d{4}|\d{2})|-(\d{1,2})-(\d{4}))\b/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(l))) {
       const before = l.slice(Math.max(0, m.index - 28), m.index);
       if (skipDate.test(before) && !/emisi[oó]n/i.test(before)) continue;
-      issue_date = isoDate(m[1], m[2], m[3]);
+      issue_date = isoDate(m[1], m[2] ?? m[4], m[3] ?? m[5]);
       if (issue_date) break;
     }
     if (issue_date) break;
@@ -296,8 +296,11 @@ export function parseSupplierInvoice(pages: string[][], hints: { ownCuit?: strin
       continue;
     }
     // números sueltos entre la descripción y la cantidad/precio (ej. "930" ml) son parte del nombre
-    const firstUsed = Math.min(f.q.i, f.p.i);
-    const tail = firstUsed > d1 ? toks.slice(d1 + 1, firstUsed).filter((t) => t.kind !== "unit" && t !== f.q && t !== f.p) : [];
+    // (la cantidad puede ir antes de la descripción: "200 DETERGENTE x 5 Lts $3740")
+    const firstUsed = Math.min(...[f.q.i, f.p.i].filter((i) => i > d1), Infinity);
+    const span = Number.isFinite(firstUsed) ? toks.slice(d1 + 1, firstUsed) : [];
+    const presentation = span.some((t) => /^x$/i.test(t.raw)) || /^x$/i.test(toks[d1]?.raw ?? ""); // "x 5 Lts" es parte del nombre
+    const tail = span.filter((t) => (presentation || t.kind !== "unit") && t !== f.q && t !== f.p);
     descToks.push(...tail);
     let description = descToks.map((t) => t.raw).join(" ").replace(/\s{2,}/g, " ").trim();
     let code = toks.find((t) => t.kind === "code" && t.i < d0)?.raw ?? null;
@@ -306,7 +309,7 @@ export function parseSupplierInvoice(pages: string[][], hints: { ownCuit?: strin
     const parts = description.split(" ");
     if (parts.length >= 3 && /^(?=.*\d)(?=.*[A-Z])[A-Z0-9/.\-]{4,14}$/.test(parts[0])) { code = code ?? parts[0]; description = parts.slice(1).join(" "); }
     if (letters(description) < 3) continue;
-    const unit = toks.find((t) => t.kind === "unit" && (t.i < d0 || t.i > d1))?.raw.replace(/\.$/, "") ?? null;
+    const unit = toks.find((t) => t.kind === "unit" && (t.i < d0 || t.i > d1) && !tail.includes(t))?.raw.replace(/\.$/, "") ?? null;
     const qty = f.q.v as number;
     const lineNet = f.t.v as number;
     const vat = toks.filter((t) => t.i > f.t.i && t.v !== null && [21, 10.5, 27, 0, 5, 2.5].includes(t.v)).map((t) => t.v as number)[0] ?? null;

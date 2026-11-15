@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractText, getDocumentProxy } from "unpdf";
-import { ocrImage } from "@/lib/bac/ocr";
+import { ocrImage, ocrPhoto } from "@/lib/bac/ocr";
 import { pdfToImage } from "@/lib/bac/pdf-images";
 import { parseInvoiceText } from "@/lib/invoice/parse";
 import { matchRemitoLines, readRemitoHeader } from "@/lib/remito/parse";
@@ -19,7 +19,7 @@ export async function readDocumentText(buffer: Buffer, mime: string): Promise<{ 
     if (!img) throw new Error("El PDF no tiene texto ni imágenes legibles. Subí una foto o captura del comprobante.");
     return { text: (await ocrImage(img)).text, method: "ocr" };
   }
-  return { text: (await ocrImage(buffer)).text, method: "ocr" };
+  return { text: (await ocrPhoto(buffer)).text, method: "ocr" };
 }
 
 async function finish(supabase: SupabaseClient, jobId: string, doc: Doc, method: string, text: string, data: unknown, warnings: string[]) {

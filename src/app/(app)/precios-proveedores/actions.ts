@@ -4,6 +4,7 @@ import { requireOrg } from "@/lib/session";
 import { friendlyDbError } from "@/lib/errors";
 import { isUuid } from "@/lib/utils";
 import { pdfLines } from "@/lib/invoice/pdf-lines";
+import { ocrPhoto } from "@/lib/bac/ocr";
 import { parseSupplierInvoice } from "@/lib/invoice/supplier-invoice";
 import { invoicePayload } from "@/lib/inbound/supplier-invoices";
 
@@ -17,21 +18,26 @@ const REASON: Record<string, string> = {
   "salteada:sin_cae": "No parece una factura electrónica (no tiene CAE)",
 };
 
-/** Sube una o varias facturas en PDF (las que no llegaron por mail). */
+/** Sube una o varias facturas en PDF o foto (las que no llegaron por mail). Las fotos se leen con OCR. */
 export async function uploadSupplierInvoices(form: FormData): Promise<R> {
   const s = await requireOrg();
   if (!can(s.org.role)) return { ok: false, error: "Tu rol no permite cargar facturas" };
   const files = form.getAll("files").filter((f): f is File => f instanceof File && f.size > 0).slice(0, 10);
-  if (!files.length) return { ok: false, error: "Elegí al menos un PDF" };
+  if (!files.length) return { ok: false, error: "Elegí al menos un PDF o una foto" };
   let nuevas = 0, items = 0;
   const problems: string[] = [];
   for (const f of files) {
     if (f.size > 1_900_000) { problems.push(`${f.name}: es muy grande (máx. 1,9 MB)`); continue; }
     const bytes = new Uint8Array(await f.arrayBuffer());
-    if (Buffer.from(bytes.slice(0, 5)).toString() !== "%PDF-") { problems.push(`${f.name}: no es un PDF`); continue; }
+    const isPdf = Buffer.from(bytes.slice(0, 5)).toString() === "%PDF-";
+    const isImg = /^image\/(jpeg|png|webp|heic|heif)$/.test(f.type) || /^\xff\xd8|^\x89PNG/.test(Buffer.from(bytes.slice(0, 4)).toString("latin1"));
+    if (!isPdf && !isImg) { problems.push(`${f.name}: no es un PDF ni una foto`); continue; }
     let pages: string[][];
-    try { pages = await pdfLines(bytes); } catch { problems.push(`${f.name}: no se pudo abrir`); continue; }
-    if (pages.flat().join("").replace(/\s/g, "").length < 80) { problems.push(`${f.name}: es una imagen escaneada, sin texto`); continue; }
+    try {
+      if (isPdf) pages = await pdfLines(bytes);
+      else pages = [(await ocrPhoto(Buffer.from(bytes))).text.split(/\r?\n/).filter((l) => l.trim())];
+    } catch { problems.push(`${f.name}: no se pudo abrir`); continue; }
+    if (pages.flat().join("").replace(/\s/g, "").length < 80) { problems.push(`${f.name}: ${isPdf ? "es una imagen escaneada, sin texto: subí una foto de la factura" : "no se pudo leer la foto (sacala más de cerca, derecha y con buena luz)"}`); continue; }
     const inv = parseSupplierInvoice(pages, { filename: f.name });
     const { data, error } = await s.supabase.rpc("upload_supplier_invoice", { p_org: s.org.org_id, p_inv: invoicePayload(inv, { filename: f.name.slice(0, 200) }) });
     if (error) { problems.push(`${f.name}: ${friendlyDbError(error)}`); continue; }

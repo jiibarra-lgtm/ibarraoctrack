@@ -86,3 +86,27 @@ async function ocrWith(worker: Awaited<ReturnType<typeof createWorker>>, buffer:
     return { text: joinTiles(parts), confidence: confs.reduce((a, b) => a + b, 0) / Math.max(1, confs.length) };
   }
 }
+
+/**
+ * OCR para fotos de comprobantes en papel (luz despareja, sombras, papel gris): se divide la imagen por su
+ * fondo desenfocado (normaliza la iluminación) y recién ahí se binariza. Probado con fotos de celular de facturas.
+ */
+export async function ocrPhoto(buffer: Buffer): Promise<{ text: string; confidence: number }> {
+  const meta = await sharp(buffer, { failOn: "none" }).rotate().metadata();
+  if (!meta.width || !meta.height) throw new Error("No se pudo leer la imagen");
+  const W = Math.round(Math.min(2600, Math.max(meta.width, 1800)));
+  const g = sharp(buffer, { failOn: "none" }).rotate().grayscale().resize(W, null, { kernel: "lanczos3" });
+  const { data: px, info } = await g.clone().raw().toBuffer({ resolveWithObject: true });
+  const { data: bg } = await g.clone().blur(30).raw().toBuffer({ resolveWithObject: true });
+  const out = Buffer.alloc(px.length);
+  for (let i = 0; i < px.length; i++) out[i] = (px[i] / Math.max(1, bg[i])) * 255 < 200 ? 0 : 255;
+  const img = await sharp(out, { raw: { width: info.width, height: info.height, channels: 1 } }).png().toBuffer();
+  const worker = await createWorker("spa", 1, { langPath: langPath(), gzip: true, cachePath: "/tmp/tesseract" });
+  try {
+    await worker.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: "4" as never });
+    const r = await worker.recognize(img);
+    return { text: r.data.text, confidence: r.data.confidence };
+  } finally {
+    await worker.terminate();
+  }
+}

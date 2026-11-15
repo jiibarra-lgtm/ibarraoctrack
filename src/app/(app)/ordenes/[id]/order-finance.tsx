@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, Card, CardBody, CardHeader, EmptyState, Input } from "@/components/ui/primitives";
 import { formatDate, formatMoney, formatQty } from "@/lib/format";
 import { setEstimatedCost } from "@/app/(app)/compras/actions";
+import { SupplierCostPicker } from "@/components/supplier-cost-picker";
 import { CostDialog, type OrderOption } from "@/app/(app)/costos/cost-dialog";
 import type { ProfitRow } from "@/lib/profitability";
 import type { PoBilling } from "@/lib/billing";
@@ -66,7 +67,7 @@ export function ProfitSummary({ p, cur, billing }: { p: ProfitRow | null; cur: s
   );
 }
 
-export function PurchasesTab({ items, allocations, cur, canWrite, substitutions = [] }: { items: ItemProfit[]; allocations: AllocationRow[]; cur: string; canWrite: boolean; substitutions?: Subst[] }) {
+export function PurchasesTab({ items, allocations, cur, canWrite, substitutions = [], costSources = {} }: { items: ItemProfit[]; allocations: AllocationRow[]; cur: string; canWrite: boolean; substitutions?: Subst[]; costSources?: Record<string, { convenio: string | null; label: string | null }> }) {
   const byItem = new Map<string, AllocationRow[]>();
   allocations.forEach((a) => byItem.set(a.purchase_order_item_id, [...(byItem.get(a.purchase_order_item_id) ?? []), a]));
   return (
@@ -86,10 +87,13 @@ export function PurchasesTab({ items, allocations, cur, canWrite, substitutions 
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 flex-1">
                     <p className="line-clamp-1 text-sm"><span className="text-fg-subtle tabular">R{it.line_number}.{it.option_number}</span> {it.description_original}</p>
+                    {costSources[it.purchase_order_item_id]?.label && <p className="truncate text-[11px] text-accent">Costo de la compra: {costSources[it.purchase_order_item_id]!.label}</p>}
                     <p className="text-xs text-fg-subtle tabular">Venta {formatQty(it.quantity)} × {formatMoney(it.unit_price, cur)} · comprado {formatQty(it.purchased_qty)}{realUnit !== null ? ` a ${formatMoney(realUnit.toFixed(2), cur)} prom.` : ""}</p>
                   </div>
                   <div className="flex items-center gap-3">
                     <SubstitutionDialog itemId={it.purchase_order_item_id} label={`R${it.line_number}.${it.option_number} ${it.description_original.slice(0, 40)}`} saleNet={saleNet} cur={cur} current={subs} disabled={!canWrite} />
+                    {!it.substituted && <SupplierCostPicker itemId={it.purchase_order_item_id} convenioLineId={costSources[it.purchase_order_item_id]?.convenio ?? null} description={it.description_original}
+                      linkedLabel={costSources[it.purchase_order_item_id]?.label ?? null} disabled={!canWrite} />}
                     {!it.substituted && <EstimatedCostInput id={it.purchase_order_item_id} value={it.estimated_unit_cost} disabled={!canWrite} />}
                     <div className="w-32 text-right">
                       <p className="text-xs text-fg-subtle">Costo renglón</p>

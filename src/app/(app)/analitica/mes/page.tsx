@@ -7,6 +7,8 @@ import { formatMoney, formatQty, todayISO } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { monthLabel, shiftMonth } from "../../dashboard/month-stages";
 import { CostCell } from "./cost-cell";
+import { SupplierCostPicker } from "@/components/supplier-cost-picker";
+import { sourceLabels } from "@/lib/cost-sources";
 
 export const metadata: Metadata = { title: "Ganancia del mes" };
 
@@ -34,11 +36,12 @@ export default async function MonthProfitPage({ searchParams }: { searchParams: 
   const [{ data: items }, { data: links }] = ids.length
     ? await Promise.all([
       s.supabase.from("po_item_profitability").select("purchase_order_item_id, purchase_order_id, line_number, description_original, quantity, unit_price, sales_gross, estimated_unit_cost, estimated_cost, substituted").in("purchase_order_id", ids),
-      s.supabase.from("purchase_order_items").select("id, convenio_line_id, bac_code").in("purchase_order_id", ids),
+      s.supabase.from("purchase_order_items").select("id, convenio_line_id, bac_code, cost_source_item_id, cost_source_divisor").in("purchase_order_id", ids),
     ])
     : [{ data: [] }, { data: [] }];
   const div = (fs?.sales_include_vat ?? true) ? 1 + Number(fs?.default_vat_rate ?? 21) / 100 : 1;
   const link = new Map((links ?? []).map((l) => [l.id as string, l]));
+  const sources = await sourceLabels(s.supabase, (links ?? []) as { cost_source_item_id: string | null; cost_source_divisor: string | null }[]);
   const po = new Map((pos ?? []).map((p) => [p.id as string, p]));
 
   const rows = ((items ?? []) as ItemRow[]).map((it) => {
@@ -108,7 +111,12 @@ export default async function MonthProfitPage({ searchParams }: { searchParams: 
                       <td className="px-2 py-2 text-right align-top tabular">{formatMoney(r.net)}<p className="text-[11px] text-fg-subtle">{formatMoney(Number(r.unit_price) / div)} c/u</p></td>
                       <td className="px-2 py-2 text-right align-top">
                         {r.substituted ? <span className="text-xs text-fg-subtle">reemplazo cargado</span>
-                          : <CostCell itemId={r.purchase_order_item_id} lineId={(r.link?.convenio_line_id as string | null) ?? null} value={r.estimated_unit_cost} disabled={!writable} />}
+                          : <div className="flex items-center justify-end gap-1">
+                              <SupplierCostPicker itemId={r.purchase_order_item_id} convenioLineId={(r.link?.convenio_line_id as string | null) ?? null} description={r.description_original}
+                                linkedLabel={sources.get(String(r.link?.cost_source_item_id)) ?? null} disabled={!writable} />
+                              <CostCell itemId={r.purchase_order_item_id} lineId={(r.link?.convenio_line_id as string | null) ?? null} value={r.estimated_unit_cost} disabled={!writable} />
+                            </div>}
+                        {r.link?.cost_source_item_id && sources.get(String(r.link.cost_source_item_id)) && <p className="mt-0.5 max-w-44 truncate text-right text-[10px] text-accent">{sources.get(String(r.link.cost_source_item_id))}</p>}
                       </td>
                       <td className={cn("px-2 py-2 text-right align-top font-medium tabular", r.profit !== null && r.profit < 0 && "text-danger")}>{r.profit === null ? "—" : formatMoney(r.profit)}</td>
                       <td className={cn("px-4 py-2 text-right align-top tabular", m !== null && m < 10 && "text-warn")}>{m === null ? "—" : `${m.toFixed(1)}%`}</td>

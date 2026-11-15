@@ -33,6 +33,7 @@ type Props = {
   profit: ProfitRow | null;
   itemProfit: ItemProfit[];
   substitutions: Subst[];
+  costSources?: Record<string, { convenio: string | null; label: string | null }>;
   allocations: AllocationRow[];
   costAllocs: CostAllocRow[];
   categories: { id: string; name: string; kind: string }[];
@@ -87,7 +88,7 @@ export function OrderTabs(p: Props) {
 
       <TabsContent value="resumen" className="mt-5 flex flex-col gap-5"><Summary {...p} cur={cur} /></TabsContent>
       <TabsContent value="productos" className="mt-5"><Items items={p.items} cur={cur} /></TabsContent>
-      <TabsContent value="compras" className="mt-5"><PurchasesTab items={p.itemProfit} allocations={p.allocations} cur={cur} canWrite={p.canWrite} substitutions={p.substitutions} /></TabsContent>
+      <TabsContent value="compras" className="mt-5"><PurchasesTab items={p.itemProfit} allocations={p.allocations} cur={cur} canWrite={p.canWrite} substitutions={p.substitutions} costSources={p.costSources} /></TabsContent>
       <TabsContent value="costos" className="mt-5"><CostsTab rows={p.costAllocs} cur={cur} categories={p.categories} order={p.orderOption} canWrite={p.canWrite} /></TabsContent>
       <TabsContent value="entregas" className="mt-5"><DeliveriesPanel poId={p.po.id} orgId={p.orgId} items={p.deliveryItems} deliveries={p.deliveries} defaultPlace={p.po.delivery_place ?? ""} canEdit={p.canDeliver} /></TabsContent>
       <TabsContent value="facturacion" className="mt-5">

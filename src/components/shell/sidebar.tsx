@@ -2,7 +2,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { NAV } from "./nav";
+import { NAV, activeHref, activeItem } from "./nav";
+import { ModeSwitch, useUiMode } from "./ui-mode";
 
 export function Brand({ orgName }: { orgName: string }) {
   return (
@@ -23,42 +24,26 @@ export function Brand({ orgName }: { orgName: string }) {
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  // Activo = el ítem con la ruta más específica que coincide (evita marcar /analitica y /analitica/ranking a la vez)
-  const all = NAV.flatMap((g) => g.items.map((i) => i.href));
-  const matches = (href: string) => pathname === href || pathname.startsWith(href + "/");
-  const best = all.filter(matches).sort((a, b) => b.length - a.length)[0];
-  const isActive = (href: string) => href === best;
+  const [mode] = useUiMode();
+  const current = activeItem(pathname);
+  const groups = NAV.map((g) => ({ ...g, items: g.items.filter((i) => mode === "completo" || i.simple || i === current) })).filter((g) => g.items.length);
 
   return (
-    <nav className="flex flex-col gap-5">
-      {NAV.map((group) => (
+    <nav className="flex flex-1 flex-col gap-5">
+      {groups.map((group) => (
         <div key={group.label}>
           <p className="mb-1 px-2.5 text-[10px] font-semibold uppercase tracking-wider text-side-muted/80">{group.label}</p>
           <ul className="flex flex-col gap-px">
             {group.items.map((item) => {
               const Icon = item.icon;
-              const active = isActive(item.href);
-              if (item.phase) {
-                return (
-                  <li key={item.href}>
-                    <span
-                      className="flex cursor-not-allowed items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm text-side-muted/60"
-                      title={`Disponible en la Fase ${item.phase}`}
-                    >
-                      <Icon className="size-4 shrink-0 opacity-60" />
-                      <span className="flex-1 truncate">{item.label}</span>
-                      <span className="rounded-full bg-white/10 px-1.5 text-[10px] tabular">F{item.phase}</span>
-                    </span>
-                  </li>
-                );
-              }
+              const active = item === current;
               return (
                 <li key={item.href}>
                   <Link
                     href={item.href}
                     onClick={onNavigate}
                     className={cn(
-                      "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors",
+                      "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
                       active ? "bg-brand font-medium text-brand-fg shadow-[0_6px_18px_-6px_var(--brand)]" : "text-side-muted hover:bg-white/10 hover:text-side-fg",
                     )}
                   >
@@ -71,6 +56,29 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           </ul>
         </div>
       ))}
+      <ModeSwitch className="mt-auto border-t border-white/10 pt-4" />
     </nav>
+  );
+}
+
+/** Pestañas de la sección actual (ej. Entregas: Pendientes · Estado por OC · Remitos). */
+export function SectionTabs() {
+  const pathname = usePathname();
+  const [mode] = useUiMode();
+  const item = activeItem(pathname);
+  const best = activeHref(pathname);
+  if (!item?.tabs) return null;
+  const tabs = item.tabs.filter((t) => mode === "completo" || t.simple || t.href === best);
+  if (tabs.length < 2) return null;
+  return (
+    <div className="-mt-1 mb-5 flex gap-1 overflow-x-auto border-b border-border pb-px" role="tablist" aria-label={item.label}>
+      {tabs.map((t) => (
+        <Link key={t.href} href={t.href} role="tab" aria-selected={t.href === best}
+          className={cn("shrink-0 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+            t.href === best ? "border-brand text-fg" : "border-transparent text-fg-muted hover:text-fg")}>
+          {t.label}
+        </Link>
+      ))}
+    </div>
   );
 }

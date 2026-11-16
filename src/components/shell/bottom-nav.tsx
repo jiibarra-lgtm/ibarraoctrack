@@ -1,15 +1,15 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, FileText, Inbox, LayoutDashboard, Plus } from "lucide-react";
+import { FileText, LayoutDashboard, Plus, Truck, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const ITEMS = [
   { href: "/dashboard", label: "Inicio", icon: LayoutDashboard },
   { href: "/ordenes", label: "Órdenes", icon: FileText },
   { href: "/ordenes/importar", label: "Importar", icon: Plus, main: true },
-  { href: "/bac", label: "BAC", icon: Inbox },
-  { href: "/alertas", label: "Alertas", icon: Bell },
+  { href: "/entregas", label: "Entregas", icon: Truck },
+  { href: "/analitica/mes", label: "Ganancia", icon: TrendingUp },
 ];
 
 /** Barra inferior tipo app (sólo celular). */

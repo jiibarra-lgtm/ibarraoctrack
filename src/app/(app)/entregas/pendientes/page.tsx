@@ -46,7 +46,7 @@ export default async function DeliveryBoardPage({ searchParams }: { searchParams
 
   return (
     <>
-      <PageHeader breadcrumb={<Link href="/entregas" className="hover:text-fg">Entregas</Link>} title="Entregas pendientes"
+      <PageHeader title="Entregas pendientes"
         description="Lo que hay que llevar y lo que ya se llevó. Cada tarjeta se vincula sola con su OC por el número."
         actions={edit && <NewItemButton />} />
 

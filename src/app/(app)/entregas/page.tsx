@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AlertTriangle, CalendarClock, FileWarning, CheckCircle2, ChevronRight, ClipboardCheck, ListTodo, ScanLine, Truck } from "lucide-react";
+import { AlertTriangle, CalendarClock, FileWarning, CheckCircle2, ChevronRight, ClipboardCheck, ListTodo, Truck } from "lucide-react";
 import { requireOrg } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui/primitives";
@@ -75,11 +75,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
 
   return (
     <>
-      <PageHeader title="Entregas" description="Qué falta llevar, qué está atrasado y qué ya se entregó, con cada orden de compra."
-        actions={<>
-          <Button asChild><Link href="/entregas/pendientes"><ListTodo /> Entregas pendientes</Link></Button>
-          <Button asChild variant="secondary"><Link href="/entregas/remito"><ScanLine /> Leer remito</Link></Button>
-        </>} />
+      <PageHeader title="Estado de entregas por OC" description="Qué falta llevar, qué está atrasado y qué ya se entregó, con cada orden de compra." />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
         <Stat icon={ListTodo} label="Para llevar" value={String(toCarry)} sub="en Entregas pendientes" href="/entregas/pendientes" />

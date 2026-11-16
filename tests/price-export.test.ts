@@ -11,17 +11,18 @@ describe("priceWorkbook", () => {
   const rows = [L(1, 8200, 7970, 5559.5), L(2, 990, 900, 800), L(3, 500, 450, null), L(4, 1000, 1200, 500, [100, 5]), L(5, 1000, 1005, 500)];
   const wb = priceWorkbook(rows, "2026-11-16");
   it("separa cada situación en su hoja", () => {
-    expect(wb.map((s) => s.name)).toEqual(["Resumen", "1 Bajá el precio", "2 No te da", "3 Sin costo", "4 Podés subir", "5 Dejalo así", "6 Stock"]);
+    expect(wb.map((s) => s.name)).toEqual(["Resumen", "Todos", "1 Bajá el precio", "2 No te da", "3 Sin costo", "4 Podés subir", "5 Dejalo así", "6 Stock"]);
     const dataRows = (i: number) => wb[i].rows.slice(4).filter((r) => r.length > 3).length;
-    expect([dataRows(1), dataRows(2), dataRows(3), dataRows(5), dataRows(6)]).toEqual([1, 1, 1, 1, 1]);
-    expect(dataRows(4)).toBe(2); // 1 renglón + total
+    expect(dataRows(1)).toBe(5);
+    expect([dataRows(2), dataRows(3), dataRows(4), dataRows(6), dataRows(7)]).toEqual([1, 1, 1, 1, 1]);
+    expect(dataRows(5)).toBe(2); // 1 renglón + total
   });
   it("genera un xlsx válido con estilos", () => {
     const files = unzipSync(writeStyledXlsx(wb));
-    expect(Object.keys(files)).toContain("xl/worksheets/sheet7.xml");
+    expect(Object.keys(files)).toContain("xl/worksheets/sheet8.xml");
     const styles = strFromU8(files["xl/styles.xml"]);
     expect(styles).toContain('formatCode="0.0%"');
-    const s2 = strFromU8(files["xl/worksheets/sheet2.xml"]);
+    const s2 = strFromU8(files["xl/worksheets/sheet3.xml"]);
     expect(s2).toContain("<autoFilter");
     expect(s2).toContain("Te ganan y te da para bajar");
   });

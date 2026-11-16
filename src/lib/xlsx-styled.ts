@@ -6,7 +6,7 @@ import { strToU8, zipSync } from "fflate";
  */
 export type Style =
   | "text" | "wrap" | "money" | "moneyBold" | "moneyRed" | "moneyGreen" | "pct" | "pctRed" | "pctGreen" | "int" | "intBold"
-  | "title" | "subtitle" | "label" | "headDark" | "headRed" | "headGreen" | "headAmber" | "headGrey" | "headBlue" | "totalLabel" | "plain";
+  | "title" | "subtitle" | "label" | "headDark" | "headRed" | "headGreen" | "headAmber" | "headGrey" | "headBlue" | "totalLabel" | "missing" | "plain";
 export type Cell = string | number | null | undefined | { v: string | number | null | undefined; s: Style };
 export type StyledSheet = {
   name: string;
@@ -18,7 +18,7 @@ export type StyledSheet = {
 };
 
 const STYLES: Style[] = ["plain", "text", "wrap", "money", "moneyBold", "moneyRed", "moneyGreen", "pct", "pctRed", "pctGreen", "int", "intBold",
-  "title", "subtitle", "label", "headDark", "headRed", "headGreen", "headAmber", "headGrey", "headBlue", "totalLabel"];
+  "title", "subtitle", "label", "headDark", "headRed", "headGreen", "headAmber", "headGrey", "headBlue", "totalLabel", "missing"];
 const idx = (s: Style) => STYLES.indexOf(s);
 
 // fonts: 0 normal, 1 bold, 2 bold white, 3 title, 4 italic grey, 5 red, 6 green, 7 bold red? (unused)
@@ -30,11 +30,12 @@ const FONTS = [
   `<font><i/><sz val="10"/><color rgb="FF6B7280"/><name val="Calibri"/></font>`,
   `<font><b/><sz val="11"/><color rgb="FFB42318"/><name val="Calibri"/></font>`,
   `<font><b/><sz val="11"/><color rgb="FF1E7A46"/><name val="Calibri"/></font>`,
+  `<font><i/><sz val="10"/><color rgb="FFB45309"/><name val="Calibri"/></font>`,
 ];
 const fill = (rgb: string) => `<fill><patternFill patternType="solid"><fgColor rgb="FF${rgb}"/><bgColor indexed="64"/></patternFill></fill>`;
 // fills: 0 none, 1 gray125 (obligatorios), 2 dark, 3 red, 4 green, 5 amber, 6 grey, 7 blue, 8 light total
 const FILLS = [`<fill><patternFill patternType="none"/></fill>`, `<fill><patternFill patternType="gray125"/></fill>`,
-  fill("1F2937"), fill("B42318"), fill("1E7A46"), fill("B45309"), fill("6B7280"), fill("1D4ED8"), fill("F3F4F6")];
+  fill("1F2937"), fill("B42318"), fill("1E7A46"), fill("B45309"), fill("6B7280"), fill("1D4ED8"), fill("F3F4F6"), fill("FEF3C7")];
 const BORDERS = [`<border/>`, `<border><left style="thin"><color rgb="FFD1D5DB"/></left><right style="thin"><color rgb="FFD1D5DB"/></right><top style="thin"><color rgb="FFD1D5DB"/></top><bottom style="thin"><color rgb="FFD1D5DB"/></bottom></border>`];
 // numFmts: 164 money, 165 pct, 166 int
 const NUMFMTS = `<numFmts count="3"><numFmt numFmtId="164" formatCode="&quot;$&quot; #,##0.00;[Red]-&quot;$&quot; #,##0.00"/><numFmt numFmtId="165" formatCode="0.0%"/><numFmt numFmtId="166" formatCode="#,##0"/></numFmts>`;
@@ -66,6 +67,7 @@ function xf(s: Style) {
     case "headGrey": return x(2, 6, b, 0, true, true);
     case "headBlue": return x(2, 7, b, 0, true, true);
     case "totalLabel": return x(1, 8, b);
+    case "missing": return x(7, 9, b, 0, false, true);
   }
 }
 

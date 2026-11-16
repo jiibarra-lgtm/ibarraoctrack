@@ -4,7 +4,7 @@ import {
   Inbox, Mail, Gavel, ShoppingBag, ClipboardList, Percent, WalletCards, type LucideIcon,
   Tags, CalendarClock,
   Boxes,
-  Scale, TrendingUp,
+  Scale, TrendingUp, MapPinned,
 } from "lucide-react";
 
 export type NavItem = { href: string; label: string; icon: LucideIcon; phase?: number };
@@ -30,6 +30,7 @@ export const NAV: NavGroup[] = [
       { href: "/precios-proveedores", label: "Precios de proveedores", icon: Tags },
       { href: "/mercadolibre", label: "Mercado Libre", icon: ShoppingBag },
       { href: "/costos", label: "Costos", icon: CircleDollarSign },
+      { href: "/entregas/hoja-de-ruta", label: "Hoja de ruta", icon: MapPinned },
       { href: "/entregas", label: "Entregas", icon: Truck },
       { href: "/remitos", label: "Remitos", icon: ClipboardList },
       { href: "/stock", label: "Stock", icon: Boxes },

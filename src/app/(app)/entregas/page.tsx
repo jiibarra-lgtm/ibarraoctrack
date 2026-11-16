@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ScanLine, Truck } from "lucide-react";
+import { MapPinned, ScanLine, Truck } from "lucide-react";
 import { requireOrg } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
@@ -28,7 +28,7 @@ export default async function DeliveriesPage() {
   return (
     <>
       <PageHeader title="Entregas" description="Programadas, en curso y realizadas. Entrega física y conformidad administrativa se registran por separado."
-        actions={<Button asChild variant="secondary"><Link href="/entregas/remito"><ScanLine /> Leer remito</Link></Button>} />
+        actions={<><Button asChild><Link href="/entregas/hoja-de-ruta"><MapPinned /> Hoja de ruta</Link></Button><Button asChild variant="secondary"><Link href="/entregas/remito"><ScanLine /> Leer remito</Link></Button></>} />
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader title={`Atrasadas (${late.length})`} description="Fecha límite vencida y con renglones pendientes" />

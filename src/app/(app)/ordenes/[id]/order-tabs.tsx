@@ -1,4 +1,5 @@
 "use client";
+import { BoardList, type BoardItem } from "@/app/(app)/entregas/pendientes/board-ui";
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { History, GitCommitHorizontal, ArrowRight } from "lucide-react";
@@ -40,6 +41,7 @@ type Props = {
   orderOption: OrderOption;
   deliveryItems: DeliveryItemOption[];
   deliveries: DeliveryRow[];
+  boardItems?: BoardItem[];
   billing: PoBilling | null;
   invoices: InvoiceBalance[];
   collections: CollectionRow[];
@@ -90,7 +92,7 @@ export function OrderTabs(p: Props) {
       <TabsContent value="productos" className="mt-5"><Items items={p.items} cur={cur} /></TabsContent>
       <TabsContent value="compras" className="mt-5"><PurchasesTab items={p.itemProfit} allocations={p.allocations} cur={cur} canWrite={p.canWrite} substitutions={p.substitutions} costSources={p.costSources} /></TabsContent>
       <TabsContent value="costos" className="mt-5"><CostsTab rows={p.costAllocs} cur={cur} categories={p.categories} order={p.orderOption} canWrite={p.canWrite} /></TabsContent>
-      <TabsContent value="entregas" className="mt-5"><DeliveriesPanel poId={p.po.id} orgId={p.orgId} items={p.deliveryItems} deliveries={p.deliveries} defaultPlace={p.po.delivery_place ?? ""} canEdit={p.canDeliver} /></TabsContent>
+      <TabsContent value="entregas" className="mt-5">{!!p.boardItems?.length && <BoardForOrder items={p.boardItems} canEdit={p.canDeliver} />}<DeliveriesPanel poId={p.po.id} orgId={p.orgId} items={p.deliveryItems} deliveries={p.deliveries} defaultPlace={p.po.delivery_place ?? ""} canEdit={p.canDeliver} /></TabsContent>
       <TabsContent value="facturacion" className="mt-5">
         <OrderBilling billing={p.billing} invoices={p.invoices} collections={p.collections} orgId={p.orgId} canBill={p.canBill} cur={cur}
           order={{ id: String(p.po.id), label: p.orderOption.label, customer: p.orderOption.customer, to_invoice: p.billing?.to_invoice ?? "0", currency: cur }} />
@@ -294,5 +296,17 @@ function Timeline({ history, revisions, itemAudit, po, createdBy }: Props) {
         )}
       </CardBody>
     </Card>
+  );
+}
+
+function BoardForOrder({ items, canEdit }: { items: BoardItem[]; canEdit: boolean }) {
+  return (
+    <div className="mb-5 overflow-hidden rounded-2xl border border-card-border bg-card">
+      <div className="border-b border-border px-5 py-3">
+        <p className="text-sm font-semibold">En Entregas pendientes</p>
+        <p className="text-xs text-fg-subtle">Lo que anotaste para llevar de esta OC. Marcarlo como entregado ahí no registra la entrega acá abajo.</p>
+      </div>
+      <BoardList items={items} canEdit={canEdit} empty="" />
+    </div>
   );
 }

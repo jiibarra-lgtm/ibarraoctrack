@@ -63,6 +63,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
     sb.from("po_item_substitutions").select("id, purchase_order_item_id, description, quantity, unit_cost, notes").eq("purchase_order_id", id).order("line").then((r) => r.data ?? []),
     sb.from("purchase_order_items").select("id, convenio_line_id, cost_source_item_id, cost_source_divisor").eq("purchase_order_id", id).then((r) => r.data ?? []),
   ]);
+  const { data: boardRows } = o.bac_number
+    ? await sb.from("delivery_board_overview").select("*").eq("org_id", s.org.org_id).contains("oc_refs", [String(o.bac_number).toUpperCase()]).order("status").order("delivered_on", { ascending: false })
+    : { data: [] };
   const { data: mlRows } = await sb.from("ml_orders_overview").select("*").eq("purchase_order_id", id).order("ordered_at", { ascending: false });
   const orderOption = {
     id, label: o.bac_number ?? o.display_number, customer: o.customer_name,
@@ -128,6 +131,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         orderOption={orderOption}
         deliveryItems={deliveryItems}
         deliveries={deliveries}
+        boardItems={(boardRows ?? []) as never}
         billing={billing}
         invoices={invoices}
         collections={collections}

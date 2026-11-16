@@ -7,7 +7,7 @@ import { isUuid } from "@/lib/utils";
 
 type R = { ok: true } | { ok: false; error: string };
 const can = (r: AppRole) => canWrite(r) || r === "logistica";
-const done = () => { revalidatePath("/entregas/hoja-de-ruta"); revalidatePath("/entregas"); };
+const done = () => { revalidatePath("/entregas/pendientes"); revalidatePath("/entregas"); };
 
 const itemSchema = z.object({
   id: z.string().uuid().optional().or(z.literal("")),

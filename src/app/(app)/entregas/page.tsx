@@ -1,120 +1,153 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { MapPinned, ScanLine, Truck } from "lucide-react";
-import { requireOrg, canWrite } from "@/lib/session";
+import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, ClipboardCheck, ListTodo, ScanLine, Truck } from "lucide-react";
+import { requireOrg } from "@/lib/session";
 import { Button } from "@/components/ui/button";
-import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
+import { Badge, Card, EmptyState, PageHeader } from "@/components/ui/primitives";
+import { Stat } from "@/components/ui/stat";
 import { DELIVERY_STATUS_LABEL, DELIVERY_TONE, deliveryNumber, type DeliveryStatus } from "@/lib/delivery";
 import { formatDate, todayISO } from "@/lib/format";
-import { BoardList, NewItemButton, type BoardItem } from "./hoja-de-ruta/board-ui";
+import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Entregas" };
 
-export default async function DeliveriesPage() {
+const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
+type BoardRow = { oc_refs: string[]; status: string; delivered_on: string | null; note: string | null };
+type Filter = "todas" | "atrasadas" | "para-llevar" | "registrar" | "sin-lista";
+const FILTERS: [Filter, string][] = [["todas", "Todas"], ["atrasadas", "Atrasadas"], ["para-llevar", "En Entregas pendientes"], ["registrar", "Llevadas, falta registrar"], ["sin-lista", "Sin cargar en la lista"]];
+
+function Section({ title, description, action, children, className }: { title: string; description?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
+  return (
+    <Card className={cn("overflow-hidden", className)}>
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border px-5 py-4 sm:px-6">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">{title}</h2>
+          {description && <p className="mt-0.5 text-sm text-fg-subtle">{description}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+export default async function DeliveriesPage({ searchParams }: { searchParams: Promise<{ f?: string }> }) {
+  const sp = await searchParams;
+  const f: Filter = FILTERS.some(([k]) => k === sp.f) ? (sp.f as Filter) : "todas";
   const s = await requireOrg();
+  const org = s.org.org_id;
   const today = todayISO();
-  const edit = canWrite(s.org.role) || s.org.role === "logistica";
-  const [{ data: deliveries }, { data: summary }, { data: orders }, { data: board }, { data: bPend }, { data: bDone }] = await Promise.all([
-    s.supabase.from("deliveries").select("id, internal_number, status, planned_date, actual_date, remito_number, purchase_order_id, delivery_items(quantity)")
-      .eq("org_id", s.org.org_id).order("created_at", { ascending: false }).limit(200),
-    s.supabase.from("po_delivery_summary").select("purchase_order_id, due_date, delivered_pct, next_planned_date, is_late").eq("org_id", s.org.org_id),
-    s.supabase.from("purchase_orders_overview").select("id, bac_number, display_number, customer_name, status").eq("org_id", s.org.org_id).not("status", "in", "(anulada,cerrada,borrador)"),
-    s.supabase.from("delivery_board").select("oc_refs, status, delivered_on, note").eq("org_id", s.org.org_id).neq("oc_refs", "{}").order("delivered_on", { ascending: false, nullsFirst: true }).limit(2000),
-    s.supabase.from("delivery_board_overview").select("*").eq("org_id", s.org.org_id).eq("status", "pendiente").order("position").order("created_at").limit(500),
-    s.supabase.from("delivery_board_overview").select("*").eq("org_id", s.org.org_id).eq("status", "entregado").order("delivered_on", { ascending: false }).limit(40),
+  const [{ data: deliveries }, { data: summary }, { data: orders }, { data: board }] = await Promise.all([
+    s.supabase.from("deliveries").select("id, internal_number, status, planned_date, actual_date, remito_number, purchase_order_id")
+      .eq("org_id", org).order("created_at", { ascending: false }).limit(200),
+    s.supabase.from("po_delivery_summary").select("purchase_order_id, due_date, delivered_pct, next_planned_date, is_late").eq("org_id", org),
+    s.supabase.from("purchase_orders_overview").select("id, bac_number, display_number, customer_name, dependencia, status").eq("org_id", org).not("status", "in", "(anulada,cerrada,borrador)"),
+    s.supabase.from("delivery_board").select("oc_refs, status, delivered_on, note").eq("org_id", org).order("delivered_on", { ascending: false, nullsFirst: true }).limit(3000),
   ]);
-  // Lo cargado en la hoja de ruta para cada OC (pendiente o ya entregado)
-  type BoardRow = { oc_refs: string[]; status: string; delivered_on: string | null; note: string | null };
+
+  const boardRows = (board ?? []) as BoardRow[];
   const boardOf = new Map<string, BoardRow[]>();
-  for (const b of (board ?? []) as BoardRow[]) for (const r of b.oc_refs) boardOf.set(r, [...(boardOf.get(r) ?? []), b]);
+  for (const b of boardRows) for (const r of b.oc_refs) boardOf.set(r, [...(boardOf.get(r) ?? []), b]);
   const po = new Map((orders ?? []).map((o) => [o.id, o]));
   const sum = new Map((summary ?? []).map((x) => [x.purchase_order_id, x]));
-  const late = (summary ?? []).filter((x) => x.is_late && po.has(x.purchase_order_id));
-  const pendingOrders = (orders ?? []).filter((o) => Number(sum.get(o.id)?.delivered_pct ?? 0) < 100);
-  const upcoming = (deliveries ?? []).filter((d) => ["programada", "en_preparacion", "despachada"].includes(d.status));
   const label = (id: string) => { const o = po.get(id); return o ? (o.bac_number ?? o.display_number) : "Orden"; };
+
+  const open = (orders ?? []).filter((o) => Number(sum.get(o.id)?.delivered_pct ?? 0) < 100).map((o) => {
+    const x = sum.get(o.id);
+    const bs = boardOf.get((o.bac_number ?? "").toUpperCase()) ?? [];
+    const pend = bs.find((b) => b.status === "pendiente"), done = bs.find((b) => b.status === "entregado");
+    const state: Filter = pend ? "para-llevar" : done ? "registrar" : "sin-lista";
+    return { o, pct: Number(x?.delivered_pct ?? 0), due: x?.due_date as string | null, late: Boolean(x?.is_late), state, pend, done };
+  }).sort((a, b) => Number(b.late) - Number(a.late) || String(a.due ?? "9").localeCompare(String(b.due ?? "9")));
+  const count = (k: Filter) => (k === "todas" ? open.length : k === "atrasadas" ? open.filter((r) => r.late).length : open.filter((r) => r.state === k).length);
+  const shown = f === "todas" ? open : f === "atrasadas" ? open.filter((r) => r.late) : open.filter((r) => r.state === f);
+
+  const upcoming = (deliveries ?? []).filter((d) => ["programada", "en_preparacion", "despachada"].includes(d.status));
+  const recent = (deliveries ?? []).filter((d) => !["programada", "en_preparacion", "despachada"].includes(d.status)).slice(0, 12);
+  const toCarry = boardRows.filter((b) => b.status === "pendiente").length;
+  const week = daysAgo(7);
+  const carriedWeek = boardRows.filter((b) => b.status === "entregado" && b.delivered_on && b.delivered_on > week).length;
 
   return (
     <>
-      <PageHeader title="Entregas" description="Programadas, en curso y realizadas. Entrega física y conformidad administrativa se registran por separado."
-        actions={<><Button asChild><Link href="/entregas/hoja-de-ruta"><MapPinned /> Hoja de ruta</Link></Button><Button asChild variant="secondary"><Link href="/entregas/remito"><ScanLine /> Leer remito</Link></Button></>} />
-      <div className="mb-5 grid gap-5 lg:grid-cols-2">
-        <Card className="self-start overflow-hidden">
-          <div className="flex flex-wrap items-start justify-between gap-2 pr-4 sm:pr-5">
-            <CardHeader title={`Hoja de ruta · pendientes (${(bPend ?? []).length})`} description="Lo que hay que llevar. Marcá «Entregado» con la fecha cuando lo lleves." />
-            {edit && <div className="pt-4"><NewItemButton /></div>}
-          </div>
-          <BoardList items={(bPend ?? []) as BoardItem[]} canEdit={edit} empty="No hay entregas pendientes." />
-        </Card>
-        <Card className="self-start overflow-hidden">
-          <div className="flex items-start justify-between gap-2 pr-4 sm:pr-5">
-            <CardHeader title="Hoja de ruta · últimos entregados" description="Los 40 más recientes" />
-            <Button asChild size="sm" variant="secondary" className="mt-4"><Link href="/entregas/hoja-de-ruta">Ver todos por mes</Link></Button>
-          </div>
-          <BoardList items={(bDone ?? []) as BoardItem[]} canEdit={edit} empty="Todavía no hay entregados." />
-        </Card>
+      <PageHeader title="Entregas" description="Qué falta llevar, qué está atrasado y qué ya se entregó, con cada orden de compra."
+        actions={<>
+          <Button asChild><Link href="/entregas/pendientes"><ListTodo /> Entregas pendientes</Link></Button>
+          <Button asChild variant="secondary"><Link href="/entregas/remito"><ScanLine /> Leer remito</Link></Button>
+        </>} />
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Stat icon={ListTodo} label="Para llevar" value={String(toCarry)} sub="en Entregas pendientes" href="/entregas/pendientes" />
+        <Stat icon={AlertTriangle} label="OC atrasadas" value={String(count("atrasadas"))} tone={count("atrasadas") ? "danger" : undefined} sub="fecha límite vencida" href="/entregas?f=atrasadas" />
+        <Stat icon={ClipboardCheck} label="Llevadas, falta registrar" value={String(count("registrar"))} tone={count("registrar") ? "warn" : undefined} sub="entregadas, pero la OC no lo sabe" href="/entregas?f=registrar" />
+        <Stat icon={CheckCircle2} label="Llevadas esta semana" value={String(carriedWeek)} tone="accent" sub="últimos 7 días" href="/entregas/pendientes" />
       </div>
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card>
-          <CardHeader title={`Atrasadas (${late.length})`} description="Fecha límite vencida y con renglones pendientes" />
-          {!late.length ? <p className="px-5 py-6 text-sm text-fg-subtle">Ninguna orden atrasada.</p> : (
-            <ul className="divide-y divide-border">{late.map((x) => (
-              <li key={x.purchase_order_id}><Link href={`/ordenes/${x.purchase_order_id}?tab=entregas`} className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-surface-2/60 sm:px-5">
-                <span className="min-w-0 truncate"><span className="font-medium">{label(x.purchase_order_id)}</span> <span className="text-fg-subtle">· {po.get(x.purchase_order_id)?.customer_name}</span></span>
-                <span className="shrink-0 text-xs text-danger">vencía {formatDate(x.due_date)} · {Number(x.delivered_pct).toFixed(0)}%</span>
-              </Link></li>
-            ))}</ul>
-          )}
-        </Card>
-        <Card>
-          <CardHeader title={`Próximas (${upcoming.length})`} />
-          {!upcoming.length ? <p className="px-5 py-6 text-sm text-fg-subtle">No hay entregas programadas.</p> : (
+
+      <Section className="mt-6" title={`Órdenes con entregas pendientes (${open.length})`}
+        description="Cada OC con lo que dice tu lista de Entregas pendientes. Tocá una para registrar la entrega en la orden.">
+        <div className="flex gap-2 overflow-x-auto border-b border-border px-5 py-3 sm:px-6">
+          {FILTERS.map(([k, l]) => (
+            <Link key={k} href={k === "todas" ? "/entregas" : `/entregas?f=${k}`}
+              className={cn("shrink-0 rounded-full px-3 py-1.5 text-xs font-medium", f === k ? "bg-primary text-primary-fg" : "bg-field text-fg-muted hover:text-fg")}>
+              {l} · {count(k)}
+            </Link>
+          ))}
+        </div>
+        {!shown.length ? <EmptyState icon={<Truck />} title={f === "todas" ? "Todo entregado" : "Nada en este filtro"} /> : (
+          <ul className="divide-y divide-border">
+            {shown.map(({ o, pct, due, late, state, pend, done }) => (
+              <li key={o.id}>
+                <Link href={`/ordenes/${o.id}?tab=entregas`} className="group flex flex-col gap-3 px-5 py-4 hover:bg-surface-2/50 sm:flex-row sm:items-center sm:gap-6 sm:px-6">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-semibold tabular">{o.bac_number ?? o.display_number}</span>
+                      {late && <Badge tone="danger">Atrasada</Badge>}
+                      {state === "para-llevar" && <Badge tone="warn">Para llevar</Badge>}
+                      {state === "registrar" && <Badge tone="accent">Llevada el {formatDate(done!.delivered_on)}</Badge>}
+                      {state === "sin-lista" && <Badge>Sin cargar en la lista</Badge>}
+                    </div>
+                    <p className="truncate text-sm text-fg-muted">{o.dependencia || o.customer_name}</p>
+                    {(pend?.note || done?.note) && <p className="line-clamp-2 text-sm">{(pend ?? done)!.note}</p>}
+                    {state === "registrar" && <p className="text-xs text-warn">Registrá la entrega en la OC para que el % se actualice.</p>}
+                  </div>
+                  <div className="flex items-center gap-4 sm:w-64 sm:justify-end">
+                    <div className="flex-1 sm:w-40 sm:flex-none">
+                      <div className="flex justify-between text-xs text-fg-subtle"><span>{due ? `límite ${formatDate(due)}` : "sin fecha límite"}</span><span className="tabular">{pct.toFixed(0)}%</span></div>
+                      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-2"><div className={cn("h-full rounded-full", late ? "bg-danger" : "bg-accent")} style={{ width: `${Math.max(pct, 2)}%` }} /></div>
+                    </div>
+                    <ChevronRight className="size-4 text-fg-subtle group-hover:text-fg" />
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Section title={`Entregas programadas (${upcoming.length})`} description="Registradas en una OC, todavía sin entregar">
+          {!upcoming.length ? <p className="px-6 py-8 text-sm text-fg-subtle">No hay entregas programadas.</p> : (
             <ul className="divide-y divide-border">{upcoming.map((d) => (
-              <li key={d.id}><Link href={`/ordenes/${d.purchase_order_id}?tab=entregas`} className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-surface-2/60 sm:px-5">
-                <span className="min-w-0 truncate"><span className="font-medium">{deliveryNumber(d.internal_number)}</span> · {label(d.purchase_order_id)}</span>
-                <span className="flex shrink-0 items-center gap-2 text-xs">
-                  <span className={d.planned_date && d.planned_date < today ? "text-danger" : "text-fg-subtle"}>{formatDate(d.planned_date)}</span>
+              <li key={d.id}><Link href={`/ordenes/${d.purchase_order_id}?tab=entregas`} className="flex items-center justify-between gap-4 px-5 py-3.5 text-sm hover:bg-surface-2/50 sm:px-6">
+                <span className="min-w-0"><span className="block font-medium">{label(d.purchase_order_id)}</span><span className="text-xs text-fg-subtle">{deliveryNumber(d.internal_number)}</span></span>
+                <span className="flex shrink-0 items-center gap-3 text-xs">
+                  <span className={cn("inline-flex items-center gap-1", d.planned_date && d.planned_date < today ? "text-danger" : "text-fg-subtle")}><CalendarClock className="size-3.5" />{formatDate(d.planned_date)}</span>
                   <Badge tone={DELIVERY_TONE[d.status as DeliveryStatus]}>{DELIVERY_STATUS_LABEL[d.status as DeliveryStatus]}</Badge>
                 </span>
               </Link></li>
             ))}</ul>
           )}
-        </Card>
-        <Card className="lg:col-span-2">
-          <CardHeader title={`Órdenes con entregas pendientes (${pendingOrders.length})`} />
-          {!pendingOrders.length ? <EmptyState icon={<Truck />} title="Todo entregado" /> : (
-            <ul className="divide-y divide-border">{pendingOrders.map((o) => {
-              const x = sum.get(o.id); const pct = Number(x?.delivered_pct ?? 0);
-              return (
-                <li key={o.id}><Link href={`/ordenes/${o.id}?tab=entregas`} className="flex items-center gap-4 px-4 py-3 text-sm hover:bg-surface-2/60 sm:px-5">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate"><span className="font-medium">{o.bac_number ?? o.display_number}</span> <span className="text-fg-subtle">· {o.customer_name}</span></span>
-                    {(() => {
-                      const bs = boardOf.get((o.bac_number ?? "").toUpperCase()) ?? [];
-                      const p = bs.find((b) => b.status === "pendiente"), d = bs.find((b) => b.status === "entregado");
-                      if (p) return <span className="block truncate text-xs text-warn">Hoja de ruta · pendiente: {p.note ?? "sin detalle"}</span>;
-                      if (d) return <span className="block truncate text-xs text-accent">Hoja de ruta · entregado {formatDate(d.delivered_on)}{d.note ? `: ${d.note}` : ""} (falta registrarlo en la OC)</span>;
-                      return <span className="block text-xs text-fg-subtle">No está en la hoja de ruta</span>;
-                    })()}
-                  </span>
-                  <span className="hidden text-xs text-fg-subtle sm:block">{x?.due_date ? `límite ${formatDate(x.due_date)}` : ""}</span>
-                  <div className="flex w-36 items-center gap-2"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2"><div className="h-full bg-accent" style={{ width: `${pct}%` }} /></div><span className="w-9 text-right text-xs tabular">{pct.toFixed(0)}%</span></div>
-                </Link></li>
-              );
-            })}</ul>
-          )}
-        </Card>
-        <Card className="lg:col-span-2">
-          <CardHeader title="Últimas entregas" />
-          {!deliveries?.length ? <p className="px-5 py-6 text-sm text-fg-subtle">Todavía no hay entregas.</p> : (
-            <ul className="divide-y divide-border">{deliveries.slice(0, 30).map((d) => (
-              <li key={d.id}><Link href={`/ordenes/${d.purchase_order_id}?tab=entregas`} className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-surface-2/60 sm:px-5">
-                <span className="min-w-0 truncate"><span className="font-medium">{deliveryNumber(d.internal_number)}</span> · {label(d.purchase_order_id)}{d.remito_number ? ` · remito ${d.remito_number}` : ""}</span>
-                <span className="flex shrink-0 items-center gap-2 text-xs text-fg-subtle">{formatDate(d.actual_date ?? d.planned_date)}<Badge tone={DELIVERY_TONE[d.status as DeliveryStatus]}>{DELIVERY_STATUS_LABEL[d.status as DeliveryStatus]}</Badge></span>
+        </Section>
+        <Section title="Últimas entregas registradas" description="Entregas cargadas dentro de las OC (con remito)">
+          {!recent.length ? <p className="px-6 py-8 text-sm text-fg-subtle">Todavía no hay entregas registradas en las OC.</p> : (
+            <ul className="divide-y divide-border">{recent.map((d) => (
+              <li key={d.id}><Link href={`/ordenes/${d.purchase_order_id}?tab=entregas`} className="flex items-center justify-between gap-4 px-5 py-3.5 text-sm hover:bg-surface-2/50 sm:px-6">
+                <span className="min-w-0"><span className="block font-medium">{label(d.purchase_order_id)}</span><span className="text-xs text-fg-subtle">{deliveryNumber(d.internal_number)}{d.remito_number ? ` · remito ${d.remito_number}` : ""}</span></span>
+                <span className="flex shrink-0 items-center gap-3 text-xs text-fg-subtle">{formatDate(d.actual_date ?? d.planned_date)}<Badge tone={DELIVERY_TONE[d.status as DeliveryStatus]}>{DELIVERY_STATUS_LABEL[d.status as DeliveryStatus]}</Badge></span>
               </Link></li>
             ))}</ul>
           )}
-        </Card>
+        </Section>
       </div>
     </>
   );

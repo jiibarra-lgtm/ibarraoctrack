@@ -6,7 +6,7 @@ import { Badge, Card, EmptyState, PageHeader } from "@/components/ui/primitives"
 import { formatDate, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { Catalog } from "./catalog";
-import { CostInput, ImportConvenio } from "./ui";
+import { CostMargin, ImportConvenio } from "./ui";
 import { SupplierCostPicker } from "@/components/supplier-cost-picker";
 import { sourceLabels } from "@/lib/cost-sources";
 
@@ -104,13 +104,11 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
               </form>
             </div>
             <div className="hidden grid-cols-[4rem_1fr_7rem_7rem_7rem_5rem] gap-3 border-b border-border px-5 py-2 text-xs text-fg-subtle lg:grid">
-              <span>Renglón</span><span>Producto</span><span className="text-right">Tu precio</span><span className="text-right">Mejor otro</span><span className="text-right">Tu costo s/IVA</span><span className="text-right">Margen</span>
+              <span>Renglón</span><span>Producto</span><span className="text-right">Tu precio</span><span className="text-right">Mejor otro</span><span className="text-right">Tu costo s/IVA</span><span className="text-right">Ganancia</span>
             </div>
             <ul className="divide-y divide-border">
               {list.map((l) => {
                 const price = l.my_current_price !== null ? Number(l.my_current_price) : null;
-                const net = price !== null ? price / 1.21 : null;
-                const margin = net && l.cost !== null ? ((net - Number(l.cost)) / net) * 100 : null;
                 const beaten = price !== null && l.best_other_price !== null && Number(l.best_other_price) < price;
                 return (
                   <li key={l.id} className={cn("grid grid-cols-[3.5rem_1fr] gap-x-3 gap-y-2 px-4 py-3 text-sm sm:px-5 lg:grid-cols-[4rem_1fr_7rem_7rem_7rem_5rem] lg:items-center", !l.is_mine && "opacity-70")}>
@@ -128,11 +126,10 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
                     <div className="col-span-2 grid grid-cols-4 items-center gap-2 lg:contents">
                       <p className="text-right tabular"><span className="text-[11px] text-fg-subtle lg:hidden">Tu precio </span>{price !== null ? formatMoney(price) : "—"}</p>
                       <p className={cn("text-right tabular", beaten && "text-warn")}><span className="text-[11px] text-fg-subtle lg:hidden">Otro </span>{l.best_other_price !== null ? formatMoney(l.best_other_price) : "—"}</p>
-                      <div className="flex flex-col items-end gap-1">{l.is_mine || l.cost !== null ? <>
-                        <CostInput key={`${l.id}-${l.cost}`} id={l.id} value={l.cost} disabled={!canEdit} />
-                        <SupplierCostPicker itemId={null} convenioLineId={l.id} description={`${l.product_name} ${l.my_spec ?? ""}`} linkedLabel={srcOf.get(l.id) ?? null} disabled={!canEdit} />
-                      </> : <span className="text-fg-subtle">—</span>}</div>
-                      <p className={cn("text-right font-medium tabular", margin === null ? "text-fg-subtle" : margin < 10 ? "text-danger" : margin < 20 ? "text-warn" : "text-accent")}>{margin !== null ? `${margin.toFixed(0)}%` : "—"}</p>
+                      {l.is_mine || l.cost !== null ? (
+                        <CostMargin id={l.id} value={l.cost} price={price} disabled={!canEdit}
+                          picker={<SupplierCostPicker itemId={null} convenioLineId={l.id} description={`${l.product_name} ${l.my_spec ?? ""}`} linkedLabel={srcOf.get(l.id) ?? null} disabled={!canEdit} />} />
+                      ) : <><span className="text-right text-fg-subtle">—</span><span className="text-right text-fg-subtle">—</span></>}
                     </div>
                   </li>
                 );
@@ -140,7 +137,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
               {!list.length && <li className="px-5 py-6 text-sm text-fg-subtle">Nada para mostrar con este filtro.</li>}
             </ul>
           </Card>
-          <p className="mt-2 text-xs text-fg-subtle">Tu precio y el mejor de los demás son los precios actuales del BAC (con IVA). El margen compara tu precio sin IVA contra tu costo sin IVA. En naranja: alguien ofrece más barato.</p>
+          <p className="mt-2 text-xs text-fg-subtle">Tu precio y el mejor de los demás son los precios actuales del BAC (con IVA). Ganancia = tu precio sin IVA (precio ÷ 1,21) menos tu costo sin IVA; el % es sobre tu costo. Se recalcula mientras escribís. En naranja: alguien ofrece más barato.</p>
         </>
       )}
     </>

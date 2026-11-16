@@ -3,13 +3,41 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { safeAction } from "@/lib/safe-action";
+import { cn } from "@/lib/utils";
+import { formatMoney } from "@/lib/format";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/primitives";
 import { importConvenio, setConvenioCost } from "./actions";
 
 /** Campo de costo por renglón: se guarda al salir del campo o con Enter. */
-export function CostInput({ id, value, disabled }: { id: string; value: string | null; disabled?: boolean }) {
+const parseCost = (t: string) => { const x = t.trim().replace(/\$/g, "").replace(/\s/g, ""); if (!x) return null; const n = Number(x.includes(",") ? x.replace(/\./g, "").replace(",", ".") : x); return Number.isFinite(n) ? n : null; };
+
+/**
+ * Costo + ganancia del renglón. La ganancia se calcula al escribir:
+ * precio del BAC sin IVA (precio ÷ 1,21) menos tu costo sin IVA, y el % es sobre el costo.
+ */
+export function CostMargin({ id, value, price, disabled, picker }: { id: string; value: string | null; price: number | null; disabled?: boolean; picker?: React.ReactNode }) {
+  const [typed, setTyped] = React.useState<string | null>(null);
+  const cost = typed !== null ? parseCost(typed) : value !== null ? Number(value) : null;
+  const net = price !== null ? price / 1.21 : null;
+  const gain = net !== null && cost !== null ? net - cost : null;
+  const pct = gain !== null && cost ? (gain / cost) * 100 : null;
+  return (
+    <>
+      <div className="flex flex-col items-end gap-1">
+        <CostInput key={`${id}-${value}`} id={id} value={value} disabled={disabled} onType={setTyped} />
+        {picker}
+      </div>
+      <div className="text-right tabular" title={net !== null && cost !== null ? `Precio sin IVA ${net.toFixed(2)} − costo ${cost.toFixed(2)} = ${gain!.toFixed(2)} por unidad` : undefined}>
+        <p className={cn("font-medium", pct === null ? "text-fg-subtle" : pct < 10 ? "text-danger" : pct < 20 ? "text-warn" : "text-accent")}>{pct !== null ? `${pct.toFixed(0)}%` : "—"}</p>
+        {gain !== null && <p className="text-[11px] text-fg-subtle">{gain >= 0 ? "+" : ""}{formatMoney(gain)} c/u</p>}
+      </div>
+    </>
+  );
+}
+
+export function CostInput({ id, value, disabled, onType }: { id: string; value: string | null; disabled?: boolean; onType?: (v: string | null) => void }) {
   const router = useRouter();
   const [v, setV] = React.useState(value ?? "");
   const [saved, setSaved] = React.useState(value ?? "");
@@ -19,12 +47,12 @@ export function CostInput({ id, value, disabled }: { id: string; value: string |
     setBusy(true);
     const r = await safeAction(() => setConvenioCost(id, v));
     setBusy(false);
-    if (!r.ok) { if (r.error) toast.error(r.error); setV(saved); return; }
+    if (!r.ok) { if (r.error) toast.error(r.error); setV(saved); onType?.(null); return; }
     setSaved(v); router.refresh();
   };
   return (
     <Input value={v} disabled={disabled || busy} inputMode="decimal" placeholder="Tu costo" aria-label="Tu costo sin IVA"
-      onChange={(e) => setV(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+      onChange={(e) => { setV(e.target.value); onType?.(e.target.value); }} onBlur={save} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
       className="h-8 w-28 text-right tabular" />
   );
 }

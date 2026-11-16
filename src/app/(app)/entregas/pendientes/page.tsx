@@ -41,6 +41,7 @@ export default async function DeliveryBoardPage({ searchParams }: { searchParams
   const since = weekAgo();
   const thisWeek = delivered.filter((i) => i.delivered_on && i.delivered_on > since).length;
   const linked = pending.filter((i) => i.orders.length).length;
+  const noDoc = pending.reduce((a, i) => a + (i.missing?.length ?? 0), 0);
 
   return (
     <>
@@ -49,7 +50,7 @@ export default async function DeliveryBoardPage({ searchParams }: { searchParams
         actions={edit && <NewItemButton />} />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={Truck} label="Pendientes de entregar" value={String(pending.length)} sub={`${linked} vinculadas a una OC del sistema`} />
+        <Stat icon={Truck} label="Pendientes de entregar" value={String(pending.length)} sub={`${linked} vinculadas · a ${noDoc} les falta el documento de la OC`} />
         <Stat icon={PackageSearch} label="OC sin entregar que faltan acá" value={String(missing.length)} tone={missing.length ? "warn" : undefined} sub="abajo las podés sumar" />
         <Stat icon={CheckCircle2} label="Entregados últimos 7 días" value={String(thisWeek)} tone="accent" />
         <Stat icon={ClipboardList} label="Entregados en total" value={String(delivered.length)} sub={delivered.length ? `desde ${formatDate(delivered[delivered.length - 1].delivered_on!)}` : undefined} />

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AlertTriangle, CalendarClock, CheckCircle2, ChevronRight, ClipboardCheck, ListTodo, ScanLine, Truck } from "lucide-react";
+import { AlertTriangle, CalendarClock, FileWarning, CheckCircle2, ChevronRight, ClipboardCheck, ListTodo, ScanLine, Truck } from "lucide-react";
 import { requireOrg } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui/primitives";
@@ -13,8 +13,9 @@ export const metadata: Metadata = { title: "Entregas" };
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
 type BoardRow = { oc_refs: string[]; status: string; delivered_on: string | null; note: string | null };
-type Filter = "todas" | "atrasadas" | "para-llevar" | "registrar" | "sin-lista";
-const FILTERS: [Filter, string][] = [["todas", "Todas"], ["atrasadas", "Atrasadas"], ["para-llevar", "En Entregas pendientes"], ["registrar", "Llevadas, falta registrar"], ["sin-lista", "Sin cargar en la lista"]];
+type Filter = "todas" | "atrasadas" | "para-llevar" | "registrar" | "sin-lista" | "sin-doc";
+type Missing = { id: string; place: string; note: string | null; status: string; delivered_on: string | null; missing: { number: string; in_bac: boolean }[] };
+const FILTERS: [Filter, string][] = [["todas", "Todas"], ["atrasadas", "Atrasadas"], ["para-llevar", "En Entregas pendientes"], ["registrar", "Llevadas, falta registrar"], ["sin-lista", "Sin cargar en la lista"], ["sin-doc", "Falta el documento de la OC"]];
 
 function Section({ title, description, action, children, className }: { title: string; description?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
@@ -37,13 +38,16 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
   const s = await requireOrg();
   const org = s.org.org_id;
   const today = todayISO();
-  const [{ data: deliveries }, { data: summary }, { data: orders }, { data: board }] = await Promise.all([
+  const [{ data: deliveries }, { data: summary }, { data: orders }, { data: board }, { data: miss }] = await Promise.all([
     s.supabase.from("deliveries").select("id, internal_number, status, planned_date, actual_date, remito_number, purchase_order_id")
       .eq("org_id", org).order("created_at", { ascending: false }).limit(200),
     s.supabase.from("po_delivery_summary").select("purchase_order_id, due_date, delivered_pct, next_planned_date, is_late").eq("org_id", org),
     s.supabase.from("purchase_orders_overview").select("id, bac_number, display_number, customer_name, dependencia, status").eq("org_id", org).not("status", "in", "(anulada,cerrada,borrador)"),
     s.supabase.from("delivery_board").select("oc_refs, status, delivered_on, note").eq("org_id", org).order("delivered_on", { ascending: false, nullsFirst: true }).limit(3000),
+    s.supabase.from("delivery_board_overview").select("id, place, note, status, delivered_on, missing").eq("org_id", org).neq("missing", "[]").order("status", { ascending: false }).order("delivered_on", { ascending: false }).limit(500),
   ]);
+  const missingRows = ((miss ?? []) as Missing[]).filter((m) => m.missing.length);
+  const missingPending = missingRows.filter((m) => m.status === "pendiente");
 
   const boardRows = (board ?? []) as BoardRow[];
   const boardOf = new Map<string, BoardRow[]>();
@@ -59,7 +63,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
     const state: Filter = pend ? "para-llevar" : done ? "registrar" : "sin-lista";
     return { o, pct: Number(x?.delivered_pct ?? 0), due: x?.due_date as string | null, late: Boolean(x?.is_late), state, pend, done };
   }).sort((a, b) => Number(b.late) - Number(a.late) || String(a.due ?? "9").localeCompare(String(b.due ?? "9")));
-  const count = (k: Filter) => (k === "todas" ? open.length : k === "atrasadas" ? open.filter((r) => r.late).length : open.filter((r) => r.state === k).length);
+  const count = (k: Filter) => (k === "todas" ? open.length + missingPending.length : k === "sin-doc" ? missingRows.length : k === "atrasadas" ? open.filter((r) => r.late).length : open.filter((r) => r.state === k).length);
   const shown = f === "todas" ? open : f === "atrasadas" ? open.filter((r) => r.late) : open.filter((r) => r.state === f);
 
   const upcoming = (deliveries ?? []).filter((d) => ["programada", "en_preparacion", "despachada"].includes(d.status));
@@ -76,10 +80,11 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
           <Button asChild variant="secondary"><Link href="/entregas/remito"><ScanLine /> Leer remito</Link></Button>
         </>} />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
         <Stat icon={ListTodo} label="Para llevar" value={String(toCarry)} sub="en Entregas pendientes" href="/entregas/pendientes" />
         <Stat icon={AlertTriangle} label="OC atrasadas" value={String(count("atrasadas"))} tone={count("atrasadas") ? "danger" : undefined} sub="fecha límite vencida" href="/entregas?f=atrasadas" />
         <Stat icon={ClipboardCheck} label="Llevadas, falta registrar" value={String(count("registrar"))} tone={count("registrar") ? "warn" : undefined} sub="entregadas, pero la OC no lo sabe" href="/entregas?f=registrar" />
+        <Stat icon={FileWarning} label="Falta el documento de la OC" value={String(missingRows.reduce((a, m) => a + m.missing.length, 0))} tone={missingRows.length ? "danger" : undefined} sub={`${missingPending.length} todavía para llevar`} href="/entregas?f=sin-doc" />
         <Stat icon={CheckCircle2} label="Llevadas esta semana" value={String(carriedWeek)} tone="accent" sub="últimos 7 días" href="/entregas/pendientes" />
       </div>
 
@@ -93,7 +98,28 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
             </Link>
           ))}
         </div>
-        {!shown.length ? <EmptyState icon={<Truck />} title={f === "todas" ? "Todo entregado" : "Nada en este filtro"} /> : (
+        {(f === "todas" || f === "sin-doc") && (f === "sin-doc" ? missingRows : missingPending).length > 0 && (
+          <ul className="divide-y divide-border border-b border-border">
+            {(f === "sin-doc" ? missingRows : missingPending).map((m) => (
+              <li key={m.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:gap-6 sm:px-6">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {m.missing.map((x) => <span key={x.number} className="font-semibold tabular">{x.number}</span>)}
+                    <Badge tone="danger">Falta el documento de la OC</Badge>
+                    {m.status === "pendiente" ? <Badge tone="warn">Para llevar</Badge> : <Badge tone="accent">Llevada el {formatDate(m.delivered_on)}</Badge>}
+                  </div>
+                  <p className="truncate text-sm text-fg-muted">{m.place}</p>
+                  {m.note && <p className="line-clamp-2 text-sm">{m.note}</p>}
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  {m.missing.some((x) => x.in_bac) && <Button asChild size="sm" variant="secondary"><Link href={`/bac?f=todas&q=${encodeURIComponent(m.missing[0].number)}`}>Ver en Órdenes BAC</Link></Button>}
+                  <Button asChild size="sm"><Link href="/ordenes/importar">Subir la OC</Link></Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {f === "sin-doc" ? null : !shown.length && !(f === "todas" && missingPending.length) ? <EmptyState icon={<Truck />} title={f === "todas" ? "Todo entregado" : "Nada en este filtro"} /> : (
           <ul className="divide-y divide-border">
             {shown.map(({ o, pct, due, late, state, pend, done }) => (
               <li key={o.id}>

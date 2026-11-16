@@ -16,15 +16,15 @@ export type BoardOrder = { id: string; number: string; customer: string | null; 
 export type BoardItem = {
   id: string; place: string; address: string | null; note: string | null; oc_text: string | null; oc_refs: string[];
   status: "pendiente" | "entregado"; delivered_on: string | null; orders: BoardOrder[];
+  missing?: { number: string; in_bac: boolean }[];
 };
 
 const todayAr = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
 const mapsUrl = (a: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${a}, CABA`)}`;
 
 function OrderChips({ item }: { item: BoardItem }) {
-  const found = new Set(item.orders.map((o) => o.number.toUpperCase()));
-  const missing = item.oc_refs.filter((r) => !found.has(r));
-  if (!item.orders.length && !item.oc_text) return null;
+  const missing = item.missing ?? [];
+  if (!item.orders.length && !item.oc_text) return <span className="text-xs text-fg-subtle">Sin número de OC</span>;
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {item.orders.map((o) => {
@@ -35,7 +35,12 @@ function OrderChips({ item }: { item: BoardItem }) {
           </Link>
         );
       })}
-      {missing.map((r) => <Badge key={r} title="Esta OC no está cargada en el sistema">OC {r} · sin cargar</Badge>)}
+      {missing.map((m) => (
+        <Link key={m.number} href={m.in_bac ? `/bac?f=todas&q=${encodeURIComponent(m.number)}` : "/ordenes/importar"}
+          title={m.in_bac ? "Llegó el aviso del BAC pero falta importar el PDF de la OC" : "Esta OC no está cargada: subí el PDF de la orden"}>
+          <Badge tone="danger">OC {m.number} · falta el documento de la OC{m.in_bac ? " (está en Órdenes BAC)" : ""}</Badge>
+        </Link>
+      ))}
       {!item.oc_refs.length && item.oc_text && <span className="text-xs text-fg-subtle">OC {item.oc_text}</span>}
     </div>
   );

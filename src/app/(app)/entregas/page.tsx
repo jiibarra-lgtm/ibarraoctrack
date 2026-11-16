@@ -12,12 +12,17 @@ export const metadata: Metadata = { title: "Entregas" };
 export default async function DeliveriesPage() {
   const s = await requireOrg();
   const today = todayISO();
-  const [{ data: deliveries }, { data: summary }, { data: orders }] = await Promise.all([
+  const [{ data: deliveries }, { data: summary }, { data: orders }, { data: board }] = await Promise.all([
     s.supabase.from("deliveries").select("id, internal_number, status, planned_date, actual_date, remito_number, purchase_order_id, delivery_items(quantity)")
       .eq("org_id", s.org.org_id).order("created_at", { ascending: false }).limit(200),
     s.supabase.from("po_delivery_summary").select("purchase_order_id, due_date, delivered_pct, next_planned_date, is_late").eq("org_id", s.org.org_id),
     s.supabase.from("purchase_orders_overview").select("id, bac_number, display_number, customer_name, status").eq("org_id", s.org.org_id).not("status", "in", "(anulada,cerrada,borrador)"),
+    s.supabase.from("delivery_board").select("oc_refs, status, delivered_on, note").eq("org_id", s.org.org_id).neq("oc_refs", "{}").order("delivered_on", { ascending: false, nullsFirst: true }).limit(2000),
   ]);
+  // Lo cargado en la hoja de ruta para cada OC (pendiente o ya entregado)
+  type BoardRow = { oc_refs: string[]; status: string; delivered_on: string | null; note: string | null };
+  const boardOf = new Map<string, BoardRow[]>();
+  for (const b of (board ?? []) as BoardRow[]) for (const r of b.oc_refs) boardOf.set(r, [...(boardOf.get(r) ?? []), b]);
   const po = new Map((orders ?? []).map((o) => [o.id, o]));
   const sum = new Map((summary ?? []).map((x) => [x.purchase_order_id, x]));
   const late = (summary ?? []).filter((x) => x.is_late && po.has(x.purchase_order_id));
@@ -62,7 +67,16 @@ export default async function DeliveriesPage() {
               const x = sum.get(o.id); const pct = Number(x?.delivered_pct ?? 0);
               return (
                 <li key={o.id}><Link href={`/ordenes/${o.id}?tab=entregas`} className="flex items-center gap-4 px-4 py-3 text-sm hover:bg-surface-2/60 sm:px-5">
-                  <span className="min-w-0 flex-1 truncate"><span className="font-medium">{o.bac_number ?? o.display_number}</span> <span className="text-fg-subtle">· {o.customer_name}</span></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate"><span className="font-medium">{o.bac_number ?? o.display_number}</span> <span className="text-fg-subtle">· {o.customer_name}</span></span>
+                    {(() => {
+                      const bs = boardOf.get((o.bac_number ?? "").toUpperCase()) ?? [];
+                      const p = bs.find((b) => b.status === "pendiente"), d = bs.find((b) => b.status === "entregado");
+                      if (p) return <span className="block truncate text-xs text-warn">Hoja de ruta · pendiente: {p.note ?? "sin detalle"}</span>;
+                      if (d) return <span className="block truncate text-xs text-accent">Hoja de ruta · entregado {formatDate(d.delivered_on)}{d.note ? `: ${d.note}` : ""} (falta registrarlo en la OC)</span>;
+                      return <span className="block text-xs text-fg-subtle">No está en la hoja de ruta</span>;
+                    })()}
+                  </span>
                   <span className="hidden text-xs text-fg-subtle sm:block">{x?.due_date ? `límite ${formatDate(x.due_date)}` : ""}</span>
                   <div className="flex w-36 items-center gap-2"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2"><div className="h-full bg-accent" style={{ width: `${pct}%` }} /></div><span className="w-9 text-right text-xs tabular">{pct.toFixed(0)}%</span></div>
                 </Link></li>

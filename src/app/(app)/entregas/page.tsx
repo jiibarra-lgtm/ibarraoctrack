@@ -8,6 +8,7 @@ import { Stat } from "@/components/ui/stat";
 import { DELIVERY_STATUS_LABEL, DELIVERY_TONE, deliveryNumber, type DeliveryStatus } from "@/lib/delivery";
 import { formatDate, todayISO } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { CopyButton } from "@/components/copy-button";
 
 export const metadata: Metadata = { title: "Entregas" };
 
@@ -104,7 +105,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
               <li key={m.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:gap-6 sm:px-6">
                 <div className="min-w-0 flex-1 space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    {m.missing.map((x) => <span key={x.number} className="font-semibold tabular">{x.number}</span>)}
+                    {m.missing.map((x) => <span key={x.number} className="inline-flex items-center gap-1.5"><span className="font-semibold tabular">{x.number}</span><CopyButton text={x.number} /></span>)}
                     <Badge tone="danger">Falta el documento de la OC</Badge>
                     {m.status === "pendiente" ? <Badge tone="warn">Para llevar</Badge> : <Badge tone="accent">Llevada el {formatDate(m.delivered_on)}</Badge>}
                   </div>
@@ -127,6 +128,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-semibold tabular">{o.bac_number ?? o.display_number}</span>
+                      <CopyButton text={String(o.bac_number ?? o.display_number)} />
                       {late && <Badge tone="danger">Atrasada</Badge>}
                       {state === "para-llevar" && <Badge tone="warn">Para llevar</Badge>}
                       {state === "registrar" && <Badge tone="accent">Llevada el {formatDate(done!.delivered_on)}</Badge>}

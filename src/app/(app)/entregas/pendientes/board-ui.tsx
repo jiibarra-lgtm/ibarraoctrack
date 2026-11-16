@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/overlays";
 import { Badge, Input, Textarea } from "@/components/ui/primitives";
 import { formatDate } from "@/lib/format";
 import { safeAction } from "@/lib/safe-action";
+import { CopyButton } from "@/components/copy-button";
 import { cn } from "@/lib/utils";
 import { addOrderToBoard, deleteBoardItem, saveBoardItem, setBoardStatus } from "./actions";
 
@@ -30,16 +31,19 @@ function OrderChips({ item }: { item: BoardItem }) {
       {item.orders.map((o) => {
         const pct = Math.round(Number(o.delivered_pct ?? 0));
         return (
-          <Link key={o.id} href={`/ordenes/${o.id}?tab=entregas`} title={o.customer ?? undefined}>
-            <Badge tone={pct >= 100 ? "accent" : pct > 0 ? "info" : "neutral"}>OC {o.number} · {pct}% entregado</Badge>
-          </Link>
+          <span key={o.id} className="inline-flex items-center gap-1">
+            <Link href={`/ordenes/${o.id}?tab=entregas`} title={o.customer ?? undefined}>
+              <Badge tone={pct >= 100 ? "accent" : pct > 0 ? "info" : "neutral"}>OC {o.number} · {pct}% entregado</Badge>
+            </Link>
+            <CopyButton text={o.number} />
+          </span>
         );
       })}
       {missing.map((m) => (
-        <Link key={m.number} href={m.in_bac ? `/bac?f=todas&q=${encodeURIComponent(m.number)}` : "/ordenes/importar"}
+        <span key={m.number} className="inline-flex items-center gap-1"><Link href={m.in_bac ? `/bac?f=todas&q=${encodeURIComponent(m.number)}` : "/ordenes/importar"}
           title={m.in_bac ? "Llegó el aviso del BAC pero falta importar el PDF de la OC" : "Esta OC no está cargada: subí el PDF de la orden"}>
           <Badge tone="danger">OC {m.number} · falta el documento de la OC{m.in_bac ? " (está en Órdenes BAC)" : ""}</Badge>
-        </Link>
+        </Link><CopyButton text={m.number} /></span>
       ))}
       {!item.oc_refs.length && item.oc_text && <span className="text-xs text-fg-subtle">OC {item.oc_text}</span>}
     </div>

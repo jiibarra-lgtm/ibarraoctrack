@@ -6,6 +6,7 @@ import { Card, CardHeader, PageHeader } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/stat";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { CopyButton } from "@/components/copy-button";
 import { AddOrderButton, BoardList, NewItemButton, type BoardItem } from "./board-ui";
 
 export const metadata: Metadata = { title: "Entregas pendientes" };
@@ -90,6 +91,7 @@ export default async function DeliveryBoardPage({ searchParams }: { searchParams
                   <span className={cn("text-xs", x?.is_late ? "text-danger" : "text-fg-subtle")}>
                     {Math.round(Number(x?.delivered_pct ?? 0))}% entregado{x?.due_date ? ` · vence ${formatDate(x.due_date as string)}` : ""}
                   </span>
+                  <CopyButton text={String(o.bac_number ?? o.display_number)} />
                   {edit && <AddOrderButton poId={o.id} />}
                 </li>
               );

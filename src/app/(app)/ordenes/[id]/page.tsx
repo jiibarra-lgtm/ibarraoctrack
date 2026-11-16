@@ -7,6 +7,7 @@ import { EInvoiceDialog } from "@/components/billing/einvoice-dialog";
 import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/primitives";
+import { CopyButton } from "@/components/copy-button";
 import { ContractActs } from "@/components/bac/contract-acts";
 import { StatusBadge } from "@/components/po/status-badge";
 import { isUuid } from "@/lib/utils";
@@ -88,6 +89,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         title={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {o.bac_number ?? o.display_number}
+            <CopyButton text={String(o.bac_number ?? o.display_number)} label="Copiar n°" className="text-xs" />
             <StatusBadge status={o.status as PoStatus} />
           </span>
         }

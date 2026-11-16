@@ -24,3 +24,17 @@ describe("fecha con guiones", () => {
     expect(inv.issue_date).toBe("2026-10-05");
   });
 });
+
+describe.skipIf(!existsSync(F))("Subir factura (Compras) con foto", () => {
+  it("completa número, fecha y renglones", async () => {
+    const { parseInvoiceText } = await import("@/lib/invoice/parse");
+    const { mergeSupplierParse } = await import("@/lib/invoice/merge");
+    const { text } = await ocrPhoto(readFileSync(F));
+    const { draft } = mergeSupplierParse(text, parseInvoiceText(text, "20044240522"), "20044240522");
+    expect(draft).toMatchObject({ point_of_sale: "3", number: "7600", invoice_date: "2026-10-05", doc_type: "factura_a" });
+    expect(draft.items.map((i) => [i.description, i.quantity, i.unit_price, i.net_amount])).toEqual([
+      ["DETERGENTE INTERMEDIO x 5 Lts", "200", "3740", "748000"],
+      ["JABON LIQUIDO NACARADO P/MANOS x 5 LTS", "200", "3990", "798000"],
+    ]);
+  }, 120000);
+});

@@ -9,6 +9,7 @@ import { emptyPurchaseItem, type PurchaseInput } from "@/lib/purchase/schema";
 import type { InvoiceDraft } from "@/lib/invoice/parse";
 import type { Suggestion } from "../../actions";
 import { isUuid } from "@/lib/utils";
+import { RereadButton } from "./reread";
 import { todayISO } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Revisar factura" };
@@ -24,7 +25,8 @@ export default async function InvoiceJobPage({ params }: { params: Promise<{ job
   if (!job) notFound();
   const doc = job.documents as unknown as { id: string; title: string; mime_type: string; storage_path: string; purchase_id: string | null };
   if (job.status === "confirmado" && doc.purchase_id) redirect(`/compras/${doc.purchase_id}`);
-  const header = <PageHeader breadcrumb={<Link href="/compras" className="hover:text-fg">Compras</Link>} title="Revisar factura" description={doc.title} />;
+  const header = <PageHeader breadcrumb={<Link href="/compras" className="hover:text-fg">Compras</Link>} title="Revisar factura" description={doc.title}
+    actions={job.status === "revision" ? <RereadButton jobId={job.id} /> : undefined} />;
   if (job.status !== "revision") return <>{header}<JobProgress jobId={job.id} status={job.status} attempts={job.attempts} maxAttempts={job.max_attempts} error={job.last_error} /></>;
 
   const [{ data: ex }, { data: signed }, { data: suppliers }] = await Promise.all([

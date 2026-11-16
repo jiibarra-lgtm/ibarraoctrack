@@ -4,6 +4,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 import { ocrImage, ocrPhoto } from "@/lib/bac/ocr";
 import { pdfToImage } from "@/lib/bac/pdf-images";
 import { parseInvoiceText } from "@/lib/invoice/parse";
+import { mergeSupplierParse } from "@/lib/invoice/merge";
 import { matchRemitoLines, readRemitoHeader } from "@/lib/remito/parse";
 import type { ProcessOutcome } from "./process";
 
@@ -34,7 +35,7 @@ async function finish(supabase: SupabaseClient, jobId: string, doc: Doc, method:
 /** Factura de proveedor → borrador de compra + renglones de OC sugeridos (requiere aprobación). */
 export async function processInvoiceJob(supabase: SupabaseClient, jobId: string, doc: Doc, org: { cuit: string | null } | null, buffer: Buffer): Promise<ProcessOutcome> {
   const { text, method } = await readDocumentText(buffer, doc.mime_type);
-  const { draft, review, warnings } = parseInvoiceText(text, org?.cuit);
+  const { draft, review, warnings } = mergeSupplierParse(text, parseInvoiceText(text, org?.cuit), org?.cuit);
 
   // Duplicado por proveedor + número
   if (draft.supplier_cuit && draft.number) {

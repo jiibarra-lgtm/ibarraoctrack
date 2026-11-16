@@ -1,6 +1,7 @@
+import { Button } from "@/components/ui/button";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarClock, PackageSearch } from "lucide-react";
+import { CalendarClock, Download, PackageSearch } from "lucide-react";
 import { requireOrg } from "@/lib/session";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { formatDate, formatMoney } from "@/lib/format";
@@ -63,7 +64,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <PageHeader title="Productos" description="Renglón por renglón de tus convenios marco. Cargá tu costo una vez: cuando entra una OC de ese renglón, ya sabe cuánto te cuesta." actions={canEdit ? <ImportConvenio /> : undefined} />
+      <PageHeader title="Productos" description="Renglón por renglón de tus convenios marco. Cargá tu costo una vez: cuando entra una OC de ese renglón, ya sabe cuánto te cuesta." actions={<><Button asChild variant="secondary"><a href="/api/precios/export" download><Download /> Exportar a Excel</a></Button>{canEdit && <ImportConvenio />}</>} />
       {Tabs}
 
       {open.length > 0 && (

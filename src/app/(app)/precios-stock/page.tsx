@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BellRing, CalendarClock, PackageMinus, TrendingDown } from "lucide-react";
+import { BellRing, CalendarClock, Download, PackageMinus, TrendingDown, TrendingUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { advise } from "@/lib/price-advice";
 import { requireOrg } from "@/lib/session";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/stat";
@@ -41,18 +43,20 @@ export default async function PreciosStockPage() {
     && (Number(l.my_stock_balance) <= Number(l.my_stock) * 0.2 || Number(l.my_stock_balance) < 10))
     .sort((a, b) => Number(a.my_stock_balance) / Number(a.my_stock) - Number(b.my_stock_balance) / Number(b.my_stock));
   // Precio: renglones donde otro proveedor está más barato que vos
-  const beaten = lines.filter((l) => l.my_current_price !== null && l.best_other_price !== null && Number(l.best_other_price) < Number(l.my_current_price))
-    .map((l) => ({ ...l, gap: (Number(l.my_current_price) / Number(l.best_other_price) - 1) * 100 })).sort((a, b) => b.gap - a.gap);
+  const adv = lines.map(advise);
+  const beaten = adv.filter((a) => a.status === "te_ganan").sort((a, b) => (b.beatPct ?? 0) - (a.beatPct ?? 0));
+  const canRaise = adv.filter((a) => a.status === "ganas" && (a.move ?? 0) > 0).sort((a, b) => (b.move ?? 0) / (b.price ?? 1) - (a.move ?? 0) / (a.price ?? 1));
 
   return (
     <>
-      <PageHeader title="Precios y stock" description="Plazos de actualización de precios e incremento de stock de tus convenios marco, leídos de los avisos del BAC, y qué renglones conviene tocar." />
+      <PageHeader title="Precios y stock" description="Plazos de actualización de precios e incremento de stock de tus convenios marco, leídos de los avisos del BAC, y qué renglones conviene tocar."
+        actions={<Button asChild><a href="/api/precios/export" download><Download /> Exportar a Excel</a></Button>} />
 
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={CalendarClock} label="Abiertas ahora" value={String(openNow.filter((w) => w.kind === "precios").length)} sub={openNow.length ? openNow.filter((w) => w.kind === "precios").map((w) => label(w.contract_number, w.contract_name)).join(", ") || "solo stock" : "ninguna ventana abierta"} tone={openNow.length ? "warn" : undefined} />
         <Stat icon={BellRing} label="Cierran hoy o mañana" value={String(closingSoon.length)} sub={closingSoon.map((w) => `${label(w.contract_number)} (${w.kind})`).join(", ") || "—"} tone={closingSoon.length ? "danger" : undefined} />
         <Stat icon={PackageMinus} label="Renglones con poco stock" value={String(lowStock.length)} sub="menos del 20% de lo ofertado" tone={lowStock.length ? "warn" : undefined} />
-        <Stat icon={TrendingDown} label="Te ganan en precio" value={String(beaten.length)} sub="otro proveedor más barato" />
+        <Stat icon={TrendingDown} label="Te ganan en precio" value={String(beaten.length)} sub={`${beaten.filter((a) => a.canLower).length} te da para bajar · ${canRaise.length} podés subir`} />
       </div>
 
       {!contracts.length ? (
@@ -116,7 +120,7 @@ export default async function PreciosStockPage() {
                 <div className="min-w-0"><p className="truncate font-medium">R{l.line_number} · {l.product_name}</p><p className="text-xs text-fg-subtle">{label(l.contract_number)}</p></div>
                 <div className="shrink-0 text-right tabular">
                   <p className={cn("font-semibold", Number(l.my_stock_balance) <= 0 ? "text-danger" : "text-warn")}>{Number(l.my_stock_balance).toLocaleString("es-AR")}</p>
-                  <p className="text-[11px] text-fg-subtle">de {Number(l.my_stock).toLocaleString("es-AR")}</p>
+                  <p className="text-[11px] text-fg-subtle">de {Number(l.my_stock).toLocaleString("es-AR")} · pedí +{advise(l).stockAdd?.toLocaleString("es-AR")}</p>
                 </div>
               </li>
             ))}
@@ -126,20 +130,37 @@ export default async function PreciosStockPage() {
         <Card className="overflow-hidden">
           <CardHeader title="Te ganan en precio" description="Tu precio actual contra el más barato de los demás proveedores del renglón (con IVA)" />
           <ul className="max-h-[480px] divide-y divide-border overflow-y-auto">
-            {beaten.map((l) => {
-              const floor = l.cost !== null ? Number(l.cost) * 1.21 : null;
-              return (
-                <li key={`${l.contract_number}-${l.line_number}-${l.option_number}`} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
-                  <div className="min-w-0"><p className="truncate font-medium">R{l.line_number} · {l.product_name}</p>
-                    <p className="text-xs text-fg-subtle">{label(l.contract_number)}{floor !== null ? ` · tu costo con IVA ${formatMoney(floor)}${floor > Number(l.best_other_price) ? " (no te da para igualar)" : ""}` : " · cargá tu costo en Productos"}</p></div>
+            {beaten.map((a) => (
+              <li key={`${a.contract_number}-${a.line_number}-${a.option_number}`} className="grid gap-1.5 px-5 py-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0"><p className="truncate font-medium">R{a.line_number} · {a.product_name}</p><p className="text-xs text-fg-subtle">{label(a.contract_number)}</p></div>
                   <div className="shrink-0 text-right tabular">
-                    <p className="font-semibold">{formatMoney(l.my_current_price)}</p>
-                    <p className="text-[11px] text-warn">otro {formatMoney(l.best_other_price)} · +{l.gap.toFixed(0)}%</p>
+                    <p><span className="font-semibold">{formatMoney(a.price)}</span> <span className="text-xs text-fg-subtle">vs {formatMoney(a.best)}</span></p>
+                    <p className="text-[11px] text-warn">te ganan por {formatMoney(a.beatBy)} ({a.beatPct!.toFixed(1)}%)</p>
                   </div>
-                </li>
-              );
-            })}
+                </div>
+                <p className={cn("rounded-lg px-2.5 py-1.5 text-xs", a.canLower === false ? "bg-danger/10 text-danger" : a.canLower ? "bg-accent/10 text-accent" : "bg-field text-fg-muted")}>
+                  {a.canLower === false ? `No te da: para ganar tendrías que ir a ${formatMoney(a.target)} y tu mínimo es ${formatMoney(a.minPrice)}.`
+                    : `Bajá ${formatMoney(-(a.move ?? 0))} → ${formatMoney(a.target)}${a.marginTarget !== null ? ` · ganás ${a.marginTarget.toFixed(0)}%` : " · cargá tu costo en Productos para ver si te da"}`}
+                </p>
+              </li>
+            ))}
             {!beaten.length && <li className="px-5 py-4 text-sm text-fg-subtle">Sos el más barato en todos tus renglones.</li>}
+          </ul>
+        </Card>
+        <Card className="overflow-hidden xl:col-span-2">
+          <CardHeader title={`Podés subirle (${canRaise.length})`} description="Sos el más barato con margen: subiendo hasta 1% abajo del siguiente seguís ganando" />
+          <ul className="max-h-[480px] divide-y divide-border overflow-y-auto">
+            {canRaise.map((a) => (
+              <li key={`${a.contract_number}-${a.line_number}-${a.option_number}`} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
+                <div className="min-w-0"><p className="truncate font-medium">R{a.line_number} · {a.product_name}</p><p className="text-xs text-fg-subtle">{label(a.contract_number)} · el siguiente está a {formatMoney(a.best)}</p></div>
+                <div className="shrink-0 text-right tabular">
+                  <p className="font-semibold text-accent"><TrendingUp className="mr-1 inline size-3.5" />+{formatMoney(a.move)} → {formatMoney(a.target)}</p>
+                  <p className="text-[11px] text-fg-subtle">hoy {formatMoney(a.price)}{a.marginTarget !== null ? ` · ganarías ${a.marginTarget.toFixed(0)}%` : ""}</p>
+                </div>
+              </li>
+            ))}
+            {!canRaise.length && <li className="px-5 py-4 text-sm text-fg-subtle">No hay renglones donde puedas subir sin perder el primer lugar.</li>}
           </ul>
         </Card>
       </div>

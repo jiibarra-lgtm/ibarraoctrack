@@ -1,23 +1,27 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { MapPinned, ScanLine, Truck } from "lucide-react";
-import { requireOrg } from "@/lib/session";
+import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { DELIVERY_STATUS_LABEL, DELIVERY_TONE, deliveryNumber, type DeliveryStatus } from "@/lib/delivery";
 import { formatDate, todayISO } from "@/lib/format";
+import { BoardList, NewItemButton, type BoardItem } from "./hoja-de-ruta/board-ui";
 
 export const metadata: Metadata = { title: "Entregas" };
 
 export default async function DeliveriesPage() {
   const s = await requireOrg();
   const today = todayISO();
-  const [{ data: deliveries }, { data: summary }, { data: orders }, { data: board }] = await Promise.all([
+  const edit = canWrite(s.org.role) || s.org.role === "logistica";
+  const [{ data: deliveries }, { data: summary }, { data: orders }, { data: board }, { data: bPend }, { data: bDone }] = await Promise.all([
     s.supabase.from("deliveries").select("id, internal_number, status, planned_date, actual_date, remito_number, purchase_order_id, delivery_items(quantity)")
       .eq("org_id", s.org.org_id).order("created_at", { ascending: false }).limit(200),
     s.supabase.from("po_delivery_summary").select("purchase_order_id, due_date, delivered_pct, next_planned_date, is_late").eq("org_id", s.org.org_id),
     s.supabase.from("purchase_orders_overview").select("id, bac_number, display_number, customer_name, status").eq("org_id", s.org.org_id).not("status", "in", "(anulada,cerrada,borrador)"),
     s.supabase.from("delivery_board").select("oc_refs, status, delivered_on, note").eq("org_id", s.org.org_id).neq("oc_refs", "{}").order("delivered_on", { ascending: false, nullsFirst: true }).limit(2000),
+    s.supabase.from("delivery_board_overview").select("*").eq("org_id", s.org.org_id).eq("status", "pendiente").order("position").order("created_at").limit(500),
+    s.supabase.from("delivery_board_overview").select("*").eq("org_id", s.org.org_id).eq("status", "entregado").order("delivered_on", { ascending: false }).limit(40),
   ]);
   // Lo cargado en la hoja de ruta para cada OC (pendiente o ya entregado)
   type BoardRow = { oc_refs: string[]; status: string; delivered_on: string | null; note: string | null };
@@ -34,6 +38,22 @@ export default async function DeliveriesPage() {
     <>
       <PageHeader title="Entregas" description="Programadas, en curso y realizadas. Entrega física y conformidad administrativa se registran por separado."
         actions={<><Button asChild><Link href="/entregas/hoja-de-ruta"><MapPinned /> Hoja de ruta</Link></Button><Button asChild variant="secondary"><Link href="/entregas/remito"><ScanLine /> Leer remito</Link></Button></>} />
+      <div className="mb-5 grid gap-5 lg:grid-cols-2">
+        <Card className="self-start overflow-hidden">
+          <div className="flex flex-wrap items-start justify-between gap-2 pr-4 sm:pr-5">
+            <CardHeader title={`Hoja de ruta · pendientes (${(bPend ?? []).length})`} description="Lo que hay que llevar. Marcá «Entregado» con la fecha cuando lo lleves." />
+            {edit && <div className="pt-4"><NewItemButton /></div>}
+          </div>
+          <BoardList items={(bPend ?? []) as BoardItem[]} canEdit={edit} empty="No hay entregas pendientes." />
+        </Card>
+        <Card className="self-start overflow-hidden">
+          <div className="flex items-start justify-between gap-2 pr-4 sm:pr-5">
+            <CardHeader title="Hoja de ruta · últimos entregados" description="Los 40 más recientes" />
+            <Button asChild size="sm" variant="secondary" className="mt-4"><Link href="/entregas/hoja-de-ruta">Ver todos por mes</Link></Button>
+          </div>
+          <BoardList items={(bDone ?? []) as BoardItem[]} canEdit={edit} empty="Todavía no hay entregados." />
+        </Card>
+      </div>
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <CardHeader title={`Atrasadas (${late.length})`} description="Fecha límite vencida y con renglones pendientes" />

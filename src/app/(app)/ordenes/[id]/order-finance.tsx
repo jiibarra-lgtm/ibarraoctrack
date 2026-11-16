@@ -3,6 +3,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { safeAction } from "@/lib/safe-action";
 import { Plus, ShoppingCart, Upload, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardBody, CardHeader, EmptyState, Input } from "@/components/ui/primitives";
@@ -138,9 +139,9 @@ function EstimatedCostInput({ id, value, disabled }: { id: string; value: string
   const save = async () => {
     if ((value ? String(Number(value)) : "") === v.trim()) return;
     setBusy(true);
-    const r = await setEstimatedCost(id, v);
+    const r = await safeAction(() => setEstimatedCost(id, v));
     setBusy(false);
-    if (!r.ok) return toast.error(r.error);
+    if (!r.ok) { if (r.error) toast.error(r.error); setV(value ? String(Number(value)) : ""); return; }
     router.refresh();
   };
   return (

@@ -2,6 +2,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { safeAction } from "@/lib/safe-action";
 import { Input } from "@/components/ui/primitives";
 import { setItemCost } from "./actions";
 
@@ -13,9 +14,9 @@ export function CostCell({ itemId, lineId, value, disabled }: { itemId: string; 
   const save = async () => {
     if (v.trim() === initial) return;
     setBusy(true);
-    const r = await setItemCost(itemId, v, lineId);
+    const r = await safeAction(() => setItemCost(itemId, v, lineId));
     setBusy(false);
-    if (!r.ok) { toast.error(r.error); setV(initial); return; }
+    if (!r.ok) { if (r.error) toast.error(r.error); setV(initial); return; }
     router.refresh();
   };
   return (

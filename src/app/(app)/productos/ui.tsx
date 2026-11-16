@@ -2,6 +2,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { safeAction } from "@/lib/safe-action";
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/primitives";
@@ -16,9 +17,9 @@ export function CostInput({ id, value, disabled }: { id: string; value: string |
   const save = async () => {
     if (v.trim() === saved.trim()) return;
     setBusy(true);
-    const r = await setConvenioCost(id, v);
+    const r = await safeAction(() => setConvenioCost(id, v));
     setBusy(false);
-    if (!r.ok) { toast.error(r.error); return; }
+    if (!r.ok) { if (r.error) toast.error(r.error); setV(saved); return; }
     setSaved(v); router.refresh();
   };
   return (

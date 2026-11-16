@@ -104,7 +104,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
               </form>
             </div>
             <div className="hidden grid-cols-[4rem_1fr_7rem_7rem_7rem_5rem] gap-3 border-b border-border px-5 py-2 text-xs text-fg-subtle lg:grid">
-              <span>Renglón</span><span>Producto</span><span className="text-right">Tu precio</span><span className="text-right">Mejor otro</span><span className="text-right">Tu costo s/IVA</span><span className="text-right">Ganancia</span>
+              <span>Renglón</span><span>Producto</span><span className="text-right">Tu precio</span><span className="text-right">Mejor otro</span><span className="text-right">Tu costo c/IVA</span><span className="text-right">Ganancia</span>
             </div>
             <ul className="divide-y divide-border">
               {list.map((l) => {
@@ -137,7 +137,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
               {!list.length && <li className="px-5 py-6 text-sm text-fg-subtle">Nada para mostrar con este filtro.</li>}
             </ul>
           </Card>
-          <p className="mt-2 text-xs text-fg-subtle">Tu precio y el mejor de los demás son los precios actuales del BAC (con IVA). Ganancia = tu precio sin IVA (precio ÷ 1,21) menos tu costo sin IVA; el % es sobre tu costo. Se recalcula mientras escribís. En naranja: alguien ofrece más barato.</p>
+          <p className="mt-2 text-xs text-fg-subtle">Tu precio y el mejor de los demás son los precios actuales del BAC (con IVA). Tu costo se carga con IVA, como lo pagás. Ganancia = tu precio menos tu costo (los dos con IVA); el % es sobre tu costo. Se recalcula mientras escribís. En naranja: alguien ofrece más barato.</p>
         </>
       )}
     </>

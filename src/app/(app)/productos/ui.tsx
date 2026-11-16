@@ -13,23 +13,28 @@ import { importConvenio, setConvenioCost } from "./actions";
 /** Campo de costo por renglón: se guarda al salir del campo o con Enter. */
 const parseCost = (t: string) => { const x = t.trim().replace(/\$/g, "").replace(/\s/g, ""); if (!x) return null; const n = Number(x.includes(",") ? x.replace(/\./g, "").replace(",", ".") : x); return Number.isFinite(n) ? n : null; };
 
+const VAT = 1.21;
+/** Costo neto guardado → costo con IVA para mostrar (redondeo a centavos, mitad hacia arriba). */
+const gross = (net: string | null) => (net === null ? null : String(Math.round(Number(net) * VAT * 100) / 100));
+
 /**
- * Costo + ganancia del renglón. La ganancia se calcula al escribir:
- * precio del BAC sin IVA (precio ÷ 1,21) menos tu costo sin IVA, y el % es sobre el costo.
+ * Costo + ganancia del renglón. En esta pantalla el costo se carga CON IVA (como lo pagás);
+ * se guarda sin IVA (÷ 1,21) para el resto del sistema. Ganancia = precio del BAC − tu costo, ambos con IVA,
+ * y el % es sobre el costo. Se recalcula al escribir.
  */
 export function CostMargin({ id, value, price, disabled, picker }: { id: string; value: string | null; price: number | null; disabled?: boolean; picker?: React.ReactNode }) {
   const [typed, setTyped] = React.useState<string | null>(null);
-  const cost = typed !== null ? parseCost(typed) : value !== null ? Number(value) : null;
-  const net = price !== null ? price / 1.21 : null;
-  const gain = net !== null && cost !== null ? net - cost : null;
+  const shown = gross(value);
+  const cost = typed !== null ? parseCost(typed) : shown !== null ? Number(shown) : null;
+  const gain = price !== null && cost !== null ? price - cost : null;
   const pct = gain !== null && cost ? (gain / cost) * 100 : null;
   return (
     <>
       <div className="flex flex-col items-end gap-1">
-        <CostInput key={`${id}-${value}`} id={id} value={value} disabled={disabled} onType={setTyped} />
+        <CostInput key={`${id}-${value}`} id={id} value={shown} disabled={disabled} onType={setTyped} vatIncluded />
         {picker}
       </div>
-      <div className="text-right tabular" title={net !== null && cost !== null ? `Precio sin IVA ${net.toFixed(2)} − costo ${cost.toFixed(2)} = ${gain!.toFixed(2)} por unidad` : undefined}>
+      <div className="text-right tabular" title={gain !== null ? `Precio ${price!.toFixed(2)} − costo ${cost!.toFixed(2)} (los dos con IVA) = ${gain.toFixed(2)} por unidad` : undefined}>
         <p className={cn("font-medium", pct === null ? "text-fg-subtle" : pct < 10 ? "text-danger" : pct < 20 ? "text-warn" : "text-accent")}>{pct !== null ? `${pct.toFixed(0)}%` : "—"}</p>
         {gain !== null && <p className="text-[11px] text-fg-subtle">{gain >= 0 ? "+" : ""}{formatMoney(gain)} c/u</p>}
       </div>
@@ -37,7 +42,7 @@ export function CostMargin({ id, value, price, disabled, picker }: { id: string;
   );
 }
 
-export function CostInput({ id, value, disabled, onType }: { id: string; value: string | null; disabled?: boolean; onType?: (v: string | null) => void }) {
+export function CostInput({ id, value, disabled, onType, vatIncluded }: { id: string; value: string | null; disabled?: boolean; onType?: (v: string | null) => void; vatIncluded?: boolean }) {
   const router = useRouter();
   const [v, setV] = React.useState(value ?? "");
   const [saved, setSaved] = React.useState(value ?? "");
@@ -45,13 +50,15 @@ export function CostInput({ id, value, disabled, onType }: { id: string; value: 
   const save = async () => {
     if (v.trim() === saved.trim()) return;
     setBusy(true);
-    const r = await safeAction(() => setConvenioCost(id, v));
+    const n = parseCost(v);
+    const toSave = vatIncluded && n !== null ? String(Math.round((n / VAT) * 100) / 100) : v;
+    const r = await safeAction(() => setConvenioCost(id, toSave));
     setBusy(false);
     if (!r.ok) { if (r.error) toast.error(r.error); setV(saved); onType?.(null); return; }
     setSaved(v); router.refresh();
   };
   return (
-    <Input value={v} disabled={disabled || busy} inputMode="decimal" placeholder="Tu costo" aria-label="Tu costo sin IVA"
+    <Input value={v} disabled={disabled || busy} inputMode="decimal" placeholder={vatIncluded ? "Costo c/IVA" : "Tu costo"} aria-label={vatIncluded ? "Tu costo con IVA" : "Tu costo sin IVA"}
       onChange={(e) => { setV(e.target.value); onType?.(e.target.value); }} onBlur={save} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
       className="h-8 w-28 text-right tabular" />
   );

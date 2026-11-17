@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, FileText, Truck, ShoppingCart, Receipt, Landmark, Package, TrendingUp, Bell, Settings,
-  Gavel, ShoppingBag, Percent, Building2, type LucideIcon,
+  Gavel, ShoppingBag, Percent, Building2, AlarmClock, type LucideIcon,
 } from "lucide-react";
 
 /**
@@ -16,6 +16,7 @@ export const NAV: NavGroup[] = [
     label: "Día a día",
     items: [
       { href: "/dashboard", label: "Inicio", icon: LayoutDashboard, simple: true },
+      { href: "/recordatorios", label: "Recordatorios", icon: AlarmClock, simple: true },
       {
         href: "/ordenes", label: "Órdenes de compra", icon: FileText, simple: true,
         tabs: [

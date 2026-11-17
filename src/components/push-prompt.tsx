@@ -10,11 +10,11 @@ const b64ToBytes = (b64: string) => {
   const s = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from(s, (c) => c.charCodeAt(0));
 };
-const supported = () => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-const standalone = () => window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
-const ios = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+export const supported = () => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+export const standalone = () => window.matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+export const ios = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
 
-async function subscribe() {
+export async function subscribe() {
   const key = await getPushKey();
   if (!key) throw new Error("No se pudo preparar los avisos");
   const reg = await navigator.serviceWorker.ready;

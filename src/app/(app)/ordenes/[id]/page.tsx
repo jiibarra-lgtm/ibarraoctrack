@@ -8,6 +8,7 @@ import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/primitives";
 import { CopyButton } from "@/components/copy-button";
+import { RemindMeButton, ReminderRow, type Reminder } from "@/components/reminders";
 import { ContractActs } from "@/components/bac/contract-acts";
 import { StatusBadge } from "@/components/po/status-badge";
 import { isUuid } from "@/lib/utils";
@@ -28,6 +29,8 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const { data } = await s.supabase.from("purchase_orders_overview").select("bac_number, display_number").eq("id", id).maybeSingle();
   return { title: data?.bac_number ?? data?.display_number ?? "Orden" };
 }
+
+const reminderNow = () => Date.now();
 
 export default async function OrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { id } = await params;
@@ -67,6 +70,9 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const { data: boardRows } = o.bac_number
     ? await sb.from("delivery_board_overview").select("*").eq("org_id", s.org.org_id).contains("oc_refs", [String(o.bac_number).toUpperCase()]).order("status").order("delivered_on", { ascending: false })
     : { data: [] };
+  const { data: remRows } = await sb.from("reminders").select("*").eq("org_id", s.org.org_id).eq("order_id", id).eq("status", "pendiente").order("due_at");
+  const reminders = (remRows ?? []) as Reminder[];
+  const nowMs = reminderNow();
   const { data: mlRows } = await sb.from("ml_orders_overview").select("*").eq("purchase_order_id", id).order("ordered_at", { ascending: false });
   const orderOption = {
     id, label: o.bac_number ?? o.display_number, customer: o.customer_name,
@@ -102,6 +108,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         }
         actions={
           <>
+            <RemindMeButton variant="secondary" size="md" link={{ order_id: o.id, link_path: `/ordenes/${o.id}`, link_label: `OC ${o.bac_number ?? o.display_number}${o.customer_name ? ` · ${o.customer_name}` : ""}` }} />
             {original && <DocumentButton documentId={original.id} label="Ver original" />}
             {(writable || s.org.role === "logistica") && <Button asChild variant="secondary"><Link href={`/remitos?oc=${encodeURIComponent(o.bac_number ?? o.display_number)}`}><ClipboardList /> Emitir remito</Link></Button>}
             {canBill(s.org.role) && o.status !== "anulada" && <EInvoiceDialog purchaseOrderId={o.id} trigger={<Button variant="secondary"><FileText /> Facturar</Button>} />}
@@ -110,6 +117,12 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           </>
         }
       />
+      {reminders.length > 0 && (
+        <div className="mb-4 overflow-hidden rounded-2xl border border-brand/30 bg-brand/5">
+          <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-wider text-brand sm:px-5">Recordatorios de esta OC</p>
+          <ul className="divide-y divide-border">{reminders.map((r) => <ReminderRow key={r.id} r={r} now={nowMs} compact />)}</ul>
+        </div>
+      )}
       {o.bac_number && <ContractActs sb={sb} org={s.org.org_id} bacNumber={o.bac_number} canEdit={writable} />}
       <OrderTabs
         initialTab={tab}

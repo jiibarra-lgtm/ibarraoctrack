@@ -3,7 +3,7 @@
  * - Páginas: red primero; si no hay conexión, la última versión guardada o la pantalla "sin conexión".
  * - Nunca guarda datos de la API, de Supabase ni documentos privados.
  */
-const VERSION = "v2";
+const VERSION = "v3";
 const STATIC = `oct-static-${VERSION}`;
 const PAGES = `oct-pages-${VERSION}`;
 const OFFLINE = "/offline.html";
@@ -47,14 +47,31 @@ self.addEventListener("fetch", (e) => {
 self.addEventListener("push", (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch { d = { title: "OC Track", body: e.data ? e.data.text() : "" }; }
-  e.waitUntil(self.registration.showNotification(d.title || "OC Track", {
-    body: d.body || "", tag: d.tag, renotify: !!d.tag, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png", data: { url: d.url || "/" },
-  }));
+  const opts = {
+    body: d.body || "", tag: d.tag, renotify: !!d.tag, icon: "/icons/icon-192.png", badge: "/icons/icon-192.png",
+    data: { url: d.url || "/", reminder: d.reminder || null },
+  };
+  // Recordatorios: quedan en pantalla hasta que los toques, con botones como los de la app de Recordatorios
+  if (d.reminder) {
+    opts.requireInteraction = true;
+    opts.vibrate = [200, 100, 200];
+    opts.actions = [{ action: "done", title: "✓ Hecho" }, { action: "snooze60", title: "En 1 hora" }];
+  }
+  e.waitUntil(self.registration.showNotification(d.title || "OC Track", opts));
 });
 
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
-  const url = new URL((e.notification.data && e.notification.data.url) || "/", self.location.origin).href;
+  const data = e.notification.data || {};
+  const r = data.reminder;
+  if (r && (e.action === "done" || e.action === "snooze60")) {
+    const body = e.action === "done" ? { id: r.id, token: r.token, action: "done" } : { id: r.id, token: r.token, action: "snooze", minutes: 60 };
+    e.waitUntil(fetch("/api/reminders/act", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+      .then((res) => { if (!res.ok) throw new Error(); })
+      .catch(() => self.registration.showNotification("No se pudo guardar", { body: "Abrí Recordatorios y marcalo desde ahí.", tag: "reminder-error", icon: "/icons/icon-192.png", data: { url: "/recordatorios" } })));
+    return;
+  }
+  const url = new URL(data.url || "/", self.location.origin).href;
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
     for (const c of list) if (c.url.startsWith(self.location.origin) && "focus" in c) { c.navigate(url); return c.focus(); }
     return self.clients.openWindow(url);

@@ -10,6 +10,7 @@ import { Badge, Input, Textarea } from "@/components/ui/primitives";
 import { formatDate } from "@/lib/format";
 import { safeAction } from "@/lib/safe-action";
 import { CopyButton } from "@/components/copy-button";
+import { RemindMeButton } from "@/components/reminders";
 import { cn } from "@/lib/utils";
 import { addOrderToBoard, deleteBoardItem, saveBoardItem, setBoardStatus } from "./actions";
 
@@ -89,6 +90,8 @@ export function BoardCard({ item, canEdit }: { item: BoardItem; canEdit: boolean
           ) : (
             <Button size="sm" variant="ghost" loading={busy === "undo"} onClick={() => run("undo", () => setBoardStatus(item.id, "pendiente"), "Volvió a pendientes")}>{busy !== "undo" && <Undo2 />} Volver a pendiente</Button>
           )}
+          {pending && <RemindMeButton variant="ghost" title={`Llevar a ${item.place}`} notes={item.note ?? undefined}
+            link={{ board_id: item.id, order_id: item.orders[0]?.id ?? null, link_path: item.orders[0] ? `/ordenes/${item.orders[0].id}?tab=entregas` : "/entregas/pendientes", link_label: `Entrega: ${item.place}${item.oc_text ? ` · OC ${item.oc_text}` : ""}` }} />}
           <ItemDialog item={item} trigger={<Button size="sm" variant="ghost"><Pencil /> Editar</Button>} />
           {confirmDel ? (
             <span className="flex items-center gap-1 text-xs">

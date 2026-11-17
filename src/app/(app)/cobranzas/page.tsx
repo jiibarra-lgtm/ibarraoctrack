@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { InvoiceActions, VoidCollectionButton } from "@/components/billing/invoice-actions";
 import { cn } from "@/lib/utils";
 import { GcbaCollections } from "./gcba";
+import { CollectionTimes } from "./tiempos";
 
 export const metadata: Metadata = { title: "Cobranzas" };
 
@@ -54,6 +55,7 @@ export default async function CollectionsPage() {
   return (
     <>
       <PageHeader title="Cobranzas" description="Qué te deben, desde cuándo, y lo que ya cobraste (con retenciones). Los pagos del GCBA se cruzan solos con cada factura: aviso de SIGAF + depósito del Banco Ciudad." />
+      <CollectionTimes sb={sb} org={s.org.org_id} />
       <GcbaCollections sb={sb} org={s.org.org_id} canEdit={canBill(s.org.role)} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={Wallet} label="Por cobrar" value={formatMoney(sum(arsOpen.map((i) => i.balance)))} sub={`${arsOpen.length} facturas`} />

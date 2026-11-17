@@ -24,6 +24,7 @@ export const NAV: NavGroup[] = [
           { href: "/ordenes/importar", label: "Importar OC", simple: true },
           { href: "/bac", label: "Avisos del BAC" },
           { href: "/correos", label: "Correos" },
+          { href: "/correos/seguimiento", label: "Seguimiento de correos" },
         ],
       },
       {
@@ -33,6 +34,7 @@ export const NAV: NavGroup[] = [
           { href: "/entregas", label: "Estado por OC", simple: true },
           { href: "/remitos", label: "Remitos" },
           { href: "/entregas/remito", label: "Leer remito" },
+          { href: "/entregas/flete", label: "Costo de flete" },
         ],
       },
       {
@@ -48,6 +50,7 @@ export const NAV: NavGroup[] = [
         tabs: [
           { href: "/productos", label: "Renglones y costos", simple: true },
           { href: "/precios-stock", label: "Qué bajar / subir", simple: true },
+          { href: "/productos/catalogo", label: "Catálogo", simple: true },
         ],
       },
     ],

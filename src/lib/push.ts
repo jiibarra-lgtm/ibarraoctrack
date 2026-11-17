@@ -6,7 +6,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 type Outbox = {
   public_key: string | null; private_key: string | null;
   subscriptions: { endpoint: string; p256dh: string; auth: string }[];
-  notifications: { id: string; type: "open" | "closing" | "oc_missing" | "weekly" | "reclamo"; contract: string; name: string | null; ends_on: string; stock: boolean; data?: Weekly }[];
+  notifications: { id: string; type: "open" | "closing" | "oc_missing" | "weekly" | "reclamo" | "bank_in"; contract: string; name: string | null; ends_on: string; stock: boolean; data?: Weekly }[];
 };
 
 type Weekly = { due: number; late: number; receivable: number; overdue: number; new_orders: number; new_amount: number; missing: number };
@@ -31,6 +31,9 @@ function message(n: Outbox["notifications"][number]) {
   }
   if (n.type === "reclamo") {
     return { title: `Reclamo de un organismo${n.contract ? ` · OC ${n.contract}` : ""}`, body: `${n.name ?? "Llegó un reclamo"}. Respondelo hoy.`, tag: `reclamo-${n.id}`, url: "/correos?k=reclamo" };
+  }
+  if (n.type === "bank_in") {
+    return { title: `Entró ${formatMoney(n.contract)} al banco`, body: n.name ?? "Movimiento acreditado", tag: `bank-in-${n.id}`, url: "/cobranzas" };
   }
   if (n.type === "oc_missing") {
     return { title: `OC sin cargar · ${n.contract}`, body: `${n.name ?? "BAC"}: perfeccionada el ${formatDate(n.ends_on)} y todavía no subiste el PDF. El plazo de entrega ya corre.`, tag: `oc-missing-${n.contract}`, url: "/ordenes/importar" };

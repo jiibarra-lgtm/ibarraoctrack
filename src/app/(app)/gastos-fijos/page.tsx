@@ -15,7 +15,7 @@ import { CATEGORY_LABEL, VAR_CATEGORIES } from "@/lib/expense-categories";
 export const metadata: Metadata = { title: "Gastos fijos" };
 
 type Cost = { id: string; name: string; category: string; amount: string; frequency: number; due_day: number | null; active: boolean; source: string; supplier_cuit: string | null; notes: string | null; is_personal?: boolean };
-type Bill = { id: string; cost_id: string; period: string; due_date: string | null; amount: string | null; paid: boolean; paid_at: string | null; source: string };
+type Bill = { id: string; cost_id: string; period: string; due_date: string | null; amount: string | null; paid: boolean; paid_at: string | null; source: string; bank_movement_id?: string | null; n?: number; paidN?: number; viaBank?: number };
 
 const curMonth = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
 const shift = (ym: string, d: number) => { const [y, m] = ym.split("-").map(Number); return new Date(Date.UTC(y, m - 1 + d, 1)).toISOString().slice(0, 7); };
@@ -57,7 +57,19 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
     : { data: [] as { doc_number: string; total: string; sign: number }[] };
   const arcaBy = new Map<string, number>();
   (arcaMonth ?? []).forEach((v) => arcaBy.set(v.doc_number, (arcaBy.get(v.doc_number) ?? 0) + Number(v.total) * Number(v.sign)));
-  const billBy = new Map(((bills ?? []) as Bill[]).map((b) => [b.cost_id, b]));
+  // Varias facturas del mismo gasto en el mes (dos líneas de teléfono, varias cargas de combustible): se suman
+  const billBy = new Map<string, Bill>();
+  for (const b of (bills ?? []) as Bill[]) {
+    const prev = billBy.get(b.cost_id);
+    if (!prev) { billBy.set(b.cost_id, { ...b, n: 1, paidN: b.paid ? 1 : 0, viaBank: b.bank_movement_id ? 1 : 0 }); continue; }
+    billBy.set(b.cost_id, {
+      ...prev, id: prev.paid && !b.paid ? b.id : prev.id,
+      amount: prev.amount == null && b.amount == null ? null : String(Number(prev.amount ?? 0) + Number(b.amount ?? 0)),
+      due_date: [prev.due_date, b.due_date].filter(Boolean).sort()[0] ?? null,
+      paid: prev.paid && b.paid, paid_at: [prev.paid_at, b.paid_at].filter(Boolean).sort().pop() ?? null,
+      n: (prev.n ?? 1) + 1, paidN: (prev.paidN ?? 0) + (b.paid ? 1 : 0), viaBank: (prev.viaBank ?? 0) + (b.bank_movement_id ? 1 : 0),
+    });
+  }
 
   const rows = list.map((c) => {
     const bill = billBy.get(c.id);
@@ -174,7 +186,8 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
                       </div>
                       <div className="text-right text-sm tabular sm:text-left">
                         <p className="font-medium">{real != null ? formatMoney(real) : formatMoney(expected)}</p>
-                        <p className="text-xs text-fg-subtle">{real != null ? (bill?.due_date ? `vence ${formatDate(bill.due_date)}` : "este mes") : c.frequency > 1 ? "prorrateado" : "estimado"}</p>
+                        <p className="text-xs text-fg-subtle">{real != null ? (bill?.paid && bill.viaBank ? `pagado ${bill.paid_at ? formatDate(bill.paid_at) : ""} · visto en el banco` : bill?.due_date ? `vence ${formatDate(bill.due_date)}` : "este mes") : c.frequency > 1 ? "prorrateado" : "estimado"}</p>
+                        {bill && (bill.n ?? 1) > 1 && <p className="text-[11px] text-fg-subtle">{bill.n} facturas · {bill.paidN} pagadas</p>}
                       </div>
                       <p className="hidden text-xs text-fg-subtle sm:block">{real != null && Number(c.amount) && Math.abs(real - Number(c.amount)) > 1 ? `Habitual ${formatMoney(c.amount)}` : ""}</p>
                       <div className="col-span-2 sm:col-span-1 sm:justify-self-end">

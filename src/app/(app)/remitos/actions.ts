@@ -31,6 +31,7 @@ const Payload = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   time: z.string().regex(/^\d{2}:\d{2}$/),
   notes: z.string().trim().max(1000).optional().default(""),
+  oc_number: z.string().trim().max(60).optional().default(""),
   items: z.array(Line).max(200),
 });
 export type EmitPayload = z.input<typeof Payload>;

@@ -7,14 +7,14 @@ import { Stat } from "@/components/ui/stat";
 import { formatDate, formatMoney } from "@/lib/format";
 import { monthLabel } from "@/lib/months";
 import { cn } from "@/lib/utils";
-import { ActiveToggle, AddArcaButton, CostDialog, EditCost, PaidToggle } from "./cost-ui";
+import { ActiveToggle, AddArcaButton, CostDialog, EditCost, PaidToggle, VariableToggle } from "./cost-ui";
 import { CostInsights } from "./insights";
 import { CategorySelect, IgnoreToggle } from "./payee-ui";
 import { CATEGORY_LABEL, VAR_CATEGORIES } from "@/lib/expense-categories";
 
 export const metadata: Metadata = { title: "Gastos fijos" };
 
-type Cost = { id: string; name: string; category: string; amount: string; frequency: number; due_day: number | null; active: boolean; source: string; supplier_cuit: string | null; notes: string | null; is_personal?: boolean };
+type Cost = { id: string; name: string; category: string; amount: string; frequency: number; due_day: number | null; active: boolean; source: string; supplier_cuit: string | null; notes: string | null; is_personal?: boolean; is_variable?: boolean };
 type Bill = { id: string; cost_id: string; period: string; due_date: string | null; amount: string | null; paid: boolean; paid_at: string | null; source: string; bank_movement_id?: string | null; n?: number; paidN?: number; viaBank?: number };
 
 const curMonth = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
@@ -77,7 +77,10 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
     const expected = Number(c.amount) / c.frequency;
     return { c, bill, real, month: c.active ? (real ?? expected) : 0, expected };
   });
-  const active = rows.filter((r) => r.c.active);
+  // Se repiten pero dependen del uso (combustible, peajes, compras semanales): no son gastos fijos
+  const recurringVar = rows.filter((r) => r.c.active && r.c.is_variable);
+  const recurringVarTotal = recurringVar.reduce((a, r) => a + r.month, 0);
+  const active = rows.filter((r) => r.c.active && !r.c.is_variable);
   const personalTotal = active.filter((r) => r.c.is_personal).reduce((a, r) => a + r.month, 0);
   const total = active.reduce((a, r) => a + r.month, 0);
   const paid = active.filter((r) => r.bill?.paid).reduce((a, r) => a + r.month, 0);
@@ -85,7 +88,7 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
   const ventas = Number((monthly ?? []).find((x) => x.direction === "emitido")?.net ?? 0);
   const compras = Number((monthly ?? []).find((x) => x.direction === "recibido")?.net ?? 0);
   const tabHref = (v: string) => `/gastos-fijos?${new URLSearchParams({ m, ...(v !== "fijos" ? { v } : {}) })}`;
-  const groups = Object.keys(CATEGORY_LABEL).map((k) => [k, rows.filter((r) => r.c.category === k)] as const).filter(([, l]) => l.length);
+  const groups = Object.keys(CATEGORY_LABEL).map((k) => [k, rows.filter((r) => r.c.category === k && !r.c.is_variable)] as const).filter(([, l]) => l.length);
 
   return (
     <>
@@ -106,7 +109,7 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
         <Stat icon={CheckCircle2} label="Pagado" value={formatMoney(paid)} sub={`Falta ${formatMoney(Math.max(0, total - paid))}`} tone="accent" />
         <Stat icon={CalendarClock} label="Por vencer" value={String(active.filter((r) => r.bill && !r.bill.paid && r.bill.due_date).length)} sub="facturas recibidas sin pagar" tone="warn" />
         <Stat icon={ShoppingBasket} label="Gastos variables" value={formatMoney(varTotal)} sub={`${variables.length} pagos con tarjeta y transferencias`} href={tabHref("variables")} />
-        <Stat icon={TrendingDown} label="Resultado del mes" value={formatMoney(ventas - compras - (total - personalTotal) - varTotal)} tone={ventas - compras - (total - personalTotal) - varTotal < 0 ? "danger" : undefined} sub={`ventas − compras − fijos − variables (sin IVA)${personalTotal ? " · sin los personales" : ""}`} />
+        <Stat icon={TrendingDown} label="Resultado del mes" value={formatMoney(ventas - compras - (total - personalTotal) - varTotal - recurringVarTotal)} tone={ventas - compras - (total - personalTotal) - varTotal - recurringVarTotal < 0 ? "danger" : undefined} sub={`ventas − compras − fijos − variables (sin IVA)${personalTotal ? " · sin los personales" : ""}`} />
       </div>
 
       <div className="mt-5 inline-flex rounded-full border border-card-border bg-field p-1 text-sm">
@@ -179,7 +182,7 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
                     <li key={c.id} className={cn("grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3 sm:grid-cols-[minmax(0,1.4fr)_150px_150px_120px] sm:px-5", !c.active && "opacity-50")}>
                       <div className="min-w-0">
                         <p className="flex items-center gap-2 text-sm font-medium"><span className="truncate">{c.name}</span>
-                          {canEdit && <><EditCost id={c.id} initial={{ name: c.name, category: c.category as never, amount: String(Number(c.amount)).replace(".", ","), frequency: c.frequency, due_day: c.due_day ? String(c.due_day) : "", notes: c.notes ?? "" }} /><ActiveToggle id={c.id} active={c.active} /></>}
+                          {canEdit && <><EditCost id={c.id} initial={{ name: c.name, category: c.category as never, amount: String(Number(c.amount)).replace(".", ","), frequency: c.frequency, due_day: c.due_day ? String(c.due_day) : "", notes: c.notes ?? "" }} /><ActiveToggle id={c.id} active={c.active} /><VariableToggle id={c.id} variable={false} /></>}
                         </p>
                         <p className="flex items-center gap-1 text-xs text-fg-subtle"><S.icon className="size-3" />{S.label}
                           {c.frequency > 1 && ` · cada ${c.frequency} meses`}{c.due_day ? ` · vence el ${c.due_day}` : ""}{!c.active ? " · pausado" : ""}</p>
@@ -202,6 +205,20 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
         </Card>
 
         <div className="flex flex-col gap-5 self-start">
+          {recurringVar.length > 0 && (
+            <Card className="overflow-hidden">
+              <CardHeader title="Se repiten, pero no son fijos" description={`Dependen del uso: no suman en los fijos. Este mes ${formatMoney(recurringVarTotal)}.`} />
+              <ul className="divide-y divide-border">
+                {recurringVar.map(({ c, real, expected, bill }) => (
+                  <li key={c.id} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
+                    <span className="min-w-0"><span className="block truncate">{c.name}</span>
+                      <span className="text-xs text-fg-subtle">{bill && (bill.n ?? 1) > 1 ? `${bill.n} facturas este mes` : CATEGORY_LABEL[c.category] ?? c.category}</span></span>
+                    <span className="flex shrink-0 items-center gap-1"><span className="tabular font-medium">{formatMoney(real ?? expected)}</span>{canEdit && <VariableToggle id={c.id} variable />}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
           {byCat.length > 0 && (
             <Card>
               <CardHeader title="Por categoría" description={monthLabel(m)} />

@@ -10,10 +10,11 @@ import { monthLabel } from "@/lib/months";
 import { cn } from "@/lib/utils";
 import { OrdersTable, type OrderRow } from "./orders-table";
 import { OrdersFilters } from "./orders-filters";
+import { MissingOcDocs } from "@/components/oc/missing-docs";
 
 export const metadata: Metadata = { title: "Órdenes de compra" };
 
-type SP = { q?: string; estado?: string; organismo?: string; desde?: string; hasta?: string; mes?: string };
+type SP = { q?: string; estado?: string; organismo?: string; desde?: string; hasta?: string; mes?: string; faltan?: string };
 const nextMonth = (m: string) => { const [y, mm] = m.split("-").map(Number); return new Date(Date.UTC(y, mm, 1)).toISOString().slice(0, 10); };
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<SP> }) {
@@ -64,6 +65,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           </>
         )}
       />
+      <MissingOcDocs sb={s.supabase} org={s.org.org_id} mode={sp.faltan ? "full" : "compact"} limit={sp.faltan ? 300 : 12} />
       <Suspense><OrdersFilters customers={customers ?? []} /></Suspense>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {[...monthsList.slice(0, 12).map((k) => [k, `${monthLabel(k)} (${perMonth.get(k)})`] as const), ["todos", "Todos los meses"] as const].map(([k, l]) => {

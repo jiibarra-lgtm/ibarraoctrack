@@ -47,6 +47,15 @@ export async function setCostActive(id: string, active: boolean): Promise<R> {
   return done();
 }
 
+/** "No es gasto fijo": se repite pero depende del uso (combustible, peajes, compras de todas las semanas). */
+export async function setCostVariable(id: string, variable: boolean): Promise<R> {
+  const s = await requireOrg();
+  if (!can(s.org.role) || !isUuid(id)) return { ok: false, error: "No permitido" };
+  const { error } = await s.supabase.from("fixed_costs").update({ is_variable: variable, updated_at: new Date().toISOString() }).eq("id", id).eq("org_id", s.org.org_id);
+  if (error) return { ok: false, error: friendlyDbError(error) };
+  return done();
+}
+
 /** Convierte un proveedor que factura todos los meses (según ARCA) en gasto fijo. */
 export async function addFromArca(cuit: string, name: string, avg: string, category = "otros"): Promise<R> {
   const s = await requireOrg();

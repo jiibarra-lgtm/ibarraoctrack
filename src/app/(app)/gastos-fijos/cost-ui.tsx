@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/overlays";
 import { Field, Input, NativeSelect } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
-import { addFromArca, saveFixedCost, setCostActive, setMonthPaid, type CostInput } from "./actions";
+import { addFromArca, saveFixedCost, setCostActive, setCostVariable, setMonthPaid, type CostInput } from "./actions";
 
 import { CATEGORY_LABEL } from "@/lib/expense-categories";
 const FREQ: [number, string][] = [[1, "Mensual"], [2, "Bimestral"], [3, "Trimestral"], [6, "Semestral"], [12, "Anual"]];
@@ -81,6 +81,17 @@ export function ActiveToggle({ id, active }: { id: string; active: boolean }) {
       onClick={async () => { const r = await setCostActive(id, !active); if (!r.ok) toast.error(r.error); else router.refresh(); }}>
       <Power className="size-3.5" />
     </button>
+  );
+}
+
+export function VariableToggle({ id, variable }: { id: string; variable: boolean }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <Button size="sm" variant="ghost" loading={busy} className="h-7 px-2 text-xs"
+      onClick={async () => { setBusy(true); const r = await setCostVariable(id, !variable); setBusy(false); if (!r.ok) toast.error(r.error); else { toast.success(variable ? "Ahora suma como gasto fijo" : "Pasó a gastos que no son fijos"); router.refresh(); } }}>
+      {variable ? "Es gasto fijo" : "No es fijo"}
+    </Button>
   );
 }
 

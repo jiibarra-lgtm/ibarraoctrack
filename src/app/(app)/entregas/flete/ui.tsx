@@ -77,10 +77,11 @@ export function LocateButton({ places, label }: { places: { query: string; fallb
   if (!places.length) return null;
   const run = async () => {
     // de a 8 por llamada (cada una tarda hasta ~30 s); sigue sola hasta terminar
-    for (let k = 0; k < places.length; k += 8) {
+    for (let k = 0; k < places.length;) {
       setProg(`${k}/${places.length}`);
       const r = await safeAction(() => locatePlaces(places.slice(k, k + 8)));
-      if (!r.ok) { if (r.error) toast.error(r.error); break; }
+      if (!r.ok) { if (r.error) toast.error(r.error); setProg(null); return; }
+      k += Math.max(1, r.done ?? 8);
       router.refresh();
     }
     setProg(null);

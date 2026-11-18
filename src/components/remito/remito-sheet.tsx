@@ -67,6 +67,7 @@ export function RemitoSheet({ data, qrSvg }: { data: RemitoSheetData; qrSvg?: st
       <div style={{ border: line, borderTop: "none", fontSize: 12.5 }}>
         <Row label="Señor(es):" value={data.recipient.name} />
         <Row label="Domicilio:" value={data.recipient.address} />
+        {data.poNumber && <Row label="O. de Compra:" value={`N° ${data.poNumber}`} />}
         <div style={{ display: "grid", gridTemplateColumns: "92px 1fr 64px 1fr" }}>
           <Cell bold>I.V.A.:</Cell>
           <Cell bg>{data.recipient.iva}</Cell>

@@ -68,8 +68,11 @@ export default async function BancoPage({ searchParams }: { searchParams: Promis
   for (const b of bals) if (!lastByAcc.has(b.account)) lastByAcc.set(b.account, b);
   const balance = [...lastByAcc.values()].reduce((a, b) => a + Number(b.balance), 0);
   // Saldo de cierre por día (último aviso del día), últimos 30 días
+  // El aviso de saldo llega a la mañana (7 hs) y muestra el cierre del día hábil anterior:
+  // lo que llega antes del mediodía cuenta como saldo de cierre del día anterior.
+  const closeDay = (asOf: string) => { const t = Date.parse(asOf) - 3 * 3600e3; const h = new Date(t).getUTCHours(); return new Date(t - (h < 12 ? 864e5 : 0)).toISOString().slice(0, 10); };
   const daily = new Map<string, number>();
-  for (const b of bals) { const d = new Date(Date.parse(b.as_of) - 3 * 3600e3).toISOString().slice(0, 10); if (!daily.has(d)) daily.set(d, Number(b.balance)); }
+  for (const b of bals) { const d = closeDay(b.as_of); if (!daily.has(d)) daily.set(d, Number(b.balance)); }
   const dailyList = [...daily.entries()].slice(0, 30).reverse();
   const maxAbs = Math.max(1, ...dailyList.map(([, v]) => Math.abs(v)));
 
@@ -78,6 +81,17 @@ export default async function BancoPage({ searchParams }: { searchParams: Promis
   const inMonth = monthMovs.filter((m) => m.direction === "in"), outMonth = monthMovs.filter((m) => m.direction === "out");
   const unknown = movs.filter((m) => !m.direction);
   const unexplained = movs.filter((m) => m.direction && !m.explained && m.kind !== "gcba" && m.mov_date >= daysAgo(60));
+
+  // Control: la diferencia de saldo entre dos cierres tiene que ser igual a lo que entró menos lo que salió
+  const asc = [...daily.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const checks = asc.slice(1).map(([d, v], i) => {
+    const [pd, pv] = asc[i];
+    const ms = movs.filter((m) => m.mov_date > pd && m.mov_date <= d);
+    const net = ms.reduce((a, m) => a + (m.direction === "in" ? 1 : m.direction === "out" ? -1 : 0) * Number(m.amount), 0);
+    const unk = ms.filter((m) => !m.direction).reduce((a, m) => a + Number(m.amount), 0);
+    const delta = v - pv, diff = Math.round((delta - net) * 100) / 100;
+    return { d, pd, delta, net, unk, diff, n: ms.length };
+  }).filter((c) => Math.abs(c.diff) > 1).reverse().slice(0, 20);
 
   // Alertas
   type Alert = { tone: "danger" | "warn"; title: string; detail: string };
@@ -123,7 +137,7 @@ export default async function BancoPage({ searchParams }: { searchParams: Promis
     <>
       <PageHeader title="Banco" description="Banco Ciudad: cada movimiento, el saldo y a qué factura corresponde, leído solo de los avisos diarios" />
       <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={Scale} label="Saldo" value={formatMoney(balance)} sub={lastByAcc.size ? `al ${formatDateTime([...lastByAcc.values()][0].as_of)}` : "sin aviso de saldo"} tone={balance < 0 ? "danger" : undefined} />
+        <Stat icon={Scale} label="Saldo" value={formatMoney(balance)} sub={lastByAcc.size ? `cierre del ${formatDate(closeDay([...lastByAcc.values()][0].as_of))} (aviso ${formatDateTime([...lastByAcc.values()][0].as_of)})` : "sin aviso de saldo"} tone={balance < 0 ? "danger" : undefined} />
         <Stat icon={ArrowDownLeft} label="Entró este mes" value={formatMoney(sumOf(inMonth))} sub={`${inMonth.length} movimientos`} tone="accent" />
         <Stat icon={ArrowUpRight} label="Salió este mes" value={formatMoney(sumOf(outMonth))} sub={`${outMonth.length} movimientos`} />
         <Stat icon={CircleHelp} label="Sin explicar (60 días)" value={String(unexplained.length)} sub={unknown.length ? `${unknown.length} sin dirección` : "sin factura ni rubro"} tone={unexplained.length ? "warn" : undefined} href="/banco?v=sin" />
@@ -145,7 +159,7 @@ export default async function BancoPage({ searchParams }: { searchParams: Promis
 
       <div className="mb-5 grid gap-5 xl:grid-cols-3">
         <Card className="overflow-hidden xl:col-span-2">
-          <CardHeader title="Saldo de cada día" description="Último aviso de cada día, últimos 30 días" />
+          <CardHeader title="Saldo al cierre de cada día" description="Últimos 30 días. El aviso de la mañana trae el cierre del día anterior." />
           {dailyList.length ? (
             <div className="flex h-40 items-end gap-1 px-5 py-4">
               {dailyList.map(([d, v]) => (
@@ -166,6 +180,29 @@ export default async function BancoPage({ searchParams }: { searchParams: Promis
           </ul>
         </Card>
       </div>
+
+      {checks.length > 0 && (
+        <Card className="mb-5 overflow-hidden border-warn/40">
+          <CardHeader title="Días en que el saldo no cierra con los movimientos"
+            description="La diferencia de saldo entre dos cierres no coincide con lo que entró menos lo que salió. Casi siempre es un aviso del banco que no llegó, o transferencias sin saber si entraron o salieron." />
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-sm">
+              <thead><tr className="text-left text-xs text-fg-subtle"><th className="px-5 py-2 font-medium">Día</th><th className="px-3 py-2 text-right font-medium">Cambió el saldo</th><th className="px-3 py-2 text-right font-medium">Movimientos</th><th className="px-3 py-2 text-right font-medium">Sin dirección</th><th className="px-5 py-2 text-right font-medium">Falta explicar</th></tr></thead>
+              <tbody className="divide-y divide-border">
+                {checks.map((c) => (
+                  <tr key={c.d}>
+                    <td className="px-5 py-2">{formatDate(c.d)}<span className="block text-[11px] text-fg-subtle">{c.n} movimientos</span></td>
+                    <td className="px-3 py-2 text-right tabular">{formatMoney(c.delta)}</td>
+                    <td className="px-3 py-2 text-right tabular">{formatMoney(c.net)}</td>
+                    <td className="px-3 py-2 text-right tabular text-fg-subtle">{c.unk ? formatMoney(c.unk) : "—"}</td>
+                    <td className={cn("px-5 py-2 text-right font-semibold tabular", Math.abs(c.diff) > 100000 ? "text-danger" : "text-warn")}>{formatMoney(c.diff)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       <div className="mb-5 grid gap-5 xl:grid-cols-2">
         <Card className="overflow-hidden">

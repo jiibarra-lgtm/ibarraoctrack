@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { MissingOcDocs } from "@/components/oc/missing-docs";
 import Link from "next/link";
 import { Activity, ArrowRight, CircleCheck, FileText, Inbox, ScanSearch, Upload, Wallet } from "lucide-react";
 import { computeAlerts } from "@/lib/alerts";
@@ -100,6 +101,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         description={`Resumen de ${s.org.org_name}`}
         actions={writable && <Button asChild><Link href="/ordenes/importar"><Upload /> Importar OC</Link></Button>}
       />
+      <MissingOcDocs sb={s.supabase} org={org} mode="compact" />
 
       {empty ? (
         <Card>

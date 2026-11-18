@@ -36,6 +36,7 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
   const [provisional, setProvisional] = React.useState(true);
   const [rows, setRows] = React.useState<Row[]>([]);
   const [notes, setNotes] = React.useState("");
+  const [manualOc, setManualOc] = React.useState("");
   const [ocQ, setOcQ] = React.useState(initialOc ?? "");
   const [oc, setOc] = React.useState<OrderForRemito | null>(null);
   const [ocBusy, setOcBusy] = React.useState(false);
@@ -92,7 +93,7 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
     const r = await emitRemito({
       recipient_name: rec.name, recipient_address: rec.address, recipient_cuit: rec.cuit, recipient_iva: rec.iva,
       place_id: placeId ?? "", customer_id: customerId ?? "", purchase_order_id: oc?.id ?? "",
-      register_delivery: !!oc && registerDelivery, save_place: savePlace && !placeId, provisional, date, time, notes,
+      register_delivery: !!oc && registerDelivery, save_place: savePlace && !placeId, provisional, date, time, notes, oc_number: oc ? "" : manualOc.trim(),
       items: rows.map((x) => ({ description: x.description, quantity: x.quantity, detail: x.detail, unit_price: priced ? x.price : "", purchase_order_item_id: x.purchase_order_item_id ?? "", product_id: x.product_id ?? "" })),
     });
     setSaving(false);
@@ -135,6 +136,12 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
               <input value={ocQ} onChange={(e) => setOcQ(e.target.value)} placeholder="Número de OC (ej. 415-18676-OC26) — completa destinatario y productos" className={field} />
               <Button type="submit" variant="secondary" disabled={ocBusy || ocQ.trim().length < 3}>{ocBusy ? <Loader2 className="animate-spin" /> : <Search />} Buscar</Button>
             </form>
+          )}
+          {!oc && (
+            <div className="mt-3">
+              <label className={label} htmlFor="r-ocnum">¿La OC no está cargada? Escribí el número igual para que salga en el remito</label>
+              <input id="r-ocnum" value={manualOc} maxLength={60} onChange={(e) => setManualOc(e.target.value)} placeholder="Ej. 423-19407-OC26" className={field} />
+            </div>
           )}
         </Card>
 
@@ -229,7 +236,7 @@ export function RemitoForm({ places, issuer, nowDate, nowTime, initialOc }: {
             <div style={{ transform: "scale(0.56)", transformOrigin: "top left", width: 816 }}>
               <RemitoSheet qrSvg={qr} data={{
                 label: null, provisional, issuedAt: `${date}T${time}:00-03:00`, recipient: rec,
-                items: filled.map((r) => ({ description: r.description, quantity: String(num(r.quantity)), detail: r.detail, unit_price: priced && r.price.trim() ? String(num(r.price)) : null })), notes, issuer, poNumber: oc?.number ?? null,
+                items: filled.map((r) => ({ description: r.description, quantity: String(num(r.quantity)), detail: r.detail, unit_price: priced && r.price.trim() ? String(num(r.price)) : null })), notes, issuer, poNumber: oc?.number ?? (manualOc.trim().toUpperCase() || null),
               }} />
             </div>
           </div>

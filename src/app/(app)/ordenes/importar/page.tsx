@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { CheckCircle2, CircleAlert, Clock, Loader2, ScanSearch, XCircle } from "lucide-react";
 import { requireOrg, canWrite } from "@/lib/session";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
+import { MissingOcDocs } from "@/components/oc/missing-docs";
 import { formatDateTime } from "@/lib/format";
 import { aiAvailable } from "@/lib/bac/ai";
 import { Uploader } from "./uploader";
@@ -36,6 +37,7 @@ export default async function ImportPage() {
         title="Importar orden de BAC"
         description="Subí la captura de “Ver documento contractual” o el PDF. Extraemos los datos, verificamos las cuentas y vos confirmás antes de guardar."
       />
+      <MissingOcDocs sb={s.supabase} org={s.org.org_id} />
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <Uploader orgId={s.org.org_id} aiEnabled={aiAvailable()} />
         <Card className="self-start">

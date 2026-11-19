@@ -13,7 +13,7 @@ export type PaymentEvent = {
   cbu: string | null; concept: string | null; card: string | null; due_date: string | null; category: string;
 };
 
-export const PAYMENT_QUERY = "from:(avisos.redlink.com.ar mails.santander.com.ar) {subject:\"Transferencia Debitada\" subject:Pagaste subject:\"débito automático\" subject:\"resumen vence\"}";
+export const PAYMENT_QUERY = "{from:avisos.redlink.com.ar from:mails.santander.com.ar} {subject:\"Transferencia Debitada\" subject:Pagaste subject:\"débito automático\" subject:\"resumen vence\"}";
 export const isPaymentMail = (from: string, subject: string) =>
   (/avisos\.redlink\.com\.ar/i.test(from) && /Transferencia Debitada/i.test(subject)) ||
   (/mails\.santander\.com\.ar/i.test(from) && /^Pagaste|Aviso de d[eé]bito autom[aá]tico|D[eé]bito autom[aá]tico de tu adicional|resumen vence/i.test(subject));

@@ -24,6 +24,9 @@ const addDays = (iso: string, d: number) => new Date(new Date(`${iso}T12:00:00Z`
 export async function computeAlerts(sb: SupabaseClient, orgId: string): Promise<Alert[]> {
   const today = todayISO();
   const soon = addDays(today, 7);
+  // Lo anterior al inicio de operaciones en el sistema no se reclama (queda guardado, pero no genera alertas)
+  const { data: orgRow } = await sb.from("organizations").select("ops_start_date").eq("id", orgId).maybeSingle();
+  const opsStart = (orgRow as { ops_start_date: string | null } | null)?.ops_start_date ?? "2000-01-01";
   const [pos, deliv, billing, profit, invoices, docs, payables, jobs, inbox, pays] = await Promise.all([
     sb.from("purchase_orders_overview").select("id, bac_number, display_number, customer_name, status, due_date, currency").eq("org_id", orgId).neq("status", "anulada").limit(2000),
     sb.from("po_delivery_summary").select("purchase_order_id, delivered_pct, is_late, due_date").eq("org_id", orgId).limit(2000),
@@ -34,7 +37,7 @@ export async function computeAlerts(sb: SupabaseClient, orgId: string): Promise<
     sb.from("purchases").select("id, number, point_of_sale, due_date, total_amount, currency, suppliers(name)").eq("org_id", orgId).eq("status", "confirmada").eq("paid", false).lt("due_date", today).limit(500),
     sb.from("import_jobs").select("id, kind, status, created_at, documents(title)").eq("org_id", orgId).in("status", ["revision", "error"]).limit(200),
     sb.from("bac_inbox_overview").select("bac_number, unit_name, unit_code, notified_at, perfected_at, first_seen_at, prd_number, loaded, dismissed").eq("org_id", orgId).limit(3000),
-    sb.from("bac_payments").select("id, invoice_type, point_of_sale, number, invoice_date, notified_at").eq("org_id", orgId).is("invoice_id", null).limit(500),
+    sb.from("bac_payments").select("id, invoice_type, point_of_sale, number, invoice_date, notified_at").eq("org_id", orgId).is("invoice_id", null).gte("notified_at", `${opsStart}T00:00:00-03:00`).limit(500),
   ]);
   const prdByOc = new Map((inbox.data ?? []).filter((r) => r.prd_number).map((r) => [String(r.bac_number), String(r.prd_number)]));
 
@@ -89,6 +92,7 @@ export async function computeAlerts(sb: SupabaseClient, orgId: string): Promise<
   // Órdenes avisadas por BAC que no están cargadas
   for (const r of inbox.data ?? []) {
     if (r.loaded || r.dismissed) continue;
+    if ((r.perfected_at ?? r.notified_at ?? r.first_seen_at ?? "").slice(0, 10) < opsStart) continue;
     // perfeccionada hace más de un día sin el PDF cargado: urgente (la entrega corre desde el perfeccionamiento)
     const late = !!r.perfected_at && hoursSince(r.perfected_at) >= 24;
     out.push({ id: `bac-${r.bac_number}`, level: late ? "danger" : "warn", kind: "bac", title: `OC sin cargar · ${r.bac_number}`,

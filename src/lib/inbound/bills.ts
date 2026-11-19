@@ -28,12 +28,13 @@ export const BILL_PROVIDERS: Provider[] = [
   { key: "swiss", name: "Swiss Medical", category: "salud", from: /swissmedical\.com\.ar/i },
 ];
 
-export const BILL_QUERY = "from:(metrogas.com.ar edesur.com.ar edenor.com aysa.com.ar factura.sinpapel@movistar.com.ar factura@email.claro.com.ar personal.com.ar telecentro.com.ar flow.com.ar fibertel.com.ar iplan.com.ar galeno.com.ar osde.com.ar swissmedical.com.ar cesop.com.ar absaweb.com.ar)";
+export const BILL_QUERY = "{from:metrogas.com.ar from:edesur.com.ar from:edenor.com from:aysa.com.ar from:factura.sinpapel@movistar.com.ar from:factura@email.claro.com.ar from:personal.com.ar from:telecentro.com.ar from:flow.com.ar from:fibertel.com.ar from:iplan.com.ar from:galeno.com.ar from:osde.com.ar from:swissmedical.com.ar from:cesop.com.ar from:absaweb.com.ar}";
 
 export const isBillMail = (from: string) => BILL_PROVIDERS.some((p) => p.from.test(from)) || /mails\.santander\.com\.ar/i.test(from);
 
 const flat = (body: string) => body.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[|#*]/g, " ").replace(/\s+/g, " ");
 const toIso = (d: string) => { const m = /(\d{2})\/(\d{2})\/(\d{4})/.exec(d); return m ? `${m[3]}-${m[2]}-${m[1]}` : null; };
+const MONTHS_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const money = (s?: string) => (s ? parseArNumber(s.replace(/\.$/, "")) : null);
 
 export function parseBillMail(m: { id: string; from: string; subject: string; body: string; date: string }): BillEvent | null {
@@ -56,13 +57,26 @@ export function parseBillMail(m: { id: string; from: string; subject: string; bo
   const p = BILL_PROVIDERS.find((x) => x.from.test(m.from));
   if (!p || (p.skip && p.skip.test(`${m.subject} ${m.from}`))) return null;
   if (!/factura|vencimiento|vence|aviso de deuda|resumen|total a pagar|importe/i.test(text)) return null;
+  // avisos de Galeno que no son facturas (encuestas, recetas, turnos, resultados)
+  if (p.key === "galeno" && !/factura|importe de su plan/i.test(text)) return null;
 
-  const account = /(?:N[uú]mero de cliente|Cliente\s*N[º°o]?|N[uú]mero de cuenta|Socio\s*Nro\.?|Cuenta)\s*:?\s*(\d{5,})/i.exec(text)?.[1]
+  const account = /(?:N[uú]mero de cliente|Cliente\s*N[º°o]?|N[uú]mero de cuenta|Socio\s*Nro\.?|Nro\.? de Socio|Cuenta)\s*:?\s*(\d{5,})/i.exec(text)?.[1]
     ?? /(\d{8,})\s+(\d{8,})\s+\d{2}\/\d{2}\/\d{4}/.exec(text)?.[2] ?? /(\d{8,})/.exec(m.subject)?.[1] ?? "general";
-  const amount = money(/(?:Total a pagar|por un importe de|Importe(?: total)?|Saldo)\s*:?\s*\$\s*([\d.,]+)/i.exec(text)?.[1]
+  // Prepagas: "el importe de su plan médico para el mes de Diciembre es $ 1.008.208,62 más impuestos"
+  const amount = money(/importe de su plan[^$]{0,80}\$\s*([\d.,]+)/i.exec(text)?.[1]
+    ?? /(?:Total a pagar|por un importe de|Importe(?: total)?|Saldo)\s*:?\s*\$\s*([\d.,]+)/i.exec(text)?.[1]
     ?? /\d{2}\/\d{2}\/\d{4}\s+\$\s*([\d.,]+)/.exec(text)?.[1]);
   const due = toIso(/(?:vencimiento|vence)[^0-9]{0,40}(\d{2}\/\d{2}\/\d{4})/i.exec(text)?.[1] ?? /\d{8,}\s+(\d{2}\/\d{2}\/\d{4})/.exec(text)?.[1] ?? "");
   if (!amount && !/factura/i.test(m.subject)) return null;
+  // aviso del importe "para el mes de X": va a ese mes (no al mes en que llegó)
+  const forMonth = /importe de su plan[^$]{0,40}mes de (\p{L}+)/iu.exec(text)?.[1]?.toLowerCase();
+  const mi = forMonth ? MONTHS_ES.indexOf(forMonth.normalize("NFD").replace(/[\u0300-\u036f]/g, "")) : -1;
+  if (mi >= 0 && !due) {
+    const r = new Date(received_at);
+    const y = r.getUTCFullYear() + (mi < r.getUTCMonth() ? 1 : 0);
+    return { message_id: m.id, provider_key: p.key, provider_name: p.name, category: p.category, account_ref: account,
+      amount, due_date: `${y}-${String(mi + 1).padStart(2, "0")}-10`, paid: false, received_at, subject: m.subject };
+  }
   return { message_id: m.id, provider_key: p.key, provider_name: p.name, category: p.category, account_ref: account,
     amount, due_date: due, paid: false, received_at, subject: m.subject };
 }

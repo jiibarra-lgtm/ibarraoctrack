@@ -23,7 +23,7 @@ export async function loadMlPurchases(sb: SupabaseClient, org: string, ym: strin
   const invStart = new Date(Date.parse(r.start) - 5 * 864e5).toISOString().slice(0, 10);
   const [orders, invoices, returns] = await Promise.all([
     sb.from("ml_orders").select("id, title, quantity, total_amount, counterpart, status, ordered_at, delivered_at, eta, invoice_available, created_at")
-      .eq("org_id", org).eq("kind", "compra").is("merged_into", null).gte("ordered_at", r.start).lt("ordered_at", r.end).order("ordered_at", { ascending: false }).limit(2000),
+      .eq("org_id", org).eq("kind", "compra").is("merged_into", null).or(`and(ordered_at.gte.${r.start},ordered_at.lt.${r.end}),and(ordered_at.is.null,created_at.gte.${r.start},created_at.lt.${r.end})`).order("ordered_at", { ascending: false, nullsFirst: false }).limit(2000),
     sb.from("supplier_invoices").select("id, mail_subject, supplier_name, letter, total, net, issue_date, arca_vouchers(vat, other_taxes), supplier_invoice_items(description)")
       .eq("org_id", org).eq("source", "mercadolibre").gte("issue_date", invStart).lt("issue_date", invEnd).limit(2000),
     sb.from("ml_returns").select("id, title, stage, start_deadline, ship_deadline, protected_until, refunded_at, ml_order_id, bank_movement_id, first_seen_at")

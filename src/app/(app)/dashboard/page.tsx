@@ -10,8 +10,9 @@ import { formatDate, formatMoney, todayISO } from "@/lib/format";
 import { sum } from "@/lib/money";
 import type { PoStatus } from "@/lib/po/schema";
 import { MonthlyChart } from "./monthly-chart";
-import { loadMonthStages, MonthStagesCard } from "./month-stages";
+import { loadMonthStages, MonthStagesCard, monthLabel as mLabel, shiftMonth } from "./month-stages";
 import { loadToday, MoneyCard, TodayCard } from "./today";
+import { loadBreakEven } from "@/lib/break-even";
 
 export const metadata: Metadata = { title: "Inicio" };
 
@@ -91,7 +92,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   ]);
   const receivable = sum(openInv.filter((i) => i.currency === main).map((i) => String(i.balance)));
   const overdueAmt = sum(openInv.filter((i) => i.currency === main && i.collection_status === "vencida").map((i) => String(i.balance)));
-  const [stages, today] = await Promise.all([stagesP, loadToday(s.supabase, org, alerts)]);
+  const [stages, today, be] = await Promise.all([stagesP, loadToday(s.supabase, org, alerts, ym), loadBreakEven(s.supabase, org, ym)]);
   const empty = nTotal === 0 && rows.length === 0;
 
   return (
@@ -119,10 +120,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </Card>
       ) : (
         <div className="flex flex-col gap-6">
+          {/* Mes a mes: por defecto el actual; lo viejo queda en su mes */}
+          <nav className="-mt-2 flex gap-1.5 overflow-x-auto pb-1" aria-label="Mes">
+            {Array.from({ length: 6 }, (_, i) => shiftMonth(current, -i)).map((mm) => (
+              <Link key={mm} href={`/dashboard?mes=${mm}${iva === "sin" ? "&iva=sin" : ""}`}
+                className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium capitalize ${mm === ym ? "bg-primary text-primary-fg" : "bg-field text-fg-muted hover:text-fg"}`}>
+                {mm === current ? `${mLabel(mm)} (este mes)` : mLabel(mm)}
+              </Link>
+            ))}
+          </nav>
+
           {/* 1 · Lo que hay que hacer y la plata */}
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <TodayCard tasks={today.tasks} />
-            <MoneyCard m={today.money} receivable={Number(receivable)} overdue={Number(overdueAmt)} />
+            <TodayCard tasks={today.tasks} title={ym === current ? "Qué hacer hoy" : `Lo que quedó pendiente de ${mLabel(ym)}`} monthLabel={mLabel(ym)} />
+            <MoneyCard m={today.money} be={be} receivable={Number(receivable)} overdue={Number(overdueAmt)} />
           </div>
 
           {/* 2 · Cómo viene el mes */}

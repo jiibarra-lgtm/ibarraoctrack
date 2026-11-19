@@ -104,7 +104,13 @@ export const NAV: NavGroup[] = [
           { href: "/licitaciones/comprar", label: "COMPR.AR" },
         ],
       },
-      { href: "/mercadolibre", label: "Mercado Libre", icon: ShoppingBag },
+      {
+        href: "/mercadolibre", label: "Mercado Libre", icon: ShoppingBag,
+        tabs: [
+          { href: "/mercadolibre", label: "Operaciones" },
+          { href: "/mercadolibre/compras", label: "Gastos, IVA y devoluciones" },
+        ],
+      },
       {
         href: "/organismos", label: "Organismos y proveedores", icon: Building2,
         tabs: [

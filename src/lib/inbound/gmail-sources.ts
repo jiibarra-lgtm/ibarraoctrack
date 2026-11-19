@@ -10,7 +10,7 @@ import { INVOICE_QUERY } from "@/lib/inbound/supplier-invoices";
 export type GmailSource = { key: string; q: string; days: number; mode: "mail" | "pdf" };
 
 export const GMAIL_SOURCES: GmailSource[] = [
-  { key: "ml", days: 180, mode: "mail", q: 'from:mercadolibre {subject:compraste subject:vendiste subject:factura subject:"en camino" subject:"llegó tu compra" subject:"recibiste tu paquete"}' },
+  { key: "ml", days: 180, mode: "mail", q: 'from:mercadolibre {subject:compraste subject:vendiste subject:factura subject:"en camino" subject:"llegó tu compra" subject:"recibiste tu paquete" subject:"devolvimos el dinero" subject:"Punto de despacho" subject:"iniciar la devolución" subject:"sigue protegida"}' },
   { key: "gob", days: 180, mode: "mail", q: "{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar from:avisos.bancociudad.com.ar}" },
   { key: "servicios", days: 180, mode: "mail", q: BILL_QUERY },
   { key: "pagos", days: 180, mode: "mail", q: PAYMENT_QUERY },

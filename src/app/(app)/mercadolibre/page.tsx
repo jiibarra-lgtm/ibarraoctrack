@@ -104,6 +104,7 @@ export default async function MercadoLibrePage({ searchParams }: { searchParams:
                 </Link>
               ))}
               <Link href="/mercadolibre?t=publicaciones" className="rounded-full px-3 py-1 text-xs font-semibold text-fg-muted hover:text-fg">Publicaciones y stock</Link>
+              <Link href="/mercadolibre/compras" className="rounded-full px-3 py-1 text-xs font-semibold text-fg-muted hover:text-fg">Gastos, IVA y devoluciones</Link>
             </div>
             {FILTERS[t].map(([k, l]) => (
               <Link key={k} href={href({ f: k })} className={cn("rounded-full px-3 py-1 text-xs font-medium", f === k ? "bg-surface-2 text-fg ring-1 ring-card-border" : "text-fg-muted hover:text-fg")}>{l}</Link>

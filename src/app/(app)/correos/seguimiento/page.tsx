@@ -11,7 +11,7 @@ import { RemindMeButton } from "@/components/reminders";
 
 export const metadata: Metadata = { title: "Seguimiento de correos" };
 
-type Contact = { email: string; name: string | null; mails: number; last_7d: number; last_at: string; unanswered: number; unanswered_quotes: number; complaints: number; reply_hours: number | null; phone: string | null; oc_refs: string[] };
+type Contact = { email: string; name: string | null; mails: number; last_7d: number; last_at: string; unanswered: number; unanswered_quotes: number; complaints: number; reply_hours: number | null; phone: string | null; hours: string | null; oc_refs: string[] };
 type Insight = { id: string; thread_id: string | null; message_id: string; from_email: string; from_name: string | null; subject: string | null; received_at: string; snippet: string | null; kind: string | null; oc_ref: string | null; purchase_order_id: string | null; unanswered: boolean };
 type Att = { id: string; thread_id: string | null; message_id: string; from_email: string; from_name: string | null; subject: string | null; received_at: string; file: string; oc_ref: string | null; num: string | null };
 type Addr = { id: string; thread_id: string | null; message_id: string; from_email: string; from_name: string | null; subject: string | null; received_at: string; excerpt: string | null; oc_ref: string | null; purchase_order_id: string | null; delivery_place: string | null };
@@ -173,7 +173,7 @@ export default async function MailFollowUpPage() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead className="text-left text-xs text-fg-subtle">
-              <tr><th className="px-5 py-2 font-medium">Contacto</th><th className="px-3 py-2 font-medium">Organismo / OC</th><th className="px-3 py-2 font-medium">Teléfono</th>
+              <tr><th className="px-5 py-2 font-medium">Contacto</th><th className="px-3 py-2 font-medium">Organismo / OC</th><th className="px-3 py-2 font-medium">Teléfono y horario</th>
                 <th className="px-3 py-2 text-right font-medium">Mails</th><th className="px-3 py-2 text-right font-medium">Sin responder</th><th className="px-5 py-2 text-right font-medium">Le respondés en</th></tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -181,7 +181,7 @@ export default async function MailFollowUpPage() {
                 <tr key={c.email} className="align-top">
                   <td className="px-5 py-2"><p className="font-medium">{c.name || c.email.split("@")[0]}</p><p className="flex items-center gap-1 text-xs text-fg-subtle">{c.email}<CopyButton text={c.email} /></p></td>
                   <td className="px-3 py-2 text-xs">{c.oc_refs.length ? <><p className="font-medium">{orgOf(c.oc_refs).slice(0, 2).join(", ")}</p><p className="text-fg-subtle">{c.oc_refs.slice(0, 3).join(", ")}{c.oc_refs.length > 3 ? ` +${c.oc_refs.length - 3}` : ""}</p></> : <span className="text-fg-subtle">—</span>}</td>
-                  <td className="px-3 py-2 text-xs">{c.phone ? <span className="inline-flex items-center gap-1"><Phone className="size-3" />{c.phone}<CopyButton text={c.phone} /></span> : <span className="text-fg-subtle">—</span>}</td>
+                  <td className="px-3 py-2 text-xs">{c.phone ? <span className="inline-flex items-center gap-1"><Phone className="size-3" />{c.phone}<CopyButton text={c.phone} /></span> : <span className="text-fg-subtle">—</span>}{c.hours && <p className="mt-0.5 text-[11px] text-fg-subtle first-letter:uppercase">{c.hours}</p>}</td>
                   <td className="px-3 py-2 text-right tabular">{c.mails}<p className="text-[11px] text-fg-subtle">último {formatDate(c.last_at)}</p></td>
                   <td className={cn("px-3 py-2 text-right tabular", c.unanswered_quotes > 0 && "font-medium text-warn")}>{c.unanswered}{c.unanswered_quotes > 0 && <p className="text-[11px]">{c.unanswered_quotes} cotiz.</p>}</td>
                   <td className={cn("px-5 py-2 text-right tabular", c.reply_hours != null && c.reply_hours > 24 && "text-warn")}>{hrs(c.reply_hours)}</td>

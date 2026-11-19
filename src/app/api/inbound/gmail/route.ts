@@ -7,7 +7,7 @@ import { sendPendingPushes } from "@/lib/push";
 import { isTaxNoticeMail, parseTaxNotice, type TaxNotice } from "@/lib/inbound/tax-notices";
 import { isCardAlertMail, parseCardAlert, type CardAlert } from "@/lib/inbound/card-alerts";
 import { isCiudadMovementsMail, parseCiudad, type BankBalance, type BankMovement } from "@/lib/inbound/bank-ciudad";
-import { isMercadoLibreMail, parseMercadoLibreMail, type MlEvent } from "@/lib/inbound/mercadolibre";
+import { isMercadoLibreMail, parseMercadoLibreMail, parseMlReturnMail, type MlEvent, type MlReturnEvent } from "@/lib/inbound/mercadolibre";
 import { runMlTasks } from "@/lib/ml-tasks";
 import { isBillMail, parseBillMail, type BillEvent } from "@/lib/inbound/bills";
 import { isPaymentMail, parsePaymentMail, type PaymentEvent } from "@/lib/inbound/payments";
@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
   const acts: unknown[] = [];
   const balances: (BankBalance & { message_id: string })[] = [];
   const mlEvents: MlEvent[] = [];
+  const mlReturns: MlReturnEvent[] = [];
   const bills: BillEvent[] = [];
   const payments: PaymentEvent[] = [];
   for (const m of body.messages) {
@@ -105,8 +106,10 @@ export async function POST(req: NextRequest) {
     }
     // Mercado Libre: compras, envíos, entregas, facturas y ventas van a su sección; el mail no se guarda
     if (isMercadoLibreMail(m.from)) {
-      const e = parseMercadoLibreMail({ id: m.id, from: m.from, subject: m.subject, body: m.body, date: date.toISOString(), refs: m.refs });
+      const mm = { id: m.id, from: m.from, subject: m.subject, body: m.body, date: date.toISOString(), refs: m.refs };
+      const e = parseMercadoLibreMail(mm);
       if (e) mlEvents.push(e);
+      else { const r = parseMlReturnMail(mm); if (r) mlReturns.push(r); }
       continue;
     }
     const inbound = { id: m.id, from: m.from, subject: m.subject, date: date.toISOString(), body: m.body, to: m.to ?? "" };
@@ -132,16 +135,19 @@ export async function POST(req: NextRequest) {
     payments.length ? sb.rpc("ingest_payments", { p_token: body.token, p_payments: payments }) : Promise.resolve({ data: null, error: null }),
   ]);
   const none = { data: 0, error: null };
-  const [ca, tn, ac, cw] = await Promise.all([
+  const [ca, tn, ac, cw, mr] = await Promise.all([
     cardAlerts.length ? sb.rpc("ingest_card_alerts", { p_token: body.token, p_alerts: cardAlerts }) : Promise.resolve(none),
     taxNotices.length ? sb.rpc("ingest_tax_notices", { p_token: body.token, p_notices: taxNotices }) : Promise.resolve(none),
     acts.length ? sb.rpc("ingest_bac_acts", { p_token: body.token, p_acts: acts }) : Promise.resolve(none),
     windows.length ? sb.rpc("ingest_convenio_windows", { p_token: body.token, p_windows: windows }) : Promise.resolve(none),
+    mlReturns.length ? sb.rpc("ingest_ml_returns", { p_token: body.token, p_events: mlReturns }) : Promise.resolve(none),
   ]);
   if (windows.length) after(() => sendPendingPushes(sb, body.token).catch(() => null));
-  const err = cw.error ?? ca.error ?? tn.error ?? ac.error ?? ev.error ?? ml.error ?? bk.error ?? me.error ?? bl.error ?? py.error;
+  const err = cw.error ?? ca.error ?? tn.error ?? ac.error ?? mr.error ?? ev.error ?? ml.error ?? bk.error ?? me.error ?? bl.error ?? py.error;
   if (err) {
     const auth = /token/i.test(err.message);
+    // queda registrado: si se repite, el vigía avisa por notificación que la sincronización está fallando
+    if (!auth) await sb.rpc("inbound_log_error", { p_token: body.token, p_message: err.message.slice(0, 480) }).then(() => null, () => null);
     return NextResponse.json({ error: auth ? "Token inválido" : "No se pudo guardar" }, { status: auth ? 401 : 500 });
   }
   // Con mails nuevos de Mercado Libre, se traen los precios por la API (si la cuenta está conectada), después de responder

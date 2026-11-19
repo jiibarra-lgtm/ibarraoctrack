@@ -21,9 +21,9 @@ const CAT_STYLE: Record<string, string> = {
 };
 const CAT_LABEL = Object.fromEntries(CATS) as Record<string, string>;
 // Lo que piden los organismos (pedido de entrega, reclamo, conformidad, cotización) y si falta responder
-const KINDS = [["reclamo", "Reclamos"], ["entrega", "Pedidos de entrega"], ["conformidad", "Conformidades"], ["cotizacion", "Cotizaciones"], ["sinresp", "Sin responder +48 h"]] as const;
-const KIND_STYLE: Record<string, string> = { reclamo: "bg-danger-soft text-danger", entrega: "bg-info-soft text-brand", conformidad: "bg-accent-soft text-accent", cotizacion: "bg-warn-soft text-warn" };
-const KIND_LABEL: Record<string, string> = { reclamo: "Reclamo", entrega: "Entrega", conformidad: "Conformidad", cotizacion: "Cotización" };
+const KINDS = [["reclamo", "Reclamos"], ["entrega", "Pedidos de entrega"], ["conformidad", "Conformidades"], ["cotizacion", "Cotizaciones"], ["pago", "Pagos"], ["publicidad", "Publicidad"], ["sinresp", "Sin responder +48 h"]] as const;
+const KIND_STYLE: Record<string, string> = { reclamo: "bg-danger-soft text-danger", entrega: "bg-info-soft text-brand", conformidad: "bg-accent-soft text-accent", cotizacion: "bg-warn-soft text-warn", pago: "bg-accent-soft text-accent", publicidad: "bg-field text-fg-subtle" };
+const KIND_LABEL: Record<string, string> = { reclamo: "Reclamo", entrega: "Entrega", conformidad: "Conformidad", cotizacion: "Cotización", pago: "Pago", publicidad: "Publicidad" };
 type Insight = { id: string; kind: string | null; oc_ref: string | null; purchase_order_id: string | null; unanswered: boolean; over_48h: boolean };
 
 type MailRow = {

@@ -10,6 +10,7 @@ import { monthLabel } from "@/lib/months";
 import { cn } from "@/lib/utils";
 import { ComprobantesUploader } from "./uploader";
 import { ProfitCalc } from "./profit-calc";
+import { RetentionCertificates } from "./certificates";
 import { after } from "next/server";
 import { canBill } from "@/lib/billing";
 import { autoMaintainArca, refreshPadron, syncEmitted } from "@/lib/tax-sync";
@@ -170,7 +171,7 @@ export default async function ImpuestosPage({ searchParams }: { searchParams: Pr
         : view === "jurisdicciones" ? <>{monthPicker}<JurisdiccionesTab sb={s.supabase} org={org} m={m} emitted={em} wh={wh} monthly={monthly} recibidosOther={percep} settings={(tsData ?? {}) as { annual_limit?: string | null; annual_limit_label?: string | null }} canEdit={billing} /></>
         : view === "proveedores" ? <ProveedoresTab sb={s.supabase} org={org} canEdit={billing} hasCert={Boolean(st.has_cert)} />
         : view === "libro" ? <LibroTab m={m} monthly={monthly} />
-        : view === "retenciones" ? <RetencionesTab monthly={monthly} wh={wh} settings={settings} />
+        : view === "retenciones" ? <><RetencionesTab monthly={monthly} wh={wh} settings={settings} /><RetentionCertificates sb={s.supabase} org={org} /></>
         : view === "ganancias" ? <GananciasTab monthly={monthly} wh={wh} settings={settings} fixedYear={fixedMonthly * 12} canEdit={billing} />
         : view === "vencimientos" ? <VencimientosTab cuit={ownCuit} settings={settings} canEdit={billing} />
         : view === "cierre" ? <CierreTab m={m} monthly={monthly} wh={wh} fixedMonth={fixedMonthly} variablesMonth={variablesMonth} />

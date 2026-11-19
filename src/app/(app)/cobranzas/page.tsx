@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { AlarmClock, HandCoins, Percent, Upload, Wallet } from "lucide-react";
+import { AlarmClock, Download, FileSpreadsheet, HandCoins, Percent, Upload, Wallet } from "lucide-react";
+import { monthLabel } from "@/lib/months";
 import { requireOrg } from "@/lib/session";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/stat";
@@ -17,8 +18,11 @@ import { CollectionTimes } from "./tiempos";
 
 export const metadata: Metadata = { title: "Cobranzas" };
 
-export default async function CollectionsPage() {
+export default async function CollectionsPage({ searchParams }: { searchParams: Promise<{ planilla?: string }> }) {
+  const sp = await searchParams;
   const s = await requireOrg();
+  const prevMonth = (() => { const [yy, mm] = todayISO().slice(0, 7).split("-").map(Number); return new Date(Date.UTC(yy, mm - 2, 1)).toISOString().slice(0, 7); })();
+  const planilla = /^\d{4}-\d{2}$/.test(sp.planilla ?? "") ? sp.planilla! : null;
   const sb = s.supabase;
   const year = todayISO().slice(0, 4);
   const month = todayISO().slice(0, 7);
@@ -55,6 +59,12 @@ export default async function CollectionsPage() {
   return (
     <>
       <PageHeader title="Cobranzas" description="Qué te deben, desde cuándo, y lo que ya cobraste (con retenciones). Los pagos del GCBA se cruzan solos con cada factura: aviso de SIGAF + depósito del Banco Ciudad." />
+      <Card className={cn("mb-5 flex flex-wrap items-center gap-3 px-5 py-3.5", planilla && "ring-2 ring-primary/40")}>
+        <FileSpreadsheet className="size-5 text-accent" />
+        <div className="min-w-0 flex-1"><p className="text-sm font-semibold">Planilla para el contador</p><p className="text-xs text-fg-muted">Facturas emitidas del mes con su estado de cobro, retenciones y los certificados que llegaron por mail.</p></div>
+        <Button asChild variant={planilla ? "default" : "secondary"} size="sm"><a href={`/api/facturas/export?mes=${planilla ?? prevMonth}`}><Download className="size-4" /> {monthLabel(planilla ?? prevMonth)}</a></Button>
+        {!planilla && <Button asChild variant="ghost" size="sm"><a href={`/api/facturas/export?mes=${month}`}>{monthLabel(month)} (en curso)</a></Button>}
+      </Card>
       <CollectionTimes sb={sb} org={s.org.org_id} />
       <GcbaCollections sb={sb} org={s.org.org_id} canEdit={canBill(s.org.role)} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

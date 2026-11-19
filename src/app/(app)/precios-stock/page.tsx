@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Precios y stock" };
 
 type Win = { id: string; contract_number: string; kind: "precios" | "stock"; starts_on: string; ends_on: string; contract_name: string | null; open_sent_at: string | null; closing_sent_at: string | null };
 type Conv = { contract_number: string; name: string | null; process_number: string | null };
-type Line = { contract_number: string; line_number: number; option_number: number; product_name: string; my_current_price: string | null; my_stock_balance: string | null;
+type Line = { id: string; contract_number: string; line_number: number; option_number: number; product_name: string; my_current_price: string | null; my_stock_balance: string | null;
   my_stock: string | null; best_other_price: string | null; cost: string | null };
 
 const SHORT: Record<string, string> = { "623-20-CM26": "Limpieza", "623-26-CM26": "Contenedores", "623-38-CM26": "Tocador y perfumería", "623-43-CM26": "Bazar", "623-36-CM26": "Bazar (Lotería)" };
@@ -25,10 +25,11 @@ export default async function PreciosStockPage() {
   const s = await requireOrg();
   const org = s.org.org_id;
   const today = todayAr();
-  const [{ data: wData }, { data: cData }, { data: lData }] = await Promise.all([
+  const [{ data: wData }, { data: cData }, { data: lData }, { data: oData }] = await Promise.all([
     s.supabase.from("convenio_windows").select("id, contract_number, kind, starts_on, ends_on, contract_name, open_sent_at, closing_sent_at").eq("org_id", org).gte("ends_on", daysAgo(400)).order("starts_on", { ascending: false }),
     s.supabase.from("convenios").select("contract_number, name, process_number").eq("org_id", org),
-    s.supabase.from("convenio_lines").select("contract_number, line_number, option_number, product_name, my_current_price, my_stock_balance, my_stock, best_other_price, cost").eq("org_id", org).eq("is_mine", true).limit(3000),
+    s.supabase.from("convenio_lines").select("id, contract_number, line_number, option_number, product_name, my_current_price, my_stock_balance, my_stock, best_other_price, cost").eq("org_id", org).eq("is_mine", true).limit(3000),
+    s.supabase.from("purchase_order_items").select("convenio_line_id, purchase_orders!inner(created_at, status)").eq("org_id", org).not("convenio_line_id", "is", null).limit(5000),
   ]);
   const wins = (wData ?? []) as Win[];
   const convs = (cData ?? []) as Conv[];
@@ -46,6 +47,17 @@ export default async function PreciosStockPage() {
   const adv = lines.map(advise);
   const beaten = adv.filter((a) => a.status === "te_ganan").sort((a, b) => (b.beatPct ?? 0) - (a.beatPct ?? 0));
   const canRaise = adv.filter((a) => a.status === "ganas" && (a.move ?? 0) > 0).sort((a, b) => (b.move ?? 0) / (b.price ?? 1) - (a.move ?? 0) / (a.price ?? 1));
+
+  // 53) Renglones que ganaste y nadie te pidió en 60 días
+  const lastOrder = new Map<string, string>();
+  for (const r of (oData ?? []) as unknown as { convenio_line_id: string; purchase_orders: { created_at: string; status: string } | { created_at: string; status: string }[] }[]) {
+    const po = Array.isArray(r.purchase_orders) ? r.purchase_orders[0] : r.purchase_orders;
+    if (!po || po.status === "anulada") continue;
+    if ((lastOrder.get(r.convenio_line_id) ?? "") < po.created_at) lastOrder.set(r.convenio_line_id, po.created_at);
+  }
+  const cutoff = daysAgo(60);
+  const idle = lines.filter((l) => (lastOrder.get(l.id) ?? "").slice(0, 10) < cutoff)
+    .sort((a, b) => (lastOrder.get(b.id) ?? "").localeCompare(lastOrder.get(a.id) ?? "") || a.line_number - b.line_number);
 
   return (
     <>
@@ -161,6 +173,22 @@ export default async function PreciosStockPage() {
               </li>
             ))}
             {!canRaise.length && <li className="px-5 py-4 text-sm text-fg-subtle">No hay renglones donde puedas subir sin perder el primer lugar.</li>}
+          </ul>
+        </Card>
+        <Card className="overflow-hidden xl:col-span-2">
+          <CardHeader title={`Nadie te los pidió en 60 días (${idle.length})`} description="Renglones del convenio que son tuyos pero ningún organismo te compró en los últimos 60 días: revisá precio, stock o si conviene dejarlos" />
+          <ul className="max-h-[420px] divide-y divide-border overflow-y-auto">
+            {idle.slice(0, 200).map((l) => {
+              const last = lastOrder.get(l.id);
+              const beat = l.best_other_price && l.my_current_price && Number(l.best_other_price) < Number(l.my_current_price);
+              return (
+                <li key={l.id} className="flex items-center justify-between gap-3 px-5 py-2.5 text-sm">
+                  <div className="min-w-0"><p className="truncate font-medium">R{l.line_number} · {l.product_name}</p><p className="text-xs text-fg-subtle">{label(l.contract_number)}{beat ? " · otro proveedor está más barato" : ""}</p></div>
+                  <p className="shrink-0 text-right text-xs text-fg-muted">{last ? `último pedido ${formatDate(last)}` : "nunca lo pidieron"}</p>
+                </li>
+              );
+            })}
+            {!idle.length && <li className="px-5 py-4 text-sm text-fg-subtle">Todos tus renglones tuvieron pedidos en los últimos 60 días.</li>}
           </ul>
         </Card>
       </div>

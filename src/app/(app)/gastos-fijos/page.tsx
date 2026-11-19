@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { loadBreakEven } from "@/lib/break-even";
 import Link from "next/link";
 import { CalendarClock, CheckCircle2, Landmark, Mail, Receipt, ShoppingBasket, Sparkles, TrendingDown, Wallet } from "lucide-react";
 import { requireOrg } from "@/lib/session";
@@ -83,6 +84,10 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
   const active = rows.filter((r) => r.c.active && !r.c.is_variable);
   const personalTotal = active.filter((r) => r.c.is_personal).reduce((a, r) => a + r.month, 0);
   const total = active.reduce((a, r) => a + r.month, 0);
+  // 77) Suscripciones: cuánto cuestan por año, para revisar las que ya no se usan
+  const subs = active.filter((r) => r.c.category === "software").sort((a, b) => b.month - a.month);
+  const subsYear = subs.reduce((a, r) => a + r.month * 12, 0);
+  const be = await loadBreakEven(s.supabase, s.org.org_id, m);
   const paid = active.filter((r) => r.bill?.paid).reduce((a, r) => a + r.month, 0);
   const byCat = Object.entries(active.reduce<Record<string, number>>((a, r) => { a[r.c.category] = (a[r.c.category] ?? 0) + r.month; return a; }, {})).sort((a, b) => b[1] - a[1]);
   const ventas = Number((monthly ?? []).find((x) => x.direction === "emitido")?.net ?? 0);
@@ -205,6 +210,27 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
         </Card>
 
         <div className="flex flex-col gap-5 self-start">
+          {be.needed && (
+            <Card className="p-5">
+              <p className="text-sm font-semibold">Punto de equilibrio de {monthLabel(m)}</p>
+              <p className="mt-1 text-2xl font-semibold tabular">{formatMoney(be.needed)} <span className="text-sm font-normal text-fg-subtle">netos de IVA</span></p>
+              <div className="mt-2 h-2 rounded-full bg-field"><div className={cn("h-2 rounded-full", (be.pct ?? 0) >= 1 ? "bg-accent" : "bg-warn")} style={{ width: `${Math.min(100, Math.max(2, (be.pct ?? 0) * 100))}%` }} /></div>
+              <p className="mt-2 text-xs text-fg-muted">Vendiste {formatMoney(be.sold)} ({Math.round((be.pct ?? 0) * 100)}%). Es lo que tenés que vender para pagar {formatMoney(be.fixed)} de fijos con tu margen bruto de los últimos 6 meses ({Math.round((be.marginPct ?? 0) * 100)}%).</p>
+            </Card>
+          )}
+          {subs.length > 0 && (
+            <Card className="overflow-hidden">
+              <CardHeader title="Suscripciones y sistemas" description={`${formatMoney(subsYear)} por año. Revisá si todavía los usás: el sistema ve el cobro, no si los abrís.`} />
+              <ul className="divide-y divide-border">
+                {subs.map(({ c, month }) => (
+                  <li key={c.id} className="flex items-center justify-between gap-2 px-5 py-2.5 text-sm">
+                    <span className="min-w-0 truncate">{c.name}</span>
+                    <span className="shrink-0 text-right tabular"><span className="font-medium">{formatMoney(month)}</span><span className="block text-[11px] text-fg-subtle">{formatMoney(month * 12)}/año</span></span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
           {recurringVar.length > 0 && (
             <Card className="overflow-hidden">
               <CardHeader title="Se repiten, pero no son fijos" description={`Dependen del uso: no suman en los fijos. Este mes ${formatMoney(recurringVarTotal)}.`} />

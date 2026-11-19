@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { BreakEven } from "@/lib/break-even";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   AlarmClock, AlertTriangle, ArrowRight, BadgeDollarSign, Banknote, CalendarClock, CheckCircle2, FileWarning, Inbox, Landmark,
@@ -29,20 +30,26 @@ export type TodayData = {
 };
 
 /** Junta todo lo que hay que hacer hoy, de todas las secciones, ordenado por urgencia. */
-export async function loadToday(sb: SupabaseClient, org: string, alerts: Alert[]): Promise<TodayData> {
+export async function loadToday(sb: SupabaseClient, org: string, alertsAll: Alert[], ym?: string): Promise<TodayData> {
   const today = arToday();
   const endToday = `${today}T23:59:59-03:00`;
-  const month = today.slice(0, 7);
+  // Mes que se está mirando (por defecto el actual): lo viejo queda en su mes, no se mezcla
+  const month = ym ?? today.slice(0, 7);
+  const isCurrent = month === today.slice(0, 7);
+  const mStart = `${month}-01`;
+  const mEnd = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1)).toISOString().slice(0, 10);
+  const inMonth = (d: string | null | undefined) => !!d && d.slice(0, 10) >= mStart && d.slice(0, 10) < mEnd;
+  const alerts = isCurrent ? alertsAll.filter((a) => !a.date || a.date >= mStart) : alertsAll.filter((a) => inMonth(a.date));
   const [rem, missing, quotes, claims, ic, bills, lines, board, jobs, bal] = await Promise.all([
     sb.from("reminders").select("id, title, due_at, priority, link_path").eq("org_id", org).eq("status", "pendiente").lte("due_at", endToday).order("due_at").limit(50),
-    sb.from("oc_missing_docs").select("bac_number, in_bac, sources, unit_name, first_seen").eq("org_id", org).limit(500),
+    sb.from("oc_missing_docs").select("bac_number, in_bac, sources, unit_name, first_seen").eq("org_id", org).gte("last_seen", `${mStart}T00:00:00-03:00`).lt("first_seen", `${mEnd}T00:00:00-03:00`).limit(500),
     sb.from("mail_public_insights").select("id, subject, from_name, from_email, received_at").eq("org_id", org).eq("kind", "cotizacion").eq("unanswered", true)
-      .gte("received_at", new Date(Date.now() - 15 * DAY).toISOString()).order("received_at").limit(100),
+      .gte("received_at", `${mStart}T00:00:00-03:00`).lt("received_at", `${mEnd}T00:00:00-03:00`).order("received_at").limit(100),
     sb.from("mail_public_insights").select("id, subject, from_name, oc_ref, received_at").eq("org_id", org).eq("kind", "reclamo").eq("unanswered", true)
-      .gte("received_at", new Date(Date.now() - 30 * DAY).toISOString()).limit(50),
+      .gte("received_at", `${mStart}T00:00:00-03:00`).lt("received_at", `${mEnd}T00:00:00-03:00`).limit(50),
     sb.from("invoice_collections").select("issue_date, total, paid_on, sigaf_notified").eq("org_id", org).eq("doc_number", GCBA).gte("issue_date", addDays(today, -365)).limit(5000),
     sb.from("fixed_cost_bills").select("amount, due_date, period, paid, fixed_costs!inner(is_variable, active)").eq("org_id", org).eq("paid", false)
-      .eq("fixed_costs.is_variable", false).eq("fixed_costs.active", true).lte("period", month).gte("period", addDays(today, -62).slice(0, 7)).limit(500),
+      .eq("fixed_costs.is_variable", false).eq("fixed_costs.active", true).eq("period", month).limit(500),
     sb.from("convenio_lines").select("my_current_price, best_other_price, my_stock").eq("org_id", org).eq("is_mine", true).limit(2000),
     sb.from("delivery_board").select("id", { count: "exact", head: true }).eq("org_id", org).eq("status", "pendiente"),
     sb.from("import_jobs").select("id, status").eq("org_id", org).in("status", ["revision", "error"]).limit(50),
@@ -53,7 +60,7 @@ export async function loadToday(sb: SupabaseClient, org: string, alerts: Alert[]
   const push = (t: Task) => tasks.push(t);
 
   // Recordatorios
-  const rs = (rem.data ?? []) as { id: string; title: string; due_at: string; priority: string; link_path: string | null }[];
+  const rs = (isCurrent ? rem.data ?? [] : []) as { id: string; title: string; due_at: string; priority: string; link_path: string | null }[];
   const overdueRem = rs.filter((r) => Date.parse(r.due_at) < Date.now());
   if (rs.length) push({
     id: "rem", level: overdueRem.length ? "urgente" : "semana", icon: AlarmClock, count: rs.length,
@@ -102,30 +109,30 @@ export async function loadToday(sb: SupabaseClient, org: string, alerts: Alert[]
   // Cobros del GCBA
   const inv = (ic.data ?? []) as { issue_date: string; total: string; paid_on: string | null; sigaf_notified: string | null }[];
   const med = median(inv.filter((x) => x.paid_on).map((x) => daysBetween(x.issue_date, x.paid_on!)));
-  const pend = inv.filter((x) => !x.paid_on && daysBetween(x.issue_date, today) <= 180).map((x) => ({ x, exp: x.sigaf_notified ? addDays(x.sigaf_notified, 1) : addDays(x.issue_date, med ?? 18) }));
-  const inWeek = pend.filter((p) => p.exp >= today && p.exp <= addDays(today, 7));
+  const pend = inv.filter((x) => !x.paid_on && inMonth(x.issue_date)).map((x) => ({ x, exp: x.sigaf_notified ? addDays(x.sigaf_notified, 1) : addDays(x.issue_date, med ?? 18) }));
+  const inWeek = isCurrent ? inv.filter((x) => !x.paid_on && daysBetween(x.issue_date, today) <= 120).map((x) => ({ x, exp: x.sigaf_notified ? addDays(x.sigaf_notified, 1) : addDays(x.issue_date, med ?? 18) })).filter((p) => p.exp >= today && p.exp <= addDays(today, 7)) : [];
   const late = pend.filter((p) => p.exp < today && !p.x.sigaf_notified);
-  const sigafNoBank = inv.filter((x) => x.sigaf_notified && !x.paid_on && daysBetween(x.sigaf_notified, today) >= 3);
+  const sigafNoBank = inv.filter((x) => x.sigaf_notified && !x.paid_on && inMonth(x.sigaf_notified) && daysBetween(x.sigaf_notified, today) >= 3);
   const sum = (xs: { total: string }[]) => xs.reduce((a, x) => a + Number(x.total), 0);
   if (sigafNoBank.length) push({ id: "sigaf", level: "urgente", icon: Landmark, count: sigafNoBank.length, amount: sum(sigafNoBank), title: `SIGAF avisó ${sigafNoBank.length} pagos que no aparecen en el banco`, detail: "Fijate en el home banking si entraron", href: "/cobranzas", cta: "Ver" });
   if (late.length) push({ id: "late-gcba", level: "semana", icon: CalendarClock, count: late.length, amount: sum(late.map((p) => p.x)), title: `${late.length} facturas del GCBA pasadas de lo normal`, detail: `Normalmente pagan a los ${med ?? 18} días y estas ya lo pasaron`, href: "/cobranzas", cta: "Ver" });
 
   // Gastos fijos por vencer
   const bs = (bills.data ?? []) as { amount: string | null; due_date: string | null }[];
-  const dueSoon = bs.filter((b) => b.due_date && b.due_date <= addDays(today, 7));
-  if (dueSoon.length) push({ id: "fixed", level: dueSoon.some((b) => b.due_date! < today) ? "urgente" : "semana", icon: Wallet, count: dueSoon.length, amount: dueSoon.reduce((a, b) => a + Number(b.amount ?? 0), 0), title: `${dueSoon.length} gastos fijos vencen esta semana`, detail: "Luz, teléfono, seguros e impuestos que todavía no se ven pagados en el banco", href: "/gastos-fijos", cta: "Pagar" });
+  const dueSoon = bs.filter((b) => !isCurrent || (b.due_date && b.due_date <= addDays(today, 7)));
+  if (dueSoon.length) push({ id: "fixed", level: dueSoon.some((b) => b.due_date! < today) ? "urgente" : "semana", icon: Wallet, count: dueSoon.length, amount: dueSoon.reduce((a, b) => a + Number(b.amount ?? 0), 0), title: isCurrent ? `${dueSoon.length} gastos fijos vencen esta semana` : `${dueSoon.length} gastos fijos sin pagar`, detail: "Luz, teléfono, seguros e impuestos que todavía no se ven pagados en el banco", href: "/gastos-fijos", cta: "Pagar" });
 
   // Precios y stock
   const ls = (lines.data ?? []) as { my_current_price: string | null; best_other_price: string | null; my_stock: string | null }[];
   const beaten = ls.filter((l) => l.my_current_price && l.best_other_price && Number(l.best_other_price) < Number(l.my_current_price)).length;
-  if (beaten) push({ id: "price", level: "cuando", icon: TrendingDown, count: beaten, title: `Te ganan en precio en ${beaten} renglones`, detail: "Bajá lo justo para volver a ser el más barato, o sabé cuánto perdés si no", href: "/precios-stock", cta: "Ver precios" });
+  if (isCurrent && beaten) push({ id: "price", level: "cuando", icon: TrendingDown, count: beaten, title: `Te ganan en precio en ${beaten} renglones`, detail: "Bajá lo justo para volver a ser el más barato, o sabé cuánto perdés si no", href: "/precios-stock", cta: "Ver precios" });
   const noStock = ls.filter((l) => l.my_stock != null && Number(l.my_stock) <= 0).length;
-  if (noStock) push({ id: "stock", level: "cuando", icon: PackageX, count: noStock, title: `${noStock} renglones sin stock en el convenio`, detail: "Si te compran no vas a poder entregar", href: "/precios-stock", cta: "Revisar" });
+  if (isCurrent && noStock) push({ id: "stock", level: "cuando", icon: PackageX, count: noStock, title: `${noStock} renglones sin stock en el convenio`, detail: "Si te compran no vas a poder entregar", href: "/precios-stock", cta: "Revisar" });
 
   const pendingBoard = board.count ?? 0;
-  if (pendingBoard) push({ id: "board", level: "cuando", icon: Truck, count: pendingBoard, title: `${pendingBoard} entregas en la lista para llevar`, detail: "Agrupalas por zona para hacer menos viajes", href: "/entregas/pendientes", cta: "Ver lista" });
+  if (isCurrent && pendingBoard) push({ id: "board", level: "cuando", icon: Truck, count: pendingBoard, title: `${pendingBoard} entregas en la lista para llevar`, detail: "Agrupalas por zona para hacer menos viajes", href: "/entregas/pendientes", cta: "Ver lista" });
   const js = (jobs.data ?? []) as { status: string }[];
-  if (js.length) push({ id: "jobs", level: js.some((j) => j.status === "error") ? "semana" : "cuando", icon: ScanSearch, count: js.length, title: `${js.length} documentos importados para revisar`, detail: js.some((j) => j.status === "error") ? "Hay alguno con error de lectura" : "Confirmá los datos leídos", href: "/ordenes/importar", cta: "Revisar" });
+  if (isCurrent && js.length) push({ id: "jobs", level: js.some((j) => j.status === "error") ? "semana" : "cuando", icon: ScanSearch, count: js.length, title: `${js.length} documentos importados para revisar`, detail: js.some((j) => j.status === "error") ? "Hay alguno con error de lectura" : "Confirmá los datos leídos", href: "/ordenes/importar", cta: "Revisar" });
 
   const order: Record<Level, number> = { urgente: 0, semana: 1, cuando: 2 };
   tasks.sort((a, b) => order[a.level] - order[b.level] || (b.amount ?? 0) - (a.amount ?? 0));
@@ -150,14 +157,14 @@ const LEVEL: Record<Level, { label: string; dot: string; text: string }> = {
   cuando: { label: "Cuando puedas", dot: "bg-brand", text: "text-brand" },
 };
 
-export function TodayCard({ tasks }: { tasks: Task[] }) {
+export function TodayCard({ tasks, title = "Qué hacer hoy", monthLabel }: { tasks: Task[]; title?: string; monthLabel?: string }) {
   const groups = (["urgente", "semana", "cuando"] as Level[]).map((l) => [l, tasks.filter((t) => t.level === l)] as const).filter(([, l]) => l.length);
   return (
     <Card className="overflow-hidden">
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border px-5 py-4">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Qué hacer hoy</h2>
-          <p className="text-sm text-fg-muted">{tasks.length ? `Todo lo pendiente del sistema, ordenado por urgencia: ${tasks.filter((t) => t.level === "urgente").length} urgentes.` : "No hay nada pendiente."}</p>
+          <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+          <p className="text-sm text-fg-muted">{tasks.length ? `Lo pendiente${monthLabel ? ` de ${monthLabel}` : ""}, ordenado por urgencia: ${tasks.filter((t) => t.level === "urgente").length} urgentes.` : `No hay nada pendiente${monthLabel ? ` de ${monthLabel}` : ""}.`}</p>
         </div>
         <div className="flex gap-3 text-xs">
           {groups.map(([l, list]) => <span key={l} className="flex items-center gap-1.5"><span className={cn("size-2 rounded-full", LEVEL[l].dot)} />{LEVEL[l].label} {list.length}</span>)}
@@ -199,7 +206,7 @@ function MoneyRow({ icon: I, label, value, sub, href, tone }: { icon: React.Elem
   );
 }
 
-export function MoneyCard({ m, receivable, overdue }: { m: TodayData["money"]; receivable: number; overdue: number }) {
+export function MoneyCard({ m, be, receivable, overdue }: { m: TodayData["money"]; be?: BreakEven; receivable: number; overdue: number }) {
   return (
     <Card className="overflow-hidden">
       <Link href="/banco" className="block bg-gradient-to-br from-brand/15 to-transparent px-5 py-5 hover:from-brand/20">
@@ -210,10 +217,17 @@ export function MoneyCard({ m, receivable, overdue }: { m: TodayData["money"]; r
       <div className="divide-y divide-border border-t border-border">
         <MoneyRow icon={CalendarClock} label="Te deberían pagar en 7 días" value={formatMoney(m.inWeek)} sub={`${m.inWeekN} facturas del GCBA · pagan a los ${m.medianDays ?? "—"} días`} href="/cobranzas" tone="accent" />
         <MoneyRow icon={Inbox} label="Por cobrar" value={formatMoney(receivable)} sub={overdue > 0 ? `${formatMoney(overdue)} vencido` : "nada vencido"} href="/cobranzas" tone={overdue > 0 ? "warn" : undefined} />
-        {m.lateN > 0 && <MoneyRow icon={AlertTriangle} label="Atrasado del GCBA" value={formatMoney(m.late)} sub={`${m.lateN} facturas pasadas de lo normal`} href="/cobranzas" tone="warn" />}
+        {m.lateN > 0 && <MoneyRow icon={AlertTriangle} label="Atrasado del GCBA" value={formatMoney(m.late)} sub={`${m.lateN} facturas del mes pasadas de lo normal`} href="/cobranzas" tone="warn" />}
         {m.sigafNoBankN > 0 && <MoneyRow icon={Landmark} label="SIGAF pagó y no entró" value={formatMoney(m.sigafNoBank)} sub={`${m.sigafNoBankN} facturas`} href="/cobranzas" tone="danger" />}
-        <MoneyRow icon={Wallet} label="Gastos fijos sin pagar" value={formatMoney(m.fixedDue)} sub={`${m.fixedDueN} facturas de este mes y el anterior`} href="/gastos-fijos" />
+        <MoneyRow icon={Wallet} label="Gastos fijos sin pagar" value={formatMoney(m.fixedDue)} sub={`${m.fixedDueN} facturas del mes`} href="/gastos-fijos" />
       </div>
+      {be?.needed && (
+        <Link href="/gastos-fijos" className="block border-t border-border px-5 py-3 hover:bg-surface-2/60">
+          <div className="flex items-baseline justify-between gap-2 text-sm"><span>Punto de equilibrio</span><span className="font-semibold tabular">{formatMoney(be.sold)} <span className="text-xs font-normal text-fg-subtle">de {formatMoney(be.needed)}</span></span></div>
+          <div className="mt-1.5 h-1.5 rounded-full bg-field"><div className={cn("h-1.5 rounded-full", (be.pct ?? 0) >= 1 ? "bg-accent" : "bg-warn")} style={{ width: `${Math.min(100, Math.max(2, (be.pct ?? 0) * 100))}%` }} /></div>
+          <p className="mt-1 text-xs text-fg-subtle">{(be.pct ?? 0) >= 1 ? "Ya cubriste los gastos fijos del mes: lo que sigue es ganancia." : `Vendido (neto) contra lo que necesitás para cubrir ${formatMoney(be.fixed)} de fijos con tu margen del ${Math.round((be.marginPct ?? 0) * 100)}%.`}</p>
+        </Link>
+      )}
     </Card>
   );
 }

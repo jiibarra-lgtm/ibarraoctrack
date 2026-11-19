@@ -137,3 +137,48 @@ export function parseMercadoLibreMail(m: MlMail): MlEvent | null {
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Devoluciones y reclamos de compras
+// ---------------------------------------------------------------------------
+export type MlReturnStage = "puede_devolver" | "despachar" | "protegida" | "reembolsada";
+export type MlReturnEvent = { message_id: string; at: string; stage: MlReturnStage; title: string; deadline: string | null; claim: string | null };
+
+/** "jueves 26 de noviembre" / "19 de noviembre" → fecha (año del mail, o el siguiente si ya pasó). */
+export function mlDeadline(text: string, received: string): string | null {
+  const m = /(?:hasta el|protegida hasta el)\s+(?:\p{L}+\s+)?(\d{1,2}) de (\p{L}+)/iu.exec(text);
+  const mi = m ? MONTHS.indexOf(m[2].toLowerCase()) : -1;
+  if (!m || mi < 0) return null;
+  const rec = new Date(received);
+  let y = rec.getUTCFullYear();
+  if (mi < rec.getUTCMonth() - 1) y += 1; // "5 de enero" en un mail de diciembre
+  return `${y}-${String(mi + 1).padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+}
+
+/** Título del producto en el cuerpo: viene después de "Ir a Mercado libre" o es la línea cortada con "...". */
+function returnTitle(lines: string[]): string {
+  const i = lines.findIndex((l) => /^(Ir a )?Mercado libre$/i.test(l));
+  const cand = (i >= 0 ? lines[i + 1] : null) ?? lines.find((l) => /\.\.\.$|…$/.test(l)) ?? "";
+  return cand.replace(/^Ir a Mercado libre\s*/i, "");
+}
+
+export function parseMlReturnMail(m: MlMail): MlReturnEvent | null {
+  if (!/mercadolibre\.com/i.test(m.from)) return null;
+  const date = new Date(m.date);
+  if (Number.isNaN(date.getTime())) return null;
+  const at = date.toISOString();
+  const subject = m.subject.replace(/\s+/g, " ").trim();
+  const lines = mlLines(m.body);
+  const text = lines.join("\n");
+  const base = { message_id: m.id, at, claim: /Reclamo n[º°o]\s*(\d+)/i.exec(subject + " " + text)?.[1] ?? null };
+
+  let s = /^Te devolvimos el dinero de (.+)$/i.exec(subject);
+  if (s) return { ...base, stage: "reembolsada", title: clean(s[1].replace(/&#43;/g, "+")), deadline: null };
+  if (/^Llevá (el|los) productos? a un Punto de despacho/i.test(subject))
+    return { ...base, stage: "despachar", title: clean(returnTitle(lines)), deadline: mlDeadline(text, at) };
+  if (/^Podés iniciar la devolución/i.test(subject))
+    return { ...base, stage: "puede_devolver", title: clean(returnTitle(lines)), deadline: mlDeadline(text, at) };
+  s = /tu compra sigue protegida hasta el (\d{1,2} de \p{L}+)/iu.exec(subject);
+  if (s) return { ...base, stage: "protegida", title: clean(returnTitle(lines) || (/Aún podés pedirnos ayuda con (.+?)(?:\n|$)/.exec(text)?.[1] ?? "")), deadline: mlDeadline(`hasta el ${s[1]}`, at) };
+  return null;
+}

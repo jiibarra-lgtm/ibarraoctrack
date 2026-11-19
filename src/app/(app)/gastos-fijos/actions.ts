@@ -51,7 +51,7 @@ export async function setCostActive(id: string, active: boolean): Promise<R> {
 export async function setCostVariable(id: string, variable: boolean): Promise<R> {
   const s = await requireOrg();
   if (!can(s.org.role) || !isUuid(id)) return { ok: false, error: "No permitido" };
-  const { error } = await s.supabase.from("fixed_costs").update({ is_variable: variable, updated_at: new Date().toISOString() }).eq("id", id).eq("org_id", s.org.org_id);
+  const { error } = await s.supabase.from("fixed_costs").update({ is_variable: variable, variable_manual: true, updated_at: new Date().toISOString() }).eq("id", id).eq("org_id", s.org.org_id);
   if (error) return { ok: false, error: friendlyDbError(error) };
   return done();
 }

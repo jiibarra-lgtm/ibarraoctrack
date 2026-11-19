@@ -2,3 +2,6 @@
 -- 1) oc_missing_docs: solo OC con movimiento desde organizations.ops_start_date (HAVING max(at) >= inicio)
 -- 2) bank_fixed_purchases(p_org): compras con débito a un proveedor que ya es gasto fijo (ej. "COMPRA ROAL SRL")
 --    cuentan como boleta pagada del mes hasta que llega la factura de ARCA; bank_fixed_costs la llama al final.
+-- 3) bank_fixed_purchases solo toma compras con tarjeta (kind = 'compra'): las transferencias pagan una factura, no son gasto aparte.
+--    Se borraron las boletas "banco" creadas desde transferencias para gastos que vienen de ARCA (se contaban doble).
+-- 4) bank_fixed_split_payments(p_org): varias transferencias el mismo día a la misma persona que suman una factura de ARCA la marcan pagada.

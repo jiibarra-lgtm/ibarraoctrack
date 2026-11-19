@@ -37,7 +37,7 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
     s.supabase.from("fixed_costs").select("*").eq("org_id", s.org.org_id).order("category").order("name"),
     s.supabase.from("fixed_cost_bills").select("*").eq("org_id", s.org.org_id).eq("period", m),
     s.supabase.from("arca_recurring_suppliers").select("*").eq("org_id", s.org.org_id).order("is_service", { ascending: false }).order("months", { ascending: false }).order("avg_month", { ascending: false }).limit(40),
-    s.supabase.from("arca_monthly").select("direction, net").eq("org_id", s.org.org_id).eq("month", m),
+    s.supabase.from("arca_monthly").select("direction, net, vouchers").eq("org_id", s.org.org_id).eq("month", m),
     s.supabase.from("payments_out_overview").select("id, kind, paid_at, amount, payee, payee_key, concept, card, final_category, ignored, cost_id, cost_name").eq("org_id", s.org.org_id).gte("paid_at", `${m}-01`).lt("paid_at", next).order("paid_at", { ascending: false }).limit(1000),
   ]);
   const payList = (pays ?? []) as Pay[];
@@ -92,6 +92,10 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
   const byCat = Object.entries(active.reduce<Record<string, number>>((a, r) => { a[r.c.category] = (a[r.c.category] ?? 0) + r.month; return a; }, {})).sort((a, b) => b[1] - a[1]);
   const ventas = Number((monthly ?? []).find((x) => x.direction === "emitido")?.net ?? 0);
   const compras = Number((monthly ?? []).find((x) => x.direction === "recibido")?.net ?? 0);
+  const ventasN = Number((monthly ?? []).find((x) => x.direction === "emitido")?.vouchers ?? 0);
+  // Si en ARCA casi no hay facturas emitidas del mes (todavía no se trajeron), el resultado no dice nada: no se pinta en rojo
+  const sinVentas = compras > 0 && ventas < compras * 0.2;
+  const resultado = ventas - compras - (total - personalTotal) - varTotal - recurringVarTotal;
   const tabHref = (v: string) => `/gastos-fijos?${new URLSearchParams({ m, ...(v !== "fijos" ? { v } : {}) })}`;
   const groups = Object.keys(CATEGORY_LABEL).map((k) => [k, rows.filter((r) => r.c.category === k && !r.c.is_variable)] as const).filter(([, l]) => l.length);
 
@@ -114,7 +118,8 @@ export default async function GastosFijosPage({ searchParams }: { searchParams: 
         <Stat icon={CheckCircle2} label="Pagado" value={formatMoney(paid)} sub={`Falta ${formatMoney(Math.max(0, total - paid))}`} tone="accent" />
         <Stat icon={CalendarClock} label="Por vencer" value={String(active.filter((r) => r.bill && !r.bill.paid && r.bill.due_date).length)} sub="facturas recibidas sin pagar" tone="warn" />
         <Stat icon={ShoppingBasket} label="Gastos variables" value={formatMoney(varTotal)} sub={`${variables.length} pagos con tarjeta y transferencias`} href={tabHref("variables")} />
-        <Stat icon={TrendingDown} label="Resultado del mes" value={formatMoney(ventas - compras - (total - personalTotal) - varTotal - recurringVarTotal)} tone={ventas - compras - (total - personalTotal) - varTotal - recurringVarTotal < 0 ? "danger" : undefined} sub={`ventas − compras − fijos − variables (sin IVA)${personalTotal ? " · sin los personales" : ""}`} />
+        <Stat icon={TrendingDown} label="Resultado del mes" value={sinVentas ? "Incompleto" : formatMoney(resultado)} tone={!sinVentas && resultado < 0 ? "danger" : undefined}
+          sub={sinVentas ? `Faltan tus ventas: ARCA tiene ${ventasN} factura${ventasN === 1 ? "" : "s"} emitida${ventasN === 1 ? "" : "s"} (${formatMoney(ventas)}) contra ${formatMoney(compras)} de compras` : `ventas − compras − fijos − variables (sin IVA)${personalTotal ? " · sin los personales" : ""}`} />
       </div>
 
       <div className="mt-5 inline-flex rounded-full border border-card-border bg-field p-1 text-sm">

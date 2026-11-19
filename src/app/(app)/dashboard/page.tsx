@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
-import { MissingOcDocs } from "@/components/oc/missing-docs";
 import Link from "next/link";
-import { Activity, ArrowRight, CircleCheck, FileText, Inbox, ScanSearch, Upload, Wallet } from "lucide-react";
+import { Activity, AlarmClock, ArrowRight, CircleCheck, FileText, TrendingUp, Truck, Upload, Wallet } from "lucide-react";
 import { computeAlerts } from "@/lib/alerts";
 import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
@@ -12,8 +11,11 @@ import { sum } from "@/lib/money";
 import type { PoStatus } from "@/lib/po/schema";
 import { MonthlyChart } from "./monthly-chart";
 import { loadMonthStages, MonthStagesCard } from "./month-stages";
+import { loadToday, MoneyCard, TodayCard } from "./today";
 
-export const metadata: Metadata = { title: "Dashboard" };
+export const metadata: Metadata = { title: "Inicio" };
+
+const longDate = () => new Date(Date.now() - 3 * 3600e3).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 
 const ACTIVE: PoStatus[] = ["recibida", "perfeccionada", "en_ejecucion"];
 
@@ -32,13 +34,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const iva = sp.iva === "sin" ? "sin" : "con";
   const stagesP = loadMonthStages(s.supabase, org, ym);
 
-  const [totals, monthly, top, recent, pending, profits, delSummary, upcoming] = await Promise.all([
+  const [totals, monthly, top, recent, profits, delSummary, upcoming] = await Promise.all([
     s.supabase.rpc("po_totals", { p_org: org }),
     s.supabase.rpc("po_monthly", { p_org: org, p_from: from }),
     s.supabase.rpc("top_customers", { p_org: org, p_limit: 6 }),
     s.supabase.from("purchase_orders_overview").select("id, bac_number, display_number, customer_name, issue_date, status, currency, total_amount, net_amount")
       .eq("org_id", org).order("created_at", { ascending: false }).limit(6),
-    s.supabase.from("import_jobs").select("id, kind, status, created_at, documents(title)").eq("org_id", org).in("status", ["pendiente", "revision", "error"]).order("created_at", { ascending: false }).limit(5),
     s.supabase.from("po_profitability").select("currency, status, direct_cost_real, direct_cost_estimated, operating_profit_estimated, operating_margin_estimated, min_margin_pct, operating_profit_realized").eq("org_id", org).not("status", "in", "(anulada,borrador)"),
     s.supabase.from("po_delivery_summary").select("purchase_order_id, is_late").eq("org_id", org).eq("is_late", true),
     s.supabase.from("deliveries").select("id", { count: "exact", head: true }).eq("org_id", org).in("status", ["programada", "en_preparacion", "despachada"]),
@@ -90,18 +91,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   ]);
   const receivable = sum(openInv.filter((i) => i.currency === main).map((i) => String(i.balance)));
   const overdueAmt = sum(openInv.filter((i) => i.currency === main && i.collection_status === "vencida").map((i) => String(i.balance)));
-  const stages = await stagesP;
-  const urgent = alerts.filter((a) => a.level === "danger");
+  const [stages, today] = await Promise.all([stagesP, loadToday(s.supabase, org, alerts)]);
   const empty = nTotal === 0 && rows.length === 0;
 
   return (
     <>
       <PageHeader
         title={`Hola${s.fullName ? `, ${s.fullName.split(" ")[0]}` : ""}`}
-        description={`Resumen de ${s.org.org_name}`}
-        actions={writable && <Button asChild><Link href="/ordenes/importar"><Upload /> Importar OC</Link></Button>}
+        description={<span className="capitalize">{longDate()}</span>}
+        actions={writable && (
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="secondary"><Link href="/recordatorios"><AlarmClock /> Recordatorio</Link></Button>
+            <Button asChild variant="secondary"><Link href="/entregas/pendientes"><Truck /> Entregas</Link></Button>
+            <Button asChild><Link href="/ordenes/importar"><Upload /> Importar OC</Link></Button>
+          </div>
+        )}
       />
-      <MissingOcDocs sb={s.supabase} org={org} mode="compact" />
 
       {empty ? (
         <Card>
@@ -113,18 +118,30 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           />
         </Card>
       ) : (
-        <div className="flex flex-col gap-5">
-          {stages && <MonthStagesCard data={stages} ym={ym} current={current} iva={iva} />}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Kpi icon={Wallet} label="Total adjudicado" value={formatMoney(awarded, main)} sub={`${nTotal} órdenes vigentes`} href="/ordenes" />
-            <Kpi icon={Activity} label="En curso" value={formatMoney(activeAmt, main)} sub={`${nActive} órdenes activas`} href="/ordenes?estado=en_ejecucion" />
-            <Kpi icon={CircleCheck} label="Completadas" value={String(nDone)} sub={nTotal ? `${Math.round((nDone / nTotal) * 100)}% del total` : "—"} href="/ordenes?estado=completada" />
-            <Kpi icon={Inbox} label="Importaciones por revisar" value={String(pending.data?.filter((p) => p.status === "revision").length ?? 0)} sub={pending.data?.some((p) => p.status === "error") ? "Hay importaciones con error" : "Al día"} href="/ordenes/importar" />
+        <div className="flex flex-col gap-6">
+          {/* 1 · Lo que hay que hacer y la plata */}
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+            <TodayCard tasks={today.tasks} />
+            <MoneyCard m={today.money} receivable={Number(receivable)} overdue={Number(overdueAmt)} />
           </div>
-          {currencies.length > 1 && (
-            <p className="text-xs text-fg-subtle">Importes en {main}. También hay órdenes en {currencies.slice(1).join(", ")}: no se suman sin conversión explícita.</p>
-          )}
 
+          {/* 2 · Cómo viene el mes */}
+          <Section title="Cómo viene el mes" sub="Adjudicado → entregado → facturado → cobrado, y lo que te queda de ganancia.">
+            {stages && <MonthStagesCard data={stages} ym={ym} current={current} iva={iva} />}
+          </Section>
+
+          {/* 3 · Los números grandes */}
+          <Section title="Tus órdenes" sub={`Importes en ${main}${currencies.length > 1 ? ` · también hay en ${currencies.slice(1).join(", ")} (no se suman)` : ""}.`}>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Kpi icon={Activity} label="En curso" value={formatMoney(activeAmt, main)} sub={`${nActive} órdenes activas`} href="/ordenes?estado=en_ejecucion" />
+            <Kpi icon={TrendingUp} label="Ganancia estimada en curso" value={formatMoney(profitEst, main)} sub={`ya ganado ${formatMoney(profitReal, main)}`} href="/analitica/ranking" />
+            <Kpi icon={Wallet} label="Total adjudicado" value={formatMoney(awarded, main)} sub={`${nTotal} órdenes vigentes`} href="/ordenes" />
+            <Kpi icon={CircleCheck} label="Completadas" value={String(nDone)} sub={nTotal ? `${Math.round((nDone / nTotal) * 100)}% del total` : "—"} href="/ordenes?estado=completada" />
+          </div>
+          </Section>
+
+          {/* 4 · Ventas */}
+          <Section title="Ventas" sub="Cuánto te adjudican por mes y quién te compra más.">
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
             <Card>
               <CardHeader title="Adjudicado por mes" description={`Últimos 12 meses · por fecha de autorización · ${main}`} />
@@ -156,6 +173,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             </Card>
           </div>
 
+          </Section>
+
+          {/* 5 · Lo último */}
+          <Section title="Lo último">
           <div className="grid gap-5 lg:grid-cols-2">
             <Card>
               <CardHeader title="Últimas órdenes" action={<Button asChild variant="ghost" size="sm"><Link href="/ordenes">Ver todas <ArrowRight /></Link></Button>} />
@@ -175,34 +196,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </ul>
             </Card>
             <div className="flex flex-col gap-5">
-              {(pending.data ?? []).length > 0 && (
-                <Card>
-                  <CardHeader title="Importaciones pendientes" />
-                  <ul className="divide-y divide-border">
-                    {(pending.data ?? []).map((j) => (
-                      <li key={j.id}>
-                        <Link href={j.kind === "factura_proveedor" ? `/compras/importar/${j.id}` : j.kind === "remito" ? `/entregas/remito/${j.id}` : `/ordenes/importar/${j.id}`} className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-surface-2/60 sm:px-5">
-                          <ScanSearch className="size-4 text-warn" />
-                          <span className="flex-1 truncate">{(j.documents as unknown as { title: string } | null)?.title ?? "Documento"}</span>
-                          <span className="text-xs text-fg-subtle">{j.status === "error" ? "Error" : j.status === "revision" ? "Revisar" : "Pendiente"}</span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </Card>
-              )}
-              <Card>
-                <CardHeader title="Cobranzas y alertas" action={<Button asChild variant="ghost" size="sm"><Link href="/alertas">Alertas <ArrowRight /></Link></Button>} />
-                <CardBody className="grid grid-cols-2 gap-x-6 gap-y-4">
-                  <Mini label="Por cobrar" value={formatMoney(receivable, main)} href="/cobranzas" />
-                  <Mini label="Vencido" value={formatMoney(overdueAmt, main)} href="/cobranzas" warn={Number(overdueAmt) > 0} />
-                  <Mini label="Alertas urgentes" value={String(urgent.length)} href="/alertas" warn={urgent.length > 0} />
-                  <Mini label="Avisos totales" value={String(alerts.length)} href="/alertas" />
-                  {urgent.slice(0, 3).map((a) => (
-                    <Link key={a.id} href={a.href} className="col-span-2 truncate text-xs text-danger hover:underline">• {a.title} — {a.detail}</Link>
-                  ))}
-                </CardBody>
-              </Card>
               <Card>
                 <CardHeader title="Ganancias y entregas" description="Ganancia contable: no es dinero cobrado" action={<Button asChild variant="ghost" size="sm"><Link href="/analitica/ranking">Ranking <ArrowRight /></Link></Button>} />
                 <CardBody className="grid grid-cols-2 gap-x-6 gap-y-4">
@@ -217,9 +210,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </Card>
             </div>
           </div>
+          </Section>
         </div>
       )}
     </>
+  );
+}
+
+function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-3">
+      <div className="flex items-baseline gap-3 border-b border-border pb-2">
+        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
+        {sub && <p className="truncate text-xs text-fg-subtle">{sub}</p>}
+      </div>
+      {children}
+    </section>
   );
 }
 

@@ -23,6 +23,8 @@ export async function POST(req: NextRequest) {
   });
   const check = await sb.rpc("ingest_supplier_invoices", { p_token: token, p_invoices: [] });
   if (check.error) return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+  // señal de vida para el vigía de Gmail (aunque no haya mails nuevos)
+  await sb.rpc("inbound_heartbeat", { p_token: token }).then(() => null, () => null);
   // Cada corrida del script (10 min): reposición de stock y facturas de Mercado Libre, después de responder
   after(() => runMlTasks(tokenRpc(token), tokenStockRpc(token), { sync: true }).catch(() => null));
   // Avisos al celular (PWA): ventana de precios de los convenios que abre hoy o cierra mañana

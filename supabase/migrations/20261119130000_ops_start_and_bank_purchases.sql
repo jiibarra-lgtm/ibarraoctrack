@@ -5,3 +5,5 @@
 -- 3) bank_fixed_purchases solo toma compras con tarjeta (kind = 'compra'): las transferencias pagan una factura, no son gasto aparte.
 --    Se borraron las boletas "banco" creadas desde transferencias para gastos que vienen de ARCA (se contaban doble).
 -- 4) bank_fixed_split_payments(p_org): varias transferencias el mismo día a la misma persona que suman una factura de ARCA la marcan pagada.
+-- 5) inbound_heartbeat(p_token): el script la llama al pedir la configuración (cada corrida) y actualiza last_used_at,
+--    así el vigía no avisa "se cortó" cuando solo llegaron mails de banco/servicios/pagos.

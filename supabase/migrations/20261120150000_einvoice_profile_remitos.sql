@@ -36,7 +36,7 @@ create policy einvoice_settings_write on public.einvoice_settings for all to aut
 
 insert into public.einvoice_settings (org_id, receiver_cuit, receiver_name, receiver_address, iva_condition, sale_condition_id, concept, remito_pv)
 select o.id, '34999032089', 'GOBIERNO DE LA CIUDAD DE BUENOS AIRES', 'Belgrano 840, CABA', 4,
-  (select sc.id from public.sale_conditions sc where sc.org_id = o.id and sc.code = 9), 1, 2
+  (select sc.id from public.sale_conditions sc where sc.org_id = o.id and sc.code = 9), 1, 1
 from public.organizations o
 on conflict (org_id) do nothing;
 

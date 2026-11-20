@@ -93,7 +93,7 @@ export function EInvoiceSettingsForm({ initial, options, canEdit }: { initial: E
   const router = useRouter();
   const [v, setV] = React.useState<EInvoiceSettings>(initial ?? {
     fixed_receiver: true, receiver_cuit: "34999032089", receiver_name: "GOBIERNO DE LA CIUDAD DE BUENOS AIRES", receiver_address: "Belgrano 840, CABA",
-    iva_condition: 4, sale_condition_id: null, concept: 1, require_remito: true, remito_pv: 2,
+    iva_condition: 4, sale_condition_id: null, concept: 1, require_remito: true, remito_pv: 1,
   });
   const [busy, setBusy] = React.useState(false);
   const set = <K extends keyof EInvoiceSettings>(k: K, x: EInvoiceSettings[K]) => setV((o) => ({ ...o, [k]: x }));

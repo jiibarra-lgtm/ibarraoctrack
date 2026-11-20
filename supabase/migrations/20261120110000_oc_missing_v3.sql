@@ -1,0 +1,3 @@
+-- Aplicada desde el panel (ver historial): oc_missing_dismissed (ocultar OC de la lista) y oc_missing_docs v3:
+-- la lista de entregas solo cuenta pendientes o entregadas desde ops_start_date; números con formato \d{2,5}-\d{4,5}-OCnn;
+-- excluye las ocultadas.

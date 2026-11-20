@@ -41,8 +41,15 @@ export async function saveIibbFiling(month: string, base: number, deductions: Re
     const s = await guard();
     if (!/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(base)) return { ok: false, error: "Datos inválidos" };
     const org = s.org.org_id;
-    const { data: js } = await s.supabase.from("iibb_jurisdictions").select("code, coefficient, rate").eq("org_id", org).eq("active", true);
-    const jur = (js ?? []).map((j) => ({ code: Number(j.code), coefficient: Number(j.coefficient), rate: Number(j.rate) }));
+    const [{ data: js }, { data: kept }] = await Promise.all([
+      s.supabase.from("iibb_jurisdictions").select("code, coefficient, rate").eq("org_id", org).eq("active", true),
+      s.supabase.from("iibb_filings").select("detail").eq("org_id", org).eq("month", month).maybeSingle(),
+    ]);
+    // Si el mes ya tenía liquidación guardada, se respetan sus coeficientes y alícuotas
+    const keptRows = ((kept?.detail ?? []) as { code: number; coefficient: number; rate: number }[]);
+    const jur = keptRows.length
+      ? keptRows.map((j) => ({ code: Number(j.code), coefficient: Number(j.coefficient), rate: Number(j.rate) }))
+      : (js ?? []).map((j) => ({ code: Number(j.code), coefficient: Number(j.coefficient), rate: Number(j.rate) }));
     if (!jur.length) return { ok: false, error: "Cargá las jurisdicciones primero" };
     const ded: Record<number, IibbDeductions> = {};
     for (const j of jur) { const d = Ded.safeParse(deductions[String(j.code)] ?? { retenciones: 0, percepciones: 0, sircreb: 0 }); if (!d.success) return { ok: false, error: "Deducciones inválidas" }; ded[j.code] = d.data; }

@@ -36,12 +36,14 @@ export default async function IibbPage({ searchParams }: { searchParams: Promise
     sb.from("tax_settings").select("iibb_day").eq("org_id", org).maybeSingle(),
   ]);
   const allJ = ((js ?? []) as { code: number; coefficient: string; rate: string; active: boolean }[]).map((j) => ({ code: Number(j.code), coefficient: N(j.coefficient), rate: N(j.rate), active: j.active }));
-  const active: IibbJur[] = allJ.filter((j) => j.active).map(({ code, coefficient, rate }) => ({ code, coefficient, rate }));
+  const current: IibbJur[] = allJ.filter((j) => j.active).map(({ code, coefficient, rate }) => ({ code, coefficient, rate }));
   const sales = ((em ?? []) as { net_taxed: string; net_untaxed: string; exempt: string; exchange_rate: string | null; credit_note: boolean }[])
     .reduce((a, v) => a + (N(v.net_taxed) + N(v.net_untaxed) + N(v.exempt)) * (N(v.exchange_rate) || 1) * (v.credit_note ? -1 : 1), 0);
   const retIibb = N(wh?.ret_iibb), sircreb = N(wh?.sircreb);
-  type Det = { code: number; retenciones: number; percepciones: number; sircreb: number; favor_next: number };
+  type Det = { code: number; coefficient: number; rate: number; retenciones: number; percepciones: number; sircreb: number; favor_next: number };
   const saved = (filing?.detail ?? []) as Det[];
+  // Un mes ya guardado conserva los coeficientes y alícuotas con que se liquidó (si después cambia la alícuota, no se reescribe)
+  const active: IibbJur[] = saved.length ? saved.map((d) => ({ code: Number(d.code), coefficient: N(d.coefficient), rate: N(d.rate) })) : current;
   const defaults: Record<number, IibbDeductions> = saved.length
     ? Object.fromEntries(saved.map((d) => [d.code, { retenciones: N(d.retenciones), percepciones: N(d.percepciones), sircreb: N(d.sircreb) }]))
     : defaultDeductions(active, retIibb, sircreb);

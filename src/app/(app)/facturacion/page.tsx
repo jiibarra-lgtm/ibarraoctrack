@@ -23,11 +23,22 @@ const FILTERS = [["todas", "Todas"], ["pendientes", "Por cobrar"], ["vencidas", 
 export default async function BillingPage({ searchParams }: { searchParams: Promise<{ f?: string }> }) {
   const { f = "todas" } = await searchParams;
   const s = await requireOrg();
-  const [invoices, billable, { data: emissionsData }] = await Promise.all([
+  const [invoices, billable, { data: emissionsData }, { data: pendRem }] = await Promise.all([
     loadInvoices(s.supabase, s.org.org_id), loadBillableOrders(s.supabase, s.org.org_id),
     s.supabase.from("arca_emissions_overview").select("id, kind, voucher_type, point_of_sale, number, issue_date, receiver_name, total, po_label, purchase_order_id, credit_note_id, cae")
       .eq("org_id", s.org.org_id).order("created_at", { ascending: false }).limit(60),
+    s.supabase.from("remitos").select("id, purchase_order_id, issued_at").eq("org_id", s.org.org_id).is("invoice_emission_id", null)
+      .neq("status", "anulado").not("purchase_order_id", "is", null).order("issued_at").limit(500),
   ]);
+  // Remitos sin facturar, agrupados por OC (se facturan juntos desde la factura electrónica de la OC)
+  const remByPo = new Map<string, { n: number; first: string }>();
+  for (const r of (pendRem ?? []) as { purchase_order_id: string; issued_at: string }[]) {
+    const e = remByPo.get(r.purchase_order_id) ?? { n: 0, first: r.issued_at };
+    e.n++; remByPo.set(r.purchase_order_id, e);
+  }
+  const { data: remPos } = remByPo.size
+    ? await s.supabase.from("purchase_orders_overview").select("id, bac_number, display_number, customer_name").in("id", [...remByPo.keys()])
+    : { data: [] };
   type Em = { id: string; kind: string; voucher_type: number; point_of_sale: number; number: number; issue_date: string; receiver_name: string; total: string; po_label: string | null; purchase_order_id: string | null; credit_note_id: string | null; cae: string };
   const emissions = (emissionsData ?? []) as Em[];
   const bill = canBill(s.org.role);
@@ -95,7 +106,27 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
           )}
         </Card>
 
-        <Card className="self-start">
+        <div className="space-y-5 self-start">
+        {remByPo.size > 0 && (
+          <Card className="overflow-hidden">
+            <CardHeader title="Remitos sin facturar" description="Por OC. Se pueden facturar varios juntos en una sola factura." />
+            <ul className="divide-y divide-border">
+              {((remPos ?? []) as { id: string; bac_number: string | null; display_number: string | null; customer_name: string | null }[]).map((o) => {
+                const r = remByPo.get(o.id)!;
+                return (
+                  <li key={o.id} className="flex items-center gap-3 px-5 py-2.5 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <Link href={`/ordenes/${o.id}`} className="font-medium hover:underline">{o.bac_number ?? o.display_number}</Link>
+                      <p className="truncate text-xs text-fg-subtle">{r.n} remito{r.n > 1 ? "s" : ""} · desde {formatDate(r.first)}{o.customer_name ? ` · ${o.customer_name}` : ""}</p>
+                    </div>
+                    {bill && <EInvoiceDialog purchaseOrderId={o.id} trigger={<Button size="sm" variant="secondary">Facturar</Button>} />}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        )}
+        <Card>
           <CardHeader title="Para facturar" description="Órdenes con saldo sin facturar" />
           {!billable.length ? <EmptyState title="Todo facturado" /> : (
             <ul className="max-h-[520px] divide-y divide-border overflow-y-auto">
@@ -114,6 +145,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
             </ul>
           )}
         </Card>
+        </div>
       </div>
 
       {emissions.length > 0 && (

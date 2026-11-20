@@ -9,7 +9,7 @@ import { Field, Input, NativeSelect } from "@/components/ui/primitives";
 import { formatMoney } from "@/lib/format";
 import { parseArNumber } from "@/lib/money";
 import { addDays, CONCEPTS, fmtRemito, type EInvoiceSettings, computeTotals, guessIvaCondition, installments, IVA_CONDITIONS, PAYMENT_KINDS, type SaleCondition } from "@/lib/einvoice";
-import { emitEInvoice, listSaleConditions, loadEInvoiceSettings, loadOrderForInvoice, lookupCustomerCuit } from "@/app/(app)/facturacion/einvoice-actions";
+import { emitEInvoice, listSaleConditions, loadEInvoiceSettings, loadOrderForInvoice, loadPendingRemitos, lookupCustomerCuit, type OrderForInvoice, type PendingRemito } from "@/app/(app)/facturacion/einvoice-actions";
 
 type L = { description: string; quantity: string; unit: string; unit_price: string; vat_rate: number };
 const blank: L = { description: "", quantity: "1", unit: "", unit_price: "", vat_rate: 21 };
@@ -50,6 +50,28 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
   const [cfg, setCfg] = React.useState<EInvoiceSettings | null>(null);
   const [rems, setRems] = React.useState<Rem[]>([{ pv: "", number: "", date: "" }]);
   const fixed = !!cfg?.fixed_receiver;
+  // Facturar varios remitos juntos: los renglones salen de lo que se entregó en los remitos elegidos
+  const [pending, setPending] = React.useState<PendingRemito[]>([]);
+  const [picked, setPicked] = React.useState<string[]>([]);
+  const [orderItems, setOrderItems] = React.useState<OrderForInvoice["items"]>([]);
+  const orderLines = (items: OrderForInvoice["items"]): L[] => items.length ? items.map((i) => ({ description: i.description, quantity: show(i.quantity), unit: i.unit ?? "", unit_price: show(i.unit_price), vat_rate: 21 })) : [{ ...blank }];
+  const pickRemitos = (ids: string[], list = pending, items = orderItems) => {
+    setPicked(ids);
+    const chosen = list.filter((r) => ids.includes(r.id));
+    if (!chosen.length) { setLines(orderLines(items)); return; }
+    const price = new Map(items.map((i) => [i.id, i]));
+    const agg = new Map<string, L & { q: number }>();
+    for (const r of chosen) for (const it of r.items) {
+      const oi = it.purchase_order_item_id ? price.get(it.purchase_order_item_id) : undefined;
+      const key = it.purchase_order_item_id ?? it.description.trim().toLowerCase();
+      const cur = agg.get(key) ?? { description: oi?.description ?? it.description, quantity: "0", unit: oi?.unit ?? "", unit_price: show(oi?.unit_price ?? it.unit_price ?? 0), vat_rate: 21, q: 0 };
+      cur.q += it.quantity; agg.set(key, cur);
+    }
+    setLines([...agg.values()].map(({ q, ...l }) => ({ ...l, quantity: show(Math.round(q * 1000) / 1000) })));
+    // los remitos con número oficial pasan solos a "Comprobantes asociados"
+    const official = chosen.filter((r) => !r.provisional && r.number && r.point_of_sale);
+    if (official.length) setRems(official.map((r) => ({ pv: String(r.point_of_sale), number: String(r.number), date: r.issued_at.slice(0, 10) })));
+  };
   const cond = conds.find((c) => c.id === condId) ?? null;
   const pickCond = (id: string, list = conds) => {
     setCondId(id);
@@ -68,6 +90,7 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
   const load = async () => {
     setConfirm(false);
     setLoading(true);
+    setPending([]); setPicked([]);
     const [cr, sr] = await Promise.all([listSaleConditions(), loadEInvoiceSettings()]);
     const list = cr.ok ? cr.conditions : [];
     const st = sr.ok ? sr.settings : null;
@@ -101,7 +124,12 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
     }
     setIncl(true);
     setNotes(`OC ${o.label}`);
-    setLines(o.items.length ? o.items.map((i) => ({ description: i.description, quantity: show(i.quantity), unit: i.unit ?? "", unit_price: show(i.unit_price), vat_rate: 21 })) : [{ ...blank }]);
+    setOrderItems(o.items);
+    setLines(orderLines(o.items));
+    const pr = await loadPendingRemitos(purchaseOrderId);
+    const pend = pr.ok ? pr.remitos : [];
+    setPending(pend);
+    setPicked([]);
   };
 
   const parsed = lines.map((l) => ({ description: l.description.trim(), quantity: num(l.quantity), unit: l.unit.trim() || null, unit_price: num(l.unit_price), vat_rate: l.vat_rate }));
@@ -125,7 +153,7 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
       purchase_order_id: purchaseOrderId ?? null, customer_id: customerId, receiver_name: name.trim(), receiver_cuit: cuit, receiver_address: address.trim() || null,
       iva_condition: iva, prices_include_vat: incl, lines: parsed as never, notes: notes.trim() || null,
       sale_condition_id: condId, payment_due: due, concept, service_from: concept === 1 ? null : svcFrom, service_to: concept === 1 ? null : svcTo,
-      remitos: remParsed,
+      remitos: remParsed, remito_ids: picked,
     });
     setBusy(false);
     if (!r.ok) { toast.error(r.error, { duration: 12000 }); setConfirm(false); return; }
@@ -195,6 +223,25 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
               )}
             </div>
 
+            {pending.length > 0 && (
+              <div className="rounded-xl border border-border p-3">
+                <p className="text-sm font-medium">Remitos de esta OC sin facturar</p>
+                <p className="mb-2 text-xs text-fg-subtle">Elegí uno o varios: la factura se arma con lo que se entregó en esos remitos. Sin elegir, se factura lo que falta de la OC.</p>
+                <div className="flex flex-wrap gap-2">
+                  {pending.map((r) => {
+                    const on = picked.includes(r.id);
+                    return (
+                      <label key={r.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 text-xs ${on ? "border-brand bg-brand/5" : "border-border"}`}>
+                        <input type="checkbox" checked={on} onChange={() => pickRemitos(on ? picked.filter((x) => x !== r.id) : [...picked, r.id])} />
+                        <span className="font-mono">{r.label}</span><span className="text-fg-subtle">{dmy(r.issued_at.slice(0, 10))} · {r.items.length} renglones</span>
+                      </label>
+                    );
+                  })}
+                  {pending.length > 1 && <button type="button" className="text-xs font-medium text-brand" onClick={() => pickRemitos(picked.length === pending.length ? [] : pending.map((r) => r.id))}>{picked.length === pending.length ? "Ninguno" : "Todos"}</button>}
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl border border-border p-3">
               <p className="text-sm font-medium">Comprobantes asociados · Remito R oficial{cfg?.require_remito && <span className="text-danger"> *</span>}</p>
               <p className="mb-2 text-xs text-fg-subtle">El número del remito oficial, a mano. Sale impreso en la factura.</p>
@@ -261,7 +308,7 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
             ) : (
               <div className="rounded-xl border border-warn/40 bg-warn/10 p-3 text-sm">
                 <p className="flex items-start gap-2"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />
-                  <span>Vas a emitir <b>Factura {letter}</b> por <b>{formatMoney(totals!.total)}</b> a <b>{name}</b> (CUIT {cuit}), <b>{cond?.name}</b> con vencimiento el <b>{dmy(due)}</b>{remParsed.length ? <>, remito R <b>{remParsed.map((r) => fmtRemito(r)).join(", ")}</b></> : ""}. Es un comprobante fiscal real: no se puede borrar, sólo anular con nota de crédito.</span></p>
+                  <span>Vas a emitir <b>Factura {letter}</b> por <b>{formatMoney(totals!.total)}</b> a <b>{name}</b> (CUIT {cuit}), <b>{cond?.name}</b> con vencimiento el <b>{dmy(due)}</b>{picked.length ? <>, con {picked.length} remito{picked.length > 1 ? "s" : ""} del sistema</> : ""}{remParsed.length ? <>, remito R <b>{remParsed.map((r) => fmtRemito(r)).join(", ")}</b></> : ""}. Es un comprobante fiscal real: no se puede borrar, sólo anular con nota de crédito.</span></p>
                 <div className="mt-3 flex justify-end gap-2">
                   <Button variant="ghost" disabled={busy} onClick={() => setConfirm(false)}>Volver</Button>
                   <Button loading={busy} onClick={submit}>Emitir factura</Button>

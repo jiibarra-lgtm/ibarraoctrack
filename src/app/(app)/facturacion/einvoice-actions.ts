@@ -28,6 +28,30 @@ export type OrderForInvoice = {
   items: { id: string; line: number; description: string; quantity: number; unit: string | null; unit_price: number; total: number }[];
 };
 
+export type PendingRemito = {
+  id: string; label: string; provisional: boolean; point_of_sale: number | null; number: number | null; issued_at: string;
+  items: { description: string; quantity: number; unit_price: number | null; purchase_order_item_id: string | null }[];
+};
+
+/** Remitos del sistema de una OC que todavía no se facturaron (para facturar varios juntos). */
+export async function loadPendingRemitos(poId: string): Promise<R<{ remitos: PendingRemito[] }>> {
+  try {
+    if (!isUuid(poId)) return { ok: false, error: "Orden inválida" };
+    const s = await requireOrg();
+    const { data, error } = await s.supabase.from("remitos")
+      .select("id, point_of_sale, number, provisional, issued_at, status, remito_items(description, quantity, unit_price, purchase_order_item_id, line_no)")
+      .eq("org_id", s.org.org_id).eq("purchase_order_id", poId).is("invoice_emission_id", null).neq("status", "anulado").order("issued_at");
+    if (error) return { ok: false, error: error.message };
+    type Row = { id: string; point_of_sale: number | null; number: number | null; provisional: boolean; issued_at: string; remito_items: { description: string; quantity: string; unit_price: string | null; purchase_order_item_id: string | null; line_no: number }[] };
+    const remitos = ((data ?? []) as Row[]).map((r) => ({
+      id: r.id, provisional: r.provisional, point_of_sale: r.point_of_sale, number: r.number, issued_at: r.issued_at,
+      label: r.number ? `${r.provisional ? "Prov. " : ""}${String(r.point_of_sale ?? 0).padStart(4, "0")}-${String(r.number).padStart(8, "0")}` : "Sin número",
+      items: [...r.remito_items].sort((a, b) => a.line_no - b.line_no).map((i) => ({ description: i.description, quantity: Number(i.quantity), unit_price: i.unit_price === null ? null : Number(i.unit_price), purchase_order_item_id: i.purchase_order_item_id })),
+    }));
+    return { ok: true, remitos };
+  } catch (e) { return fail(e); }
+}
+
 export async function loadOrderForInvoice(poId: string): Promise<R<{ order: OrderForInvoice }>> {
   try {
     if (!isUuid(poId)) return { ok: false, error: "Orden inválida" };
@@ -66,6 +90,7 @@ const Input = z.object({
     number: z.number().int().min(1, "Número de remito inválido").max(99999999),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   })).max(20).default([]),
+  remito_ids: z.array(z.string().uuid()).max(50).default([]),
 });
 
 type Sale = { condition: SaleCondition | null; label: string | null; kind: string | null; due: string | null; concept: 1 | 2 | 3; service: { from: string; to: string; due: string } | null };
@@ -97,7 +122,7 @@ async function emit(
   { s, rpc }: Awaited<ReturnType<typeof ctx>>,
   p: { kind: "factura" | "nota_credito"; letter: "A" | "B"; receiver: { name: string; cuit: string; address: string | null; iva: number };
     totals: ReturnType<typeof computeTotals>; pricesIncludeVat: boolean; poId: string | null; customerId: string | null; notes: string | null;
-    associated?: { id: string; type: number; pv: number; number: number; date: string }; sale: Sale; remitos?: AssocRemito[]; fixed?: boolean },
+    associated?: { id: string; type: number; pv: number; number: number; date: string }; sale: Sale; remitos?: AssocRemito[]; fixed?: boolean; remitoIds?: string[] },
 ) {
   const auth = await arcaAuth(rpc);
   if (!auth.pointOfSale) throw new Error("Falta el punto de venta en Configuración → ARCA");
@@ -140,7 +165,7 @@ async function emit(
       notes: p.notes, observations: observations.join(" · ") || null,
       sale_condition_id: p.sale.condition?.id ?? null, sale_condition: p.sale.label, payment_kind: p.sale.kind, payment_due: p.sale.due,
       concept: p.sale.concept, service_from: p.sale.service?.from ?? null, service_to: p.sale.service?.to ?? null,
-      remitos: p.remitos ?? [], fixed_receiver: !!p.fixed,
+      remitos: p.remitos ?? [], fixed_receiver: !!p.fixed, remito_ids: p.remitoIds ?? [],
     },
   });
   if (error) throw new Error(`ARCA autorizó ${fmtVoucher(type, pv, number)} (CAE ${cae}) pero no se pudo guardar: ${error.message}. Avisá antes de volver a emitir.`);
@@ -162,6 +187,12 @@ export async function emitEInvoice(raw: EInvoiceInput): Promise<R<{ id: string; 
       f.receiver_cuit = cfg!.receiver_cuit; f.receiver_name = cfg!.receiver_name; f.receiver_address = cfg!.receiver_address; f.iva_condition = cfg!.iva_condition;
     }
     if (cfg?.require_remito && !f.remitos.length) return { ok: false, error: "Falta el N° de remito oficial (Comprobantes asociados → Remito R)" };
+    if (f.remito_ids.length) {
+      if (!f.purchase_order_id) return { ok: false, error: "Los remitos se facturan desde su orden de compra" };
+      const { data: rs } = await c.s.supabase.from("remitos").select("id, purchase_order_id, invoice_emission_id, status").eq("org_id", c.s.org.org_id).in("id", f.remito_ids);
+      const bad = (rs ?? []).find((r) => r.purchase_order_id !== f.purchase_order_id || r.invoice_emission_id || r.status === "anulado");
+      if ((rs ?? []).length !== f.remito_ids.length || bad) return { ok: false, error: "Alguno de los remitos ya se facturó, se anuló o es de otra orden. Volvé a abrir la factura." };
+    }
     const seen = new Set<string>();
     for (const r of f.remitos) { const k = `${r.pv}-${r.number}`; if (seen.has(k)) return { ok: false, error: `El remito ${k} está repetido` }; seen.add(k); }
     const totals = computeTotals(f.lines as EInvoiceLine[], f.prices_include_vat);
@@ -196,7 +227,7 @@ export async function emitEInvoice(raw: EInvoiceInput): Promise<R<{ id: string; 
       kind: "factura", letter, receiver: { name: f.receiver_name, cuit: f.receiver_cuit, address: f.receiver_address, iva: f.iva_condition },
       totals, pricesIncludeVat: f.prices_include_vat, poId: f.purchase_order_id, customerId: f.customer_id, notes: f.notes,
       sale: { condition: cond, label: cond.name, kind: cond.arca_kind, due: f.payment_due, concept: f.concept, service },
-      remitos: f.remitos, fixed,
+      remitos: f.remitos, fixed, remitoIds: f.remito_ids,
     });
     revalidatePath("/facturacion");
     if (f.purchase_order_id) revalidatePath(`/ordenes/${f.purchase_order_id}`);

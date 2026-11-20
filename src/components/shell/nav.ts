@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, FileText, Truck, ShoppingCart, Receipt, Landmark, Package, TrendingUp, Bell, Settings,
-  Gavel, ShoppingBag, Percent, Building2, AlarmClock, type LucideIcon,
+  Gavel, ShoppingBag, Percent, Building2, AlarmClock, BookOpen, type LucideIcon,
 } from "lucide-react";
 
 /**
@@ -68,15 +68,26 @@ export const NAV: NavGroup[] = [
         ],
       },
       {
-        href: "/banco", label: "Banco y gastos", icon: Landmark,
+        href: "/banco", label: "Tesorería y gastos", icon: Landmark,
         tabs: [
           { href: "/banco", label: "Banco" },
+          { href: "/tesoreria/cheques", label: "Cheques" },
+          { href: "/tesoreria/caja", label: "Caja" },
+          { href: "/tesoreria/conciliacion", label: "Conciliación" },
+          { href: "/tesoreria/flujo", label: "Flujo de fondos" },
           { href: "/gastos-fijos", label: "Gastos fijos" },
           { href: "/costos", label: "Costos" },
           { href: "/finanzas", label: "Finanzas" },
         ],
       },
-      { href: "/impuestos", label: "Impuestos y ARCA", icon: Percent },
+      {
+        href: "/impuestos", label: "Impuestos y ARCA", icon: Percent,
+        tabs: [
+          { href: "/impuestos", label: "Impuestos y ARCA" },
+          { href: "/impuestos/iibb", label: "Liquidación IIBB" },
+        ],
+      },
+      { href: "/contabilidad", label: "Contabilidad", icon: BookOpen },
     ],
   },
   {

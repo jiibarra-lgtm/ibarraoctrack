@@ -1,0 +1,3 @@
+-- Aplicada desde el panel: payments_out.notice ('titular'|'adicional') y paid_hm; payments_dedupe(p_org) borra el aviso
+-- al titular cuando está el del adicional por el mismo débito (tarjeta, monto, comercio, día y hora, de a pares);
+-- ingest_payments guarda esos datos (también al volver a recibir un mail) y llama a payments_dedupe antes de recalcular gastos fijos.

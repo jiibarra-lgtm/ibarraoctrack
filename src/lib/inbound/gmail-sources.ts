@@ -14,7 +14,8 @@ export const GMAIL_SOURCES: GmailSource[] = [
   { key: "gob", days: 180, mode: "mail", q: "{from:buenosaires.gob.ar to:buenosaires.gob.ar from:bue.edu.ar to:bue.edu.ar from:gob.ar to:gob.ar from:gov.ar to:gov.ar from:avisos.bancociudad.com.ar}" },
   // "servicios2": la búsqueda vieja (from:(a b c)) pedía todos los remitentes a la vez y no traía nada; con clave nueva vuelve a leer 6 meses
   { key: "servicios2", days: 180, mode: "mail", q: BILL_QUERY },
-  { key: "pagos2", days: 180, mode: "mail", q: PAYMENT_QUERY },
+  // "pagos3": vuelve a leer 6 meses para marcar los avisos duplicados (titular + adicional) de Santander
+  { key: "pagos3", days: 180, mode: "mail", q: PAYMENT_QUERY },
   // Banco completo: todos los avisos del Ciudad (movimientos + saldo) y débitos de tarjeta que no se cubrieron
   { key: "banco", days: 400, mode: "mail", q: '{from:avisos.bancociudad.com.ar subject:"pudimos debitar"}' },
   // Tarjeta Mercado Pago (cierre, vencimiento, débitos), avisos fiscales (ARCA e-Ventanilla, AGIP) y actos administrativos del BAC
@@ -25,4 +26,4 @@ export const GMAIL_SOURCES: GmailSource[] = [
   { key: "facturas", days: 730, mode: "pdf", q: INVOICE_QUERY },
 ];
 
-export const GMAIL_SOURCES_VERSION = "2026-11-19a";
+export const GMAIL_SOURCES_VERSION = "2026-11-20a";

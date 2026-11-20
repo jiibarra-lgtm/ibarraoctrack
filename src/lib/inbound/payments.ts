@@ -11,6 +11,8 @@ export type PaymentKind = "transferencia" | "tarjeta" | "debito_automatico" | "r
 export type PaymentEvent = {
   message_id: string; kind: PaymentKind; paid_at: string; amount: string; payee: string; payee_key: string;
   cbu: string | null; concept: string | null; card: string | null; due_date: string | null; category: string;
+  /** Santander manda dos mails por cada débito de una tarjeta adicional: uno al titular y otro "de tu adicional". */
+  notice?: "titular" | "adicional" | null; paid_hm?: string | null;
 };
 
 export const PAYMENT_QUERY = "{from:avisos.redlink.com.ar from:mails.santander.com.ar} {subject:\"Transferencia Debitada\" subject:Pagaste subject:\"débito automático\" subject:\"resumen vence\"}";
@@ -77,5 +79,7 @@ export function parsePaymentMail(m: { id: string; from: string; subject: string;
   if (!amount || !payee) return null;
   return { message_id: m.id, kind: /d[eé]bito autom[aá]tico/i.test(m.subject) ? "debito_automatico" : "tarjeta",
     paid_at: toIso(/Fecha\s+(\d{2}\/\d{2}\/\d{4})/i.exec(t)?.[1]) ?? received.slice(0, 10), amount, payee, payee_key: payeeKey(payee),
-    cbu: null, concept: null, card: /terminada en (\d{4})/i.exec(t)?.[1] ?? null, due_date: null, category: categorize(payee) };
+    cbu: null, concept: null, card: /terminada en (\d{4})/i.exec(t)?.[1] ?? null, due_date: null, category: categorize(payee),
+    notice: /adicional/i.test(m.subject) ? "adicional" : /^Aviso de d[eé]bito/i.test(m.subject) ? "titular" : null,
+    paid_hm: /Hora\s+(\d{1,2}:\d{2})/i.exec(t)?.[1]?.padStart(5, "0") ?? null };
 }

@@ -15,3 +15,14 @@ describe("Galeno", () => {
     expect(parseBillMail({ id: "3", from: "galeno-noreply@galeno.com.ar", subject: "Resultados de Imágenes", date: "2026-11-01T15:37:01Z", body: "te enviamos el presente link" })).toBeNull();
   });
 });
+
+import { parsePaymentMail } from "@/lib/inbound/payments";
+describe("Santander: aviso al titular y al adicional", () => {
+  const body = (who: string) => `Te acercamos el detalle del débito con ${who} terminada en 6249. Monto $66.600,00 Comercio VELEZ SARSFIELD Fecha 15/10/2026 Hora 05:14`;
+  it("marca cuál es cuál y la hora", () => {
+    const a = parsePaymentMail({ id: "a", from: "mensajesyavisos@mails.santander.com.ar", subject: "Aviso de débito automático", date: "2026-10-15T08:15:30Z", body: body("tu Tarjeta Santander Visa Crédito") });
+    const b = parsePaymentMail({ id: "b", from: "mensajesyavisos@mails.santander.com.ar", subject: "Débito automático de tu adicional", date: "2026-10-15T08:15:17Z", body: body("la Tarjeta Santander Visa Crédito") });
+    expect(a).toMatchObject({ notice: "titular", paid_hm: "05:14", amount: "66600.00", card: "6249" });
+    expect(b).toMatchObject({ notice: "adicional", paid_hm: "05:14" });
+  });
+});

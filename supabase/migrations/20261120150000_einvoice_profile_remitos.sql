@@ -46,11 +46,24 @@ alter table public.arca_emissions add column if not exists remitos jsonb not nul
 do $$
 declare d text := pg_get_functiondef('public.einvoice_record(uuid,jsonb)'::regprocedure);
 begin
-  if position('remitos' in d) = 0 then
-    d := replace(d, $a$    service_to = nullif(p_e->>'service_to', '')::date
-  where id = v_id;$a$, $a$    service_to = nullif(p_e->>'service_to', '')::date,
+  -- guarda condición de venta, vencimiento, concepto, período y remitos (la versión anterior no lo hacía)
+  if position('remitos = coalesce' in d) = 0 then
+    d := replace(d, $a$  returning id into v_id;
+
+  if v_kind = 'factura' and v_po is not null then$a$, $a$  returning id into v_id;
+
+  update public.arca_emissions set
+    sale_condition_id = (select sc.id from public.sale_conditions sc where sc.id = nullif(p_e->>'sale_condition_id', '')::uuid and sc.org_id = p_org),
+    sale_condition = left(nullif(p_e->>'sale_condition', ''), 80),
+    payment_kind = nullif(p_e->>'payment_kind', ''),
+    payment_due = nullif(p_e->>'payment_due', '')::date,
+    concept = coalesce(nullif(p_e->>'concept', '')::smallint, 1),
+    service_from = nullif(p_e->>'service_from', '')::date,
+    service_to = nullif(p_e->>'service_to', '')::date,
     remitos = coalesce(case when jsonb_typeof(p_e->'remitos') = 'array' then p_e->'remitos' end, '[]'::jsonb)
-  where id = v_id;$a$);
+  where id = v_id;
+
+  if v_kind = 'factura' and v_po is not null then$a$);
     -- con receptor fijo (GCBA) no se pisan los datos del hospital de la OC
     d := replace(d, $a$  if v_cust is not null then
     update public.customers set$a$, $a$  if v_cust is not null and not coalesce((p_e->>'fixed_receiver')::boolean, false) then
@@ -60,13 +73,15 @@ begin
   end if;
 end $$;
 
-drop view if exists public.arca_emissions_overview;
-create view public.arca_emissions_overview with (security_invoker = true) as
-select e.*,
+create or replace view public.arca_emissions_overview with (security_invoker = true) as
+select e.id, e.org_id, e.kind, e.voucher_type, e.point_of_sale, e.number, e.issue_date, e.cae, e.cae_due, e.doc_type, e.doc_number,
+  e.receiver_name, e.receiver_address, e.iva_condition, e.net, e.vat, e.total, e.vat_detail, e.lines, e.prices_include_vat,
+  e.purchase_order_id, e.customer_id, e.sales_invoice_id, e.associated_id, e.notes, e.observations, e.created_by, e.created_at,
+  e.sale_condition_id, e.sale_condition, e.payment_kind, e.payment_due, e.concept, e.service_from, e.service_to,
   coalesce(po.bac_number, 'OC-' || lpad(po.internal_number::text, 6, '0')) as po_label,
   (select n.id from public.arca_emissions n where n.associated_id = e.id and n.kind = 'nota_credito' limit 1) as credit_note_id,
-  a.voucher_type as associated_type, a.point_of_sale as associated_pv, a.number as associated_number
+  a.voucher_type as associated_type, a.point_of_sale as associated_pv, a.number as associated_number,
+  e.remitos
 from public.arca_emissions e
 left join public.purchase_orders po on po.id = e.purchase_order_id
 left join public.arca_emissions a on a.id = e.associated_id;
-grant select on public.arca_emissions_overview to authenticated;

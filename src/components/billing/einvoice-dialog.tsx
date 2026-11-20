@@ -8,13 +8,16 @@ import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/overlays";
 import { Field, Input, NativeSelect } from "@/components/ui/primitives";
 import { formatMoney } from "@/lib/format";
 import { parseArNumber } from "@/lib/money";
-import { computeTotals, guessIvaCondition, IVA_CONDITIONS } from "@/lib/einvoice";
-import { emitEInvoice, loadOrderForInvoice, lookupCustomerCuit } from "@/app/(app)/facturacion/einvoice-actions";
+import { addDays, CONCEPTS, computeTotals, guessIvaCondition, installments, IVA_CONDITIONS, PAYMENT_KINDS, type SaleCondition } from "@/lib/einvoice";
+import { emitEInvoice, listSaleConditions, loadOrderForInvoice, lookupCustomerCuit } from "@/app/(app)/facturacion/einvoice-actions";
 
 type L = { description: string; quantity: string; unit: string; unit_price: string; vat_rate: number };
 const blank: L = { description: "", quantity: "1", unit: "", unit_price: "", vat_rate: 21 };
 const num = (s: string) => Number(parseArNumber(s) ?? NaN);
 const show = (n: number) => String(n).replace(".", ",");
+const todayAr = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+const monthBounds = (iso: string) => { const [y, m] = iso.split("-").map(Number); return { from: `${iso.slice(0, 7)}-01`, to: new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10) }; };
+const dmy = (iso: string) => iso.split("-").reverse().join("/");
 
 /** Factura electrónica con CAE: desde una OC (todo precargado) o suelta. */
 export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?: string; trigger: React.ReactNode }) {
@@ -34,6 +37,19 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
   const [lines, setLines] = React.useState<L[]>([{ ...blank }]);
   const [notes, setNotes] = React.useState("");
   const [looking, setLooking] = React.useState(false);
+  // Condición de venta (como en Tango): define lo que sale impreso y el vencimiento de cobro
+  const [conds, setConds] = React.useState<SaleCondition[]>([]);
+  const [condId, setCondId] = React.useState("");
+  const [due, setDue] = React.useState(todayAr());
+  const [concept, setConcept] = React.useState<1 | 2 | 3>(1);
+  const [svcFrom, setSvcFrom] = React.useState(monthBounds(todayAr()).from);
+  const [svcTo, setSvcTo] = React.useState(monthBounds(todayAr()).to);
+  const cond = conds.find((c) => c.id === condId) ?? null;
+  const pickCond = (id: string, list = conds) => {
+    setCondId(id);
+    const c = list.find((x) => x.id === id);
+    setDue(addDays(todayAr(), c?.days.length ? Math.max(...c.days) : 0));
+  };
   const lookup = async () => {
     setLooking(true);
     const r = await lookupCustomerCuit(cuit);
@@ -45,8 +61,13 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
 
   const load = async () => {
     setConfirm(false);
-    if (!purchaseOrderId) return;
     setLoading(true);
+    const cr = await listSaleConditions();
+    const list = cr.ok ? cr.conditions : [];
+    setConds(list);
+    const fallback = list.find((c) => c.is_default) ?? list[0];
+    if (fallback) pickCond(fallback.id, list);
+    if (!purchaseOrderId) { setLoading(false); return; }
     const r = await loadOrderForInvoice(purchaseOrderId);
     setLoading(false);
     if (!r.ok) { toast.error(r.error); setOpen(false); return; }
@@ -58,6 +79,8 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
     setCuit(o.customer.cuit ?? "");
     setAddress(o.customer.address ?? "");
     setIva(o.customer.iva_condition ?? guessIvaCondition(o.customer.name, o.customer.cuit));
+    // la condición habitual del cliente, si tiene
+    if (o.customer.sale_condition_id && list.some((c) => c.id === o.customer.sale_condition_id)) pickCond(o.customer.sale_condition_id, list);
     setIncl(true);
     setNotes(`OC ${o.label}`);
     setLines(o.items.length ? o.items.map((i) => ({ description: i.description, quantity: show(i.quantity), unit: i.unit ?? "", unit_price: show(i.unit_price), vat_rate: 21 })) : [{ ...blank }]);
@@ -69,7 +92,9 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
   const letter = IVA_CONDITIONS[iva]?.letter ?? "B";
   const cuitOk = /^\d{11}$/.test(cuit.replace(/\D/g, ""));
   const over = totals && left !== null && totals.total > left + 1;
-  const canEmit = !!totals && totals.total > 0 && cuitOk && name.trim().length >= 2 && !over;
+  const svcOk = concept === 1 || (!!svcFrom && !!svcTo && svcFrom <= svcTo);
+  const canEmit = !!totals && totals.total > 0 && cuitOk && name.trim().length >= 2 && !over && !!cond && due >= todayAr() && svcOk;
+  const cuotas = cond && totals && cond.days.length > 1 ? installments(todayAr(), cond.days, totals.total) : [];
   const setL = (i: number, k: keyof L) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setLines((xs) => xs.map((x, j) => (j === i ? { ...x, [k]: k === "vat_rate" ? Number(e.target.value) : e.target.value } : x)));
 
@@ -79,6 +104,7 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
     const r = await emitEInvoice({
       purchase_order_id: purchaseOrderId ?? null, customer_id: customerId, receiver_name: name.trim(), receiver_cuit: cuit, receiver_address: address.trim() || null,
       iva_condition: iva, prices_include_vat: incl, lines: parsed as never, notes: notes.trim() || null,
+      sale_condition_id: condId, payment_due: due, concept, service_from: concept === 1 ? null : svcFrom, service_to: concept === 1 ? null : svcTo,
     });
     setBusy(false);
     if (!r.ok) { toast.error(r.error, { duration: 12000 }); setConfirm(false); return; }
@@ -108,6 +134,33 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
                   {Object.entries(IVA_CONDITIONS).map(([k, v]) => <option key={k} value={k}>{v.label} (Factura {v.letter})</option>)}
                 </NativeSelect>
               </Field>
+            </div>
+
+            <div className="grid gap-3 rounded-xl border border-border p-3 sm:grid-cols-3">
+              <Field label="Condición de venta" htmlFor="ei-cond" hint={cond ? `ARCA: ${PAYMENT_KINDS[cond.arca_kind].label}${PAYMENT_KINDS[cond.arca_kind].electronic ? " (medio electrónico)" : ""}` : undefined}>
+                <NativeSelect id="ei-cond" value={condId} onChange={(e) => pickCond(e.target.value)}>
+                  {!conds.length && <option value="">Sin condiciones cargadas</option>}
+                  {conds.map((c) => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
+                </NativeSelect>
+              </Field>
+              <Field label="Vencimiento de pago" htmlFor="ei-due" hint={cond?.days.length ? `${cond.days.join("/")} días desde hoy` : "Al contado vence hoy"}>
+                <Input id="ei-due" type="date" value={due} min={todayAr()} onChange={(e) => setDue(e.target.value)} invalid={due < todayAr()} />
+              </Field>
+              <Field label="Concepto" htmlFor="ei-concept">
+                <NativeSelect id="ei-concept" value={concept} onChange={(e) => setConcept(Number(e.target.value) as 1 | 2 | 3)}>
+                  {Object.entries(CONCEPTS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </NativeSelect>
+              </Field>
+              {concept !== 1 && (
+                <>
+                  <Field label="Período facturado desde" htmlFor="ei-sf"><Input id="ei-sf" type="date" value={svcFrom} onChange={(e) => setSvcFrom(e.target.value)} /></Field>
+                  <Field label="Hasta" htmlFor="ei-st"><Input id="ei-st" type="date" value={svcTo} onChange={(e) => setSvcTo(e.target.value)} invalid={!svcOk} /></Field>
+                  <p className="self-end pb-2 text-xs text-fg-subtle">Para servicios ARCA pide período y vencimiento de pago.</p>
+                </>
+              )}
+              {cuotas.length > 1 && (
+                <p className="text-xs text-fg-muted sm:col-span-3">Cuotas: {cuotas.map((q) => `${dmy(q.due)} ${formatMoney(q.amount)}`).join(" · ")}</p>
+              )}
             </div>
 
             <div className="overflow-x-auto rounded-xl border border-border">
@@ -154,7 +207,7 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
             ) : (
               <div className="rounded-xl border border-warn/40 bg-warn/10 p-3 text-sm">
                 <p className="flex items-start gap-2"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />
-                  <span>Vas a emitir <b>Factura {letter}</b> por <b>{formatMoney(totals!.total)}</b> a <b>{name}</b> (CUIT {cuit}). Es un comprobante fiscal real: no se puede borrar, sólo anular con nota de crédito.</span></p>
+                  <span>Vas a emitir <b>Factura {letter}</b> por <b>{formatMoney(totals!.total)}</b> a <b>{name}</b> (CUIT {cuit}), <b>{cond?.name}</b> con vencimiento el <b>{dmy(due)}</b>. Es un comprobante fiscal real: no se puede borrar, sólo anular con nota de crédito.</span></p>
                 <div className="mt-3 flex justify-end gap-2">
                   <Button variant="ghost" disabled={busy} onClick={() => setConfirm(false)}>Volver</Button>
                   <Button loading={busy} onClick={submit}>Emitir factura</Button>

@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 import { requireOrg } from "@/lib/session";
 import { isUuid } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
-import { afipQrUrl, IVA_CONDITIONS, letterOf, VOUCHER_NAME } from "@/lib/einvoice";
+import { afipQrUrl, CONCEPTS, conditionText, IVA_CONDITIONS, letterOf, VOUCHER_NAME } from "@/lib/einvoice";
 import { InvoicePrintBar } from "./print-bar";
 
 type Line = { description: string; quantity: number; unit: string | null; unit_price: number; vat_rate: number; amount: number; net_amount: number; total_amount: number };
@@ -45,6 +45,8 @@ export default async function PrintInvoice({ params }: { params: Promise<{ id: s
   const qr = await QRCode.toString(afipQrUrl({ date: e.issue_date, cuit, pointOfSale: e.point_of_sale, type: e.voucher_type, number: Number(e.number), total: Number(e.total), docType: e.doc_type, docNumber: e.doc_number, cae: e.cae }), { type: "svg", margin: 0, errorCorrectionLevel: "M" });
   const isA = letter === "A";
 
+  // Tipo de ARCA (lo que exige la factura) y, si la condición propia dice algo más (plazo), a continuación
+  const saleLabel = conditionText({ name: e.sale_condition, arca_kind: e.payment_kind });
   return (
     <div className="inv-root">
       <style>{`
@@ -83,12 +85,20 @@ export default async function PrintInvoice({ params }: { params: Promise<{ id: s
           <div style={{ position: "absolute", top: 0, right: 8, fontSize: 9, fontWeight: 700 }}>ORIGINAL</div>
         </div>
 
+        {/* Como en la factura de ARCA: período facturado (servicios) y vencimiento para el pago */}
+        <div className="box" style={{ marginTop: 6, padding: "4px 10px", display: "flex", justifyContent: "space-between", gap: 12 }}>
+          {e.concept && e.concept !== 1 && e.service_from
+            ? <><div><b>Período Facturado Desde:</b> {d(e.service_from)}</div><div><b>Hasta:</b> {d(e.service_to)}</div></>
+            : <div><b>Concepto:</b> {CONCEPTS[(e.concept ?? 1) as 1 | 2 | 3]}</div>}
+          <div><b>Fecha de Vto. para el pago:</b> {d(e.payment_due ?? e.issue_date)}</div>
+        </div>
+
         <div className="box" style={{ marginTop: 6, padding: "6px 10px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
           <div><b>CUIT:</b> {fmtCuit(e.doc_number)}</div>
           <div><b>Apellido y Nombre / Razón Social:</b> {e.receiver_name}</div>
           <div><b>Condición frente al IVA:</b> {IVA_CONDITIONS[e.iva_condition]?.label}</div>
           <div><b>Domicilio:</b> {e.receiver_address}</div>
-          <div><b>Condición de venta:</b> Cuenta corriente</div>
+          <div><b>Condición de venta:</b> {saleLabel}</div>
           {e.po_label && <div><b>Orden de compra:</b> {e.po_label}</div>}
           {e.associated_number && <div style={{ gridColumn: "1 / -1" }}><b>Comprobante asociado:</b> {VOUCHER_NAME[e.associated_type]} {pad(e.associated_pv, 5)}-{pad(Number(e.associated_number), 8)}</div>}
         </div>

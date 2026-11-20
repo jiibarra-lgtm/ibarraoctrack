@@ -48,6 +48,7 @@ export default async function BillingPage({ searchParams }: { searchParams: Prom
     <>
       <PageHeader title="Facturación" description="Facturas emitidas a los organismos por cada orden."
         actions={bill && <div className="flex flex-wrap gap-2">
+          <Button asChild variant="ghost"><Link href="/facturacion/condiciones">Condiciones de venta</Link></Button>
           <InvoiceDialog orders={options} orgId={s.org.org_id} trigger={<Button variant="secondary"><Plus /> Registrar factura hecha afuera</Button>} />
           <EInvoiceDialog trigger={<Button><FileText /> Factura electrónica</Button>} />
         </div>} />

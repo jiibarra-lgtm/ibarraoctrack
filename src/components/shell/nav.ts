@@ -64,6 +64,7 @@ export const NAV: NavGroup[] = [
         tabs: [
           { href: "/facturacion", label: "Facturación", simple: true },
           { href: "/cobranzas", label: "Cobranzas", simple: true },
+          { href: "/facturacion/condiciones", label: "Condiciones de venta" },
         ],
       },
       {

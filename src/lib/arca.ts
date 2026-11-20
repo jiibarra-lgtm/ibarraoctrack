@@ -113,6 +113,8 @@ export type CaeRequest = {
   docType: number; docNumber: string; ivaCondition: number;
   net: number; vatTotal: number; total: number; vat: { id: number; base: number; amount: number }[];
   associated?: { type: number; pointOfSale: number; number: number; cuit: string; date: string } | null;
+  /** 1 productos, 2 servicios, 3 ambos. Con 2 o 3 van período y vencimiento de pago. */
+  concept?: 1 | 2 | 3; service?: { from: string; to: string; due: string } | null;
 };
 
 /** Pide el CAE (FECAESolicitar). Concepto 1 = productos. Devuelve CAE y vencimiento, o el motivo del rechazo. */
@@ -123,11 +125,15 @@ export async function requestCae(auth: ArcaAuth, r: CaeRequest) {
     : "";
   const iva = r.vat.filter((v) => v.base > 0 || v.amount > 0)
     .map((v) => `<ar:AlicIva><ar:Id>${v.id}</ar:Id><ar:BaseImp>${n2(v.base)}</ar:BaseImp><ar:Importe>${n2(v.amount)}</ar:Importe></ar:AlicIva>`).join("");
+  // Servicios (2) o productos y servicios (3): ARCA exige período facturado y vencimiento de pago
+  const svc = r.concept && r.concept !== 1 && r.service
+    ? `<ar:FchServDesde>${r.service.from.replace(/-/g, "")}</ar:FchServDesde><ar:FchServHasta>${r.service.to.replace(/-/g, "")}</ar:FchServHasta><ar:FchVtoPago>${r.service.due.replace(/-/g, "")}</ar:FchVtoPago>`
+    : "";
   const inner = `<ar:FeCAEReq><ar:FeCabReq><ar:CantReg>1</ar:CantReg><ar:PtoVta>${r.pointOfSale}</ar:PtoVta><ar:CbteTipo>${r.type}</ar:CbteTipo></ar:FeCabReq>`
-    + `<ar:FeDetReq><ar:FECAEDetRequest><ar:Concepto>1</ar:Concepto><ar:DocTipo>${r.docType}</ar:DocTipo><ar:DocNro>${r.docNumber.replace(/\D/g, "") || "0"}</ar:DocNro>`
+    + `<ar:FeDetReq><ar:FECAEDetRequest><ar:Concepto>${r.concept ?? 1}</ar:Concepto><ar:DocTipo>${r.docType}</ar:DocTipo><ar:DocNro>${r.docNumber.replace(/\D/g, "") || "0"}</ar:DocNro>`
     + `<ar:CbteDesde>${r.number}</ar:CbteDesde><ar:CbteHasta>${r.number}</ar:CbteHasta><ar:CbteFch>${ymd}</ar:CbteFch>`
     + `<ar:ImpTotal>${n2(r.total)}</ar:ImpTotal><ar:ImpTotConc>0.00</ar:ImpTotConc><ar:ImpNeto>${n2(r.net)}</ar:ImpNeto><ar:ImpOpEx>0.00</ar:ImpOpEx>`
-    + `<ar:ImpTrib>0.00</ar:ImpTrib><ar:ImpIVA>${n2(r.vatTotal)}</ar:ImpIVA><ar:MonId>PES</ar:MonId><ar:MonCotiz>1</ar:MonCotiz>`
+    + `<ar:ImpTrib>0.00</ar:ImpTrib><ar:ImpIVA>${n2(r.vatTotal)}</ar:ImpIVA>${svc}<ar:MonId>PES</ar:MonId><ar:MonCotiz>1</ar:MonCotiz>`
     + `<ar:CondicionIVAReceptorId>${r.ivaCondition}</ar:CondicionIVAReceptorId>${asoc}${iva ? `<ar:Iva>${iva}</ar:Iva>` : ""}`
     + `</ar:FECAEDetRequest></ar:FeDetReq></ar:FeCAEReq>`;
   const res = await wsfe("FECAESolicitar", auth, inner);

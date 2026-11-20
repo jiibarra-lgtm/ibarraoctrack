@@ -5,7 +5,7 @@ import { requireOrg } from "@/lib/session";
 import { canBill } from "@/lib/billing";
 import { isUuid } from "@/lib/utils";
 import { arcaAuth, getVoucher, lastVoucher, requestCae, type ArcaRpc } from "@/lib/arca";
-import { computeTotals, fmtVoucher, fromYmd, IVA_CONDITIONS, VOUCHER_TYPE, type EInvoiceLine } from "@/lib/einvoice";
+import { computeTotals, fmtVoucher, fromYmd, IVA_CONDITIONS, VOUCHER_TYPE, type EInvoiceLine, type SaleCondition } from "@/lib/einvoice";
 
 type R<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const fail = (e: unknown): { ok: false; error: string } => ({ ok: false, error: (e as Error).message || "Error inesperado" });
@@ -24,7 +24,7 @@ async function ctx() {
 
 export type OrderForInvoice = {
   id: string; label: string; currency: string; status: string; order_total: number; invoiced: number;
-  customer: { id: string | null; name: string; cuit: string | null; address: string | null; iva_condition: number | null };
+  customer: { id: string | null; name: string; cuit: string | null; address: string | null; iva_condition: number | null; sale_condition_id: string | null };
   items: { id: string; line: number; description: string; quantity: number; unit: string | null; unit_price: number; total: number }[];
 };
 
@@ -56,14 +56,32 @@ const Input = z.object({
   prices_include_vat: z.boolean(),
   lines: z.array(Line).min(1).max(200),
   notes: z.string().max(1000).nullable(),
+  sale_condition_id: z.string().uuid({ message: "Elegí la condición de venta" }),
+  payment_due: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de vencimiento inválida"),
+  concept: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  service_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  service_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
 });
+
+type Sale = { condition: SaleCondition | null; label: string | null; kind: string | null; due: string | null; concept: 1 | 2 | 3; service: { from: string; to: string; due: string } | null };
+
+/** Condiciones de venta activas (la predeterminada primero). */
+export async function listSaleConditions(): Promise<R<{ conditions: SaleCondition[] }>> {
+  try {
+    const s = await requireOrg();
+    const { data, error } = await s.supabase.from("sale_conditions").select("id, code, name, arca_kind, days, is_default, active, notes")
+      .eq("org_id", s.org.org_id).eq("active", true).order("is_default", { ascending: false }).order("code");
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, conditions: (data ?? []) as SaleCondition[] };
+  } catch (e) { return fail(e); }
+}
 export type EInvoiceInput = z.infer<typeof Input>;
 
 async function emit(
   { s, rpc }: Awaited<ReturnType<typeof ctx>>,
   p: { kind: "factura" | "nota_credito"; letter: "A" | "B"; receiver: { name: string; cuit: string; address: string | null; iva: number };
     totals: ReturnType<typeof computeTotals>; pricesIncludeVat: boolean; poId: string | null; customerId: string | null; notes: string | null;
-    associated?: { id: string; type: number; pv: number; number: number; date: string } },
+    associated?: { id: string; type: number; pv: number; number: number; date: string }; sale: Sale },
 ) {
   const auth = await arcaAuth(rpc);
   if (!auth.pointOfSale) throw new Error("Falta el punto de venta en Configuración → ARCA");
@@ -75,6 +93,7 @@ async function emit(
     pointOfSale: pv, type, number, date, docType: 80, docNumber: p.receiver.cuit, ivaCondition: p.receiver.iva,
     net: p.totals.net, vatTotal: p.totals.vat_total, total: p.totals.total, vat: p.totals.vat,
     associated: p.associated ? { type: p.associated.type, pointOfSale: p.associated.pv, number: p.associated.number, cuit: auth.cuit, date: p.associated.date } : null,
+    concept: p.sale.concept, service: p.sale.service,
   };
   let cae: string, caeDue: string | null, observations: string[] = [];
   // Rechazos de ARCA quedan registrados para avisar en Facturación e Impuestos
@@ -103,6 +122,8 @@ async function emit(
       net: p.totals.net, vat: p.totals.vat_total, total: p.totals.total, vat_detail: p.totals.vat, lines: p.totals.lines,
       prices_include_vat: p.pricesIncludeVat, purchase_order_id: p.poId, customer_id: p.customerId, associated_id: p.associated?.id ?? null,
       notes: p.notes, observations: observations.join(" · ") || null,
+      sale_condition_id: p.sale.condition?.id ?? null, sale_condition: p.sale.label, payment_kind: p.sale.kind, payment_due: p.sale.due,
+      concept: p.sale.concept, service_from: p.sale.service?.from ?? null, service_to: p.sale.service?.to ?? null,
     },
   });
   if (error) throw new Error(`ARCA autorizó ${fmtVoucher(type, pv, number)} (CAE ${cae}) pero no se pudo guardar: ${error.message}. Avisá antes de volver a emitir.`);
@@ -132,9 +153,22 @@ export async function emitEInvoice(raw: EInvoiceInput): Promise<R<{ id: string; 
       if (dup?.length) return { ok: false, error: "Esa factura ya se emitió hace un momento" };
     }
     const letter = IVA_CONDITIONS[f.iva_condition].letter;
+    const { data: sc } = await c.s.supabase.from("sale_conditions").select("id, code, name, arca_kind, days, is_default, active, notes")
+      .eq("id", f.sale_condition_id).eq("org_id", c.s.org.org_id).maybeSingle();
+    if (!sc) return { ok: false, error: "Condición de venta inexistente" };
+    const issue = today();
+    if (f.payment_due < issue) return { ok: false, error: "El vencimiento de pago no puede ser anterior a hoy" };
+    let service: Sale["service"] = null;
+    if (f.concept !== 1) {
+      if (!f.service_from || !f.service_to) return { ok: false, error: "Para servicios, ARCA pide el período facturado (desde / hasta)" };
+      if (f.service_from > f.service_to) return { ok: false, error: "El período facturado está al revés" };
+      service = { from: f.service_from, to: f.service_to, due: f.payment_due };
+    }
+    const cond = sc as SaleCondition;
     const r = await emit(c, {
       kind: "factura", letter, receiver: { name: f.receiver_name, cuit: f.receiver_cuit, address: f.receiver_address, iva: f.iva_condition },
       totals, pricesIncludeVat: f.prices_include_vat, poId: f.purchase_order_id, customerId: f.customer_id, notes: f.notes,
+      sale: { condition: cond, label: cond.name, kind: cond.arca_kind, due: f.payment_due, concept: f.concept, service },
     });
     revalidatePath("/facturacion");
     if (f.purchase_order_id) revalidatePath(`/ordenes/${f.purchase_order_id}`);
@@ -160,6 +194,11 @@ export async function emitCreditNote(emissionId: string): Promise<R<{ id: string
       receiver: { name: e.receiver_name, cuit: e.doc_number, address: e.receiver_address, iva: e.iva_condition },
       totals, pricesIncludeVat: e.prices_include_vat, poId: e.purchase_order_id, customerId: e.customer_id, notes: `Anula ${fmtVoucher(e.voucher_type, e.point_of_sale, Number(e.number))}`,
       associated: { id: e.id, type: e.voucher_type, pv: e.point_of_sale, number: Number(e.number), date: e.issue_date },
+      // la nota de crédito repite la condición y el concepto de la factura que anula
+      sale: {
+        condition: null, label: e.sale_condition ?? null, kind: e.payment_kind ?? null, due: today(), concept: (e.concept ?? 1) as 1 | 2 | 3,
+        service: e.concept && e.concept !== 1 && e.service_from && e.service_to ? { from: e.service_from, to: e.service_to, due: today() } : null,
+      },
     });
     revalidatePath("/facturacion");
     revalidatePath("/impuestos");

@@ -78,3 +78,42 @@ export function guessIvaCondition(name: string, cuit: string | null): number {
 
 export const fmtVoucher = (type: number, pv: number, number: number) =>
   `${VOUCHER_NAME[type] ?? `Comprobante ${type}`} ${String(pv).padStart(5, "0")}-${String(number).padStart(8, "0")}`;
+
+/** Condición de venta según ARCA (Comprobantes en línea). WSFEv1 no la recibe: va impresa y define el vencimiento. */
+export const PAYMENT_KINDS = {
+  contado: { label: "Contado", electronic: false },
+  cuenta_corriente: { label: "Cuenta Corriente", electronic: true },
+  otros_electronicos: { label: "Otros medios de pago electrónicos", electronic: true },
+  cheque: { label: "Cheque", electronic: true },
+  tarjeta_debito: { label: "Tarjeta de Débito", electronic: true },
+  tarjeta_credito: { label: "Tarjeta de Crédito", electronic: true },
+  tiquet: { label: "Tiquet", electronic: true },
+  otra: { label: "Otra", electronic: false },
+} as const;
+export type PaymentKind = keyof typeof PAYMENT_KINDS;
+
+export type SaleCondition = { id: string; code: number; name: string; arca_kind: PaymentKind; days: number[]; is_default: boolean; active: boolean; notes: string | null };
+
+/** Concepto del comprobante (WSFEv1). Servicios exige período y vencimiento de pago. */
+export const CONCEPTS: Record<1 | 2 | 3, string> = { 1: "Productos", 2: "Servicios", 3: "Productos y servicios" };
+
+export const addDays = (iso: string, n: number) => {
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Vencimientos de cada cuota según la condición (sin plazos = vence el día de la factura). */
+export function installments(date: string, days: number[], total: number) {
+  const ds = days.length ? days : [0];
+  const each = Math.floor((total / ds.length) * 100) / 100;
+  return ds.map((d, i) => ({ due: addDays(date, d), amount: i === ds.length - 1 ? Math.round((total - each * (ds.length - 1)) * 100) / 100 : each }));
+}
+
+/** Texto que sale impreso: el tipo de ARCA y, si el nombre propio agrega algo (plazo), el nombre. */
+export function conditionText(c: { name: string | null; arca_kind: string | null }) {
+  const kind = c.arca_kind ? PAYMENT_KINDS[c.arca_kind as PaymentKind]?.label ?? c.arca_kind : "Cuenta Corriente";
+  if (!c.name) return kind;
+  const n = c.name.trim();
+  return n.toLowerCase().startsWith(kind.toLowerCase().slice(0, 8)) ? n : `${kind} — ${n}`;
+}

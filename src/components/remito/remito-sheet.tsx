@@ -12,7 +12,7 @@ const yellow = "#fffbe6";
  * Hoja del remito, igual al modelo impreso de Ibarra Insumos (carta, 8,5 x 11 in).
  * Se usa en la vista previa (escalada) y en la impresión / PDF.
  */
-export function RemitoSheet({ data, qrSvg }: { data: RemitoSheetData; qrSvg?: string | null }) {
+export function RemitoSheet({ data, qrSvg, qrCaption }: { data: RemitoSheetData; qrSvg?: string | null; qrCaption?: string | null }) {
   const { d, m, y, hm } = baParts(data.issuedAt);
   const it = data.issuer;
   const rows = [...data.items, ...Array.from({ length: Math.max(0, ROWS - data.items.length) }, () => null)];
@@ -50,6 +50,7 @@ export function RemitoSheet({ data, qrSvg }: { data: RemitoSheetData; qrSvg?: st
           <div style={{ textAlign: "center", fontWeight: 800, fontSize: 17, padding: "10px 6px 4px" }}>
             {data.provisional ? "REMITO PROVISORIO" : "REMITO"}
             <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.5, marginTop: 2 }}>N° {data.label ?? "0001-________"}</div>
+            {data.poNumber && <div style={{ fontSize: 10.5, fontWeight: 700, marginTop: 3, letterSpacing: 0.3 }}>O.C. N° {data.poNumber}</div>}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 44px 44px 60px", borderTop: line, borderBottom: line, fontSize: 12 }}>
             <div style={{ padding: "6px 10px", fontWeight: 700 }}>FECHA</div>
@@ -112,7 +113,7 @@ export function RemitoSheet({ data, qrSvg }: { data: RemitoSheetData; qrSvg?: st
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: data.notes ? 40 : 64 }}>
         <div style={{ fontSize: 8.5, textAlign: "center", width: 110 }}>
           {qrSvg ? <div style={{ width: 82, height: 82, margin: "0 0 3px" }} dangerouslySetInnerHTML={{ __html: qrSvg }} /> : <div style={{ width: 82, height: 82 }} />}
-          <div style={{ textAlign: "left" }}>Consultas por WhatsApp</div>
+          <div style={{ textAlign: "left", lineHeight: 1.25 }}>{qrCaption ?? "Consultas por WhatsApp"}</div>
         </div>
         <div style={{ width: "36%", textAlign: "center", fontSize: 10.5 }}>
           <div style={{ borderTop: "1px solid #333", paddingTop: 6 }}>Recibido — Firma y sello</div>

@@ -1,6 +1,7 @@
 import { sourceLabels } from "@/lib/cost-sources";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { RemitoDraft } from "@/components/remito/remito-draft";
 import { notFound } from "next/navigation";
 import { ClipboardList, FileText, Pencil } from "lucide-react";
 import { EInvoiceDialog } from "@/components/billing/einvoice-dialog";
@@ -124,6 +125,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         </div>
       )}
       {o.bac_number && <ContractActs sb={sb} org={s.org.org_id} bacNumber={o.bac_number} canEdit={writable} />}
+      {(writable || s.org.role === "logistica") && !["anulada", "cerrada", "completada"].includes(o.status) && <RemitoDraft sb={sb} org={s.org.org_id} orderNumber={o.bac_number ?? o.display_number} />}
       <OrderTabs
         initialTab={tab}
         po={o}

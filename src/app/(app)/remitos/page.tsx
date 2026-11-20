@@ -31,6 +31,7 @@ export default async function RemitosPage({ searchParams }: { searchParams: Prom
         </Link>
       ))}
       <Link href="/remitos/firmar" className="rounded-full px-4 py-1.5 text-sm font-medium text-fg-muted hover:text-fg">Foto firmados</Link>
+      <Link href="/remitos/qr" className="rounded-full px-4 py-1.5 text-sm font-medium text-fg-muted hover:text-fg">QR</Link>
     </div>
   );
   const header = <PageHeader title="Remitos" description="Emití remitos para hospitales y clientes. Cada uno queda numerado y registrado con destinatario, fecha, hora, productos y todo su recorrido: impresiones, entrega, copia firmada o anulación." />;

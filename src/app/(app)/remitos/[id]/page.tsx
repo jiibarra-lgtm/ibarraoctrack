@@ -5,9 +5,11 @@ import { CheckCircle2, Clock, FileSignature, Printer, Ban, MessageSquare, FilePl
 import { requireOrg, canWrite } from "@/lib/session";
 import { Card, CardHeader, PageHeader } from "@/components/ui/primitives";
 import { RemitoSheet } from "@/components/remito/remito-sheet";
+import { QR_TARGETS, type QrTarget } from "@/lib/qr";
+import { QrCodeEditor, type QrRow } from "../qr/qr-ui";
 import { formatDateTime } from "@/lib/format";
 import { EVENT_LABEL, REMITO_STATUS } from "@/lib/remitos";
-import { loadRemito } from "@/lib/remito-load";
+import { loadQrSettings, loadRemito } from "@/lib/remito-load";
 import { isUuid, cn } from "@/lib/utils";
 import { DocumentButton } from "../../ordenes/[id]/document-button";
 import { RemitoActions } from "./remito-actions";
@@ -24,6 +26,10 @@ export default async function RemitoPage({ params, searchParams }: { params: Pro
   const data = await loadRemito(s.supabase, s.org.org_id, id);
   if (!data) notFound();
   const { row: r, sheet, qrSvg } = data;
+  const [{ data: qrRow }, qrDefaults] = await Promise.all([
+    s.supabase.from("qr_codes").select("id, code, label, mode, target, menu, custom_url, active, scans, last_scan_at").eq("remito_id", id).maybeSingle(),
+    loadQrSettings(s.supabase, s.org.org_id),
+  ]);
   const { data: events } = await s.supabase.from("remito_events").select("id, kind, note, actor, at").eq("remito_id", id).order("at");
   const actors = [...new Set((events ?? []).map((e) => e.actor).filter(Boolean))] as string[];
   const { data: people } = actors.length ? await s.supabase.from("profiles").select("id, full_name, email").in("id", actors) : { data: [] };
@@ -45,7 +51,7 @@ export default async function RemitoPage({ params, searchParams }: { params: Pro
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="overflow-x-auto rounded-2xl border border-card-border bg-white shadow-sm">
           <div className="w-[816px] [zoom:0.42] sm:[zoom:0.75] lg:[zoom:1] xl:[zoom:0.9] 2xl:[zoom:1]">
-            <RemitoSheet data={sheet} qrSvg={qrSvg} />
+            <RemitoSheet data={sheet} qrSvg={qrSvg} qrCaption={data.qrCaption} />
           </div>
         </div>
 
@@ -63,6 +69,20 @@ export default async function RemitoPage({ params, searchParams }: { params: Pro
               <dt className="text-fg-subtle">Copia firmada</dt><dd>{r.signed_document_id ? <DocumentButton documentId={r.signed_document_id} label="Ver firmada" size="sm" /> : "Pendiente"}</dd>
             </dl>
           </Card>
+          {qrRow && data.qrLink && (
+            <Card>
+              <CardHeader title="QR del remito" description="Lo que muestra se cambia sin reimprimir" action={<QrCodeEditor row={qrRow as QrRow} defaults={qrDefaults} link={data.qrLink} canEdit={canEdit} />} />
+              <div className="flex items-center gap-4 px-5 pb-5">
+                {qrSvg && <div className="size-20 shrink-0 rounded-lg bg-white p-1.5" dangerouslySetInnerHTML={{ __html: qrSvg }} />}
+                <dl className="grid min-w-0 grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-1 text-sm">
+                  <dt className="text-fg-subtle">Muestra</dt>
+                  <dd>{!qrRow.active ? "Desactivado" : (qrRow.mode ?? qrDefaults.mode) === "menu" ? "Menú con opciones" : QR_TARGETS[(qrRow.target ?? qrDefaults.target) as QrTarget]}</dd>
+                  <dt className="text-fg-subtle">Escaneos</dt><dd>{qrRow.scans}{qrRow.last_scan_at ? ` · último ${formatDateTime(qrRow.last_scan_at)}` : ""}</dd>
+                  <dt className="text-fg-subtle">Link</dt><dd className="truncate"><a href={data.qrLink} target="_blank" rel="noreferrer" className="font-mono text-xs text-brand hover:underline">{qrRow.code}</a></dd>
+                </dl>
+              </div>
+            </Card>
+          )}
           <Card>
             <CardHeader title="Historial" />
             <ol className="relative mx-5 mb-5 border-l border-border pl-5">

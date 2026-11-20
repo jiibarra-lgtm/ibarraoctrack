@@ -5,7 +5,7 @@ import { requireOrg } from "@/lib/session";
 import { canBill } from "@/lib/billing";
 import { isUuid } from "@/lib/utils";
 import { arcaAuth, getVoucher, lastVoucher, requestCae, type ArcaRpc } from "@/lib/arca";
-import { computeTotals, fmtVoucher, fromYmd, IVA_CONDITIONS, VOUCHER_TYPE, type EInvoiceLine, type SaleCondition } from "@/lib/einvoice";
+import { computeTotals, fmtVoucher, fromYmd, IVA_CONDITIONS, VOUCHER_TYPE, type AssocRemito, type EInvoiceLine, type EInvoiceSettings, type SaleCondition } from "@/lib/einvoice";
 
 type R<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const fail = (e: unknown): { ok: false; error: string } => ({ ok: false, error: (e as Error).message || "Error inesperado" });
@@ -61,6 +61,11 @@ const Input = z.object({
   concept: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   service_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   service_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  remitos: z.array(z.object({
+    pv: z.number().int().min(1, "Punto de venta del remito inválido").max(99999),
+    number: z.number().int().min(1, "Número de remito inválido").max(99999999),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  })).max(20).default([]),
 });
 
 type Sale = { condition: SaleCondition | null; label: string | null; kind: string | null; due: string | null; concept: 1 | 2 | 3; service: { from: string; to: string; due: string } | null };
@@ -75,13 +80,24 @@ export async function listSaleConditions(): Promise<R<{ conditions: SaleConditio
     return { ok: true, conditions: (data ?? []) as SaleCondition[] };
   } catch (e) { return fail(e); }
 }
-export type EInvoiceInput = z.infer<typeof Input>;
+export type EInvoiceInput = z.input<typeof Input>;
+
+/** Datos fijos de facturación (receptor GCBA, condición, concepto). null si no se configuraron. */
+export async function loadEInvoiceSettings(): Promise<R<{ settings: EInvoiceSettings | null }>> {
+  try {
+    const s = await requireOrg();
+    const { data } = await s.supabase.from("einvoice_settings")
+      .select("fixed_receiver, receiver_cuit, receiver_name, receiver_address, iva_condition, sale_condition_id, concept, require_remito, remito_pv")
+      .eq("org_id", s.org.org_id).maybeSingle();
+    return { ok: true, settings: (data as EInvoiceSettings | null) ?? null };
+  } catch (e) { return fail(e); }
+}
 
 async function emit(
   { s, rpc }: Awaited<ReturnType<typeof ctx>>,
   p: { kind: "factura" | "nota_credito"; letter: "A" | "B"; receiver: { name: string; cuit: string; address: string | null; iva: number };
     totals: ReturnType<typeof computeTotals>; pricesIncludeVat: boolean; poId: string | null; customerId: string | null; notes: string | null;
-    associated?: { id: string; type: number; pv: number; number: number; date: string }; sale: Sale },
+    associated?: { id: string; type: number; pv: number; number: number; date: string }; sale: Sale; remitos?: AssocRemito[]; fixed?: boolean },
 ) {
   const auth = await arcaAuth(rpc);
   if (!auth.pointOfSale) throw new Error("Falta el punto de venta en Configuración → ARCA");
@@ -124,6 +140,7 @@ async function emit(
       notes: p.notes, observations: observations.join(" · ") || null,
       sale_condition_id: p.sale.condition?.id ?? null, sale_condition: p.sale.label, payment_kind: p.sale.kind, payment_due: p.sale.due,
       concept: p.sale.concept, service_from: p.sale.service?.from ?? null, service_to: p.sale.service?.to ?? null,
+      remitos: p.remitos ?? [], fixed_receiver: !!p.fixed,
     },
   });
   if (error) throw new Error(`ARCA autorizó ${fmtVoucher(type, pv, number)} (CAE ${cae}) pero no se pudo guardar: ${error.message}. Avisá antes de volver a emitir.`);
@@ -137,6 +154,16 @@ export async function emitEInvoice(raw: EInvoiceInput): Promise<R<{ id: string; 
     if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
     const f = parsed.data;
     const c = await ctx();
+    // Receptor fijo (como se factura en ARCA): se usa siempre el configurado, no lo que venga del formulario
+    const { data: cfg } = await c.s.supabase.from("einvoice_settings")
+      .select("fixed_receiver, receiver_cuit, receiver_name, receiver_address, iva_condition, require_remito").eq("org_id", c.s.org.org_id).maybeSingle();
+    const fixed = !!cfg?.fixed_receiver;
+    if (fixed) {
+      f.receiver_cuit = cfg!.receiver_cuit; f.receiver_name = cfg!.receiver_name; f.receiver_address = cfg!.receiver_address; f.iva_condition = cfg!.iva_condition;
+    }
+    if (cfg?.require_remito && !f.remitos.length) return { ok: false, error: "Falta el N° de remito oficial (Comprobantes asociados → Remito R)" };
+    const seen = new Set<string>();
+    for (const r of f.remitos) { const k = `${r.pv}-${r.number}`; if (seen.has(k)) return { ok: false, error: `El remito ${k} está repetido` }; seen.add(k); }
     const totals = computeTotals(f.lines as EInvoiceLine[], f.prices_include_vat);
     if (totals.total <= 0) return { ok: false, error: "El total tiene que ser mayor a cero" };
     if (f.purchase_order_id) {
@@ -169,6 +196,7 @@ export async function emitEInvoice(raw: EInvoiceInput): Promise<R<{ id: string; 
       kind: "factura", letter, receiver: { name: f.receiver_name, cuit: f.receiver_cuit, address: f.receiver_address, iva: f.iva_condition },
       totals, pricesIncludeVat: f.prices_include_vat, poId: f.purchase_order_id, customerId: f.customer_id, notes: f.notes,
       sale: { condition: cond, label: cond.name, kind: cond.arca_kind, due: f.payment_due, concept: f.concept, service },
+      remitos: f.remitos, fixed,
     });
     revalidatePath("/facturacion");
     if (f.purchase_order_id) revalidatePath(`/ordenes/${f.purchase_order_id}`);
@@ -199,6 +227,7 @@ export async function emitCreditNote(emissionId: string): Promise<R<{ id: string
         condition: null, label: e.sale_condition ?? null, kind: e.payment_kind ?? null, due: today(), concept: (e.concept ?? 1) as 1 | 2 | 3,
         service: e.concept && e.concept !== 1 && e.service_from && e.service_to ? { from: e.service_from, to: e.service_to, due: today() } : null,
       },
+      remitos: (e.remitos ?? []) as AssocRemito[], fixed: true,
     });
     revalidatePath("/facturacion");
     revalidatePath("/impuestos");

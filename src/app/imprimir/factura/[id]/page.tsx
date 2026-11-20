@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 import { requireOrg } from "@/lib/session";
 import { isUuid } from "@/lib/utils";
 import { formatMoney } from "@/lib/format";
-import { afipQrUrl, CONCEPTS, conditionText, IVA_CONDITIONS, letterOf, VOUCHER_NAME } from "@/lib/einvoice";
+import { afipQrUrl, CONCEPTS, conditionText, fmtRemito, type AssocRemito, IVA_CONDITIONS, letterOf, VOUCHER_NAME } from "@/lib/einvoice";
 import { InvoicePrintBar } from "./print-bar";
 
 type Line = { description: string; quantity: number; unit: string | null; unit_price: number; vat_rate: number; amount: number; net_amount: number; total_amount: number };
@@ -100,6 +100,7 @@ export default async function PrintInvoice({ params }: { params: Promise<{ id: s
           <div><b>Domicilio:</b> {e.receiver_address}</div>
           <div><b>Condición de venta:</b> {saleLabel}</div>
           {e.po_label && <div><b>Orden de compra:</b> {e.po_label}</div>}
+          {((e.remitos ?? []) as AssocRemito[]).length > 0 && <div style={{ gridColumn: "1 / -1" }}><b>Comprobantes asociados:</b> {((e.remitos ?? []) as AssocRemito[]).map((r) => `Remito R ${fmtRemito(r)}${r.date ? ` (${d(r.date)})` : ""}`).join(" · ")}</div>}
           {e.associated_number && <div style={{ gridColumn: "1 / -1" }}><b>Comprobante asociado:</b> {VOUCHER_NAME[e.associated_type]} {pad(e.associated_pv, 5)}-{pad(Number(e.associated_number), 8)}</div>}
         </div>
 

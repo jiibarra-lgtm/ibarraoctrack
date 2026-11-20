@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { requireOrg } from "@/lib/session";
-import { arcaAuth, cleanCuit, generateCsr, inspectCertificate, lastVoucher, type ArcaRpc } from "@/lib/arca";
+import { arcaAuth, cleanCuit, generateCsr, inspectCertificate, lastVoucher, wsPointsOfSale, type ArcaRpc } from "@/lib/arca";
 
 type R<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -19,6 +19,15 @@ const fail = (e: unknown) => ({ ok: false as const, error: (e as Error).message 
 export async function saveArcaConfig(cuit: string, pointOfSale: string): Promise<R> {
   try {
     const { rpc } = await ctx();
+    // Un punto de venta de "Factura en línea" (RCEL) no sirve para el sistema: ARCA sólo acepta los de web service
+    const pv = Number(pointOfSale.trim());
+    const auth = await arcaAuth(rpc).catch(() => null);
+    if (auth && pv) {
+      const pvs = await wsPointsOfSale(auth).catch(() => []);
+      if (pvs.length && !pvs.some((p) => p.number === pv && !p.blocked)) {
+        return { ok: false, error: `El punto de venta ${pv} no está habilitado para web service (si es de "Factura en línea", sólo sirve en la página de ARCA). Habilitados para el sistema: ${pvs.filter((p) => !p.blocked).map((p) => p.number).join(", ")}.` };
+      }
+    }
     await rpc("set_config", { cuit: cleanCuit(cuit), point_of_sale: pointOfSale.trim() });
     revalidatePath("/configuracion");
     return { ok: true };
@@ -70,7 +79,10 @@ export async function testArca(): Promise<R<{ message: string }>> {
     const auth = await arcaAuth(rpc);
     if (!auth.pointOfSale) throw new Error("Falta el punto de venta");
     const [a, b] = await Promise.all([lastVoucher(auth, auth.pointOfSale, 1), lastVoucher(auth, auth.pointOfSale, 6)]);
-    const message = `Conectado. Punto de venta ${auth.pointOfSale}: última Factura A N° ${a}, última Factura B N° ${b}.`;
+    const pvs = await wsPointsOfSale(auth).catch(() => []);
+    const list = pvs.filter((p) => !p.blocked && (!p.until || p.until === "NULL")).map((p) => p.number);
+    const message = `Conectado. Punto de venta ${auth.pointOfSale}: última Factura A N° ${a}, última Factura B N° ${b}.`
+      + (list.length ? ` Puntos de venta habilitados para el sistema (web service): ${list.join(", ")}. Los de "Factura en línea" sólo sirven en la página de ARCA.` : "");
     await rpc("check", { ok: true, message });
     revalidatePath("/configuracion");
     return { ok: true, message };

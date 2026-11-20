@@ -15,3 +15,13 @@ describe("condiciones de venta", () => {
     expect(conditionText({ name: null, arca_kind: null })).toBe("Cuenta Corriente");
   });
 });
+
+import { fmtRemito, PAYMENT_KINDS as PK } from "@/lib/einvoice";
+describe("remito R asociado", () => {
+  it("formatea punto de venta y número como ARCA", () => {
+    expect(fmtRemito({ pv: 2, number: 1234, date: null })).toBe("00002-00001234");
+  });
+  it("transferencia bancaria es su propia condición de ARCA", () => {
+    expect(PK.transferencia.label).toBe("Transferencia Bancaria");
+  });
+});

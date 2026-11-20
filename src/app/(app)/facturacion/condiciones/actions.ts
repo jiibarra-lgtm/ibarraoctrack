@@ -74,3 +74,28 @@ export async function setCustomerCondition(customerId: string, conditionId: stri
     return { ok: true };
   } catch (e) { return { ok: false, error: (e as Error).message }; }
 }
+
+const Settings = z.object({
+  fixed_receiver: z.boolean(),
+  receiver_cuit: z.string().transform((x) => x.replace(/\D/g, "")).refine((x) => /^\d{11}$/.test(x), "El CUIT tiene que tener 11 números"),
+  receiver_name: z.string().trim().min(2, "Poné la razón social").max(200),
+  receiver_address: z.string().trim().max(300).nullable(),
+  iva_condition: z.number().int(),
+  sale_condition_id: z.string().uuid().nullable(),
+  concept: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  require_remito: z.boolean(),
+  remito_pv: z.number().int().min(1).max(99999).nullable(),
+});
+
+/** Datos fijos con los que se emite siempre la factura (receptor, condición, concepto, remito obligatorio). */
+export async function saveEInvoiceSettings(input: z.input<typeof Settings>): Promise<R> {
+  try {
+    const s = await guard();
+    const p = Settings.safeParse(input);
+    if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Datos inválidos" };
+    const { error } = await s.supabase.from("einvoice_settings").upsert({ org_id: s.org.org_id, ...p.data, receiver_address: p.data.receiver_address || null, updated_at: new Date().toISOString() });
+    if (error) return { ok: false, error: friendlyDbError(error) };
+    revalidatePath("/facturacion/condiciones");
+    return { ok: true };
+  } catch (e) { return { ok: false, error: (e as Error).message }; }
+}

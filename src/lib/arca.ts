@@ -106,6 +106,14 @@ export async function lastVoucher(auth: ArcaAuth, pointOfSale: number, voucherTy
   return Number(tag(r.xml, "CbteNro") ?? 0);
 }
 
+/** Puntos de venta habilitados para web service (FEParamGetPtosVenta). Los de "Factura en línea" no aparecen. */
+export async function wsPointsOfSale(auth: ArcaAuth) {
+  const r = await wsfe("FEParamGetPtosVenta", auth, "");
+  return [...r.xml.matchAll(/<PtoVenta>([\s\S]*?)<\/PtoVenta>/g)].map((m) => ({
+    number: Number(tag(m[1], "Nro") ?? 0), type: tag(m[1], "EmisionTipo") ?? "", blocked: tag(m[1], "Bloqueado") === "S", until: tag(m[1], "FchBaja"),
+  })).filter((p) => p.number > 0);
+}
+
 const n2 = (n: number) => (Math.round(n * 100) / 100).toFixed(2);
 
 export type CaeRequest = {

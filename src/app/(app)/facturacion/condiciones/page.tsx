@@ -3,9 +3,9 @@ import Link from "next/link";
 import { requireOrg } from "@/lib/session";
 import { canBill } from "@/lib/billing";
 import { Badge, Card, CardHeader, PageHeader } from "@/components/ui/primitives";
-import { PAYMENT_KINDS, type SaleCondition } from "@/lib/einvoice";
+import { PAYMENT_KINDS, type EInvoiceSettings, type SaleCondition } from "@/lib/einvoice";
 import { cn } from "@/lib/utils";
-import { ConditionButtons, ConditionEditor, CustomerConditionSelect } from "./conditions-ui";
+import { ConditionButtons, ConditionEditor, CustomerConditionSelect, EInvoiceSettingsForm } from "./conditions-ui";
 
 export const metadata: Metadata = { title: "Condiciones de venta" };
 
@@ -13,11 +13,14 @@ export default async function SaleConditionsPage() {
   const s = await requireOrg();
   const org = s.org.org_id;
   const edit = canBill(s.org.role);
-  const [{ data: conds }, { data: customers }, { data: used }] = await Promise.all([
+  const [{ data: conds }, { data: customers }, { data: used }, { data: cfg }, { data: arca }] = await Promise.all([
     s.supabase.from("sale_conditions").select("id, code, name, arca_kind, days, is_default, active, notes").eq("org_id", org).order("active", { ascending: false }).order("code"),
     s.supabase.from("customers").select("id, name, sale_condition_id").eq("org_id", org).order("name").limit(500),
     s.supabase.from("arca_emissions").select("sale_condition_id").eq("org_id", org).not("sale_condition_id", "is", null).limit(5000),
+    s.supabase.from("einvoice_settings").select("fixed_receiver, receiver_cuit, receiver_name, receiver_address, iva_condition, sale_condition_id, concept, require_remito, remito_pv").eq("org_id", org).maybeSingle(),
+    s.supabase.rpc("arca_conn", { p_action: "status", p_org: org, p_data: {} }).then((r) => r, () => ({ data: null })),
   ]);
+  const pv = (arca as { point_of_sale?: number } | null)?.point_of_sale ?? null;
   const list = (conds ?? []) as SaleCondition[];
   const uses = new Map<string, number>();
   for (const u of (used ?? []) as { sale_condition_id: string }[]) uses.set(u.sale_condition_id, (uses.get(u.sale_condition_id) ?? 0) + 1);
@@ -29,6 +32,11 @@ export default async function SaleConditionsPage() {
       <PageHeader breadcrumb={<Link href="/facturacion" className="hover:text-fg">Facturación</Link>} title="Condiciones de venta"
         description="Como en Tango: cada condición tiene su tipo de ARCA (lo que sale impreso en la factura) y sus plazos (de ahí sale el vencimiento de cobro). Al facturar se propone la habitual del cliente o la predeterminada."
         actions={edit && <ConditionEditor nextCode={nextCode} />} />
+
+      <Card className="mb-5">
+        <CardHeader title="Cómo se completa siempre la factura" description={`Los casilleros de ARCA, fijos. Punto de venta del sistema: ${pv ? String(pv).padStart(5, "0") : "sin configurar"} (web service). El 00002 es de "Factura en línea" y sólo sirve en la página de ARCA; se cambia en Configuración → ARCA.`} />
+        <EInvoiceSettingsForm initial={(cfg as EInvoiceSettings | null) ?? null} options={active.map((x) => ({ id: x.id, label: `${x.code} · ${x.name}` }))} canEdit={edit} />
+      </Card>
 
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">

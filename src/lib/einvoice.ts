@@ -85,6 +85,7 @@ export const PAYMENT_KINDS = {
   cuenta_corriente: { label: "Cuenta Corriente", electronic: true },
   otros_electronicos: { label: "Otros medios de pago electrónicos", electronic: true },
   cheque: { label: "Cheque", electronic: true },
+  transferencia: { label: "Transferencia Bancaria", electronic: true },
   tarjeta_debito: { label: "Tarjeta de Débito", electronic: true },
   tarjeta_credito: { label: "Tarjeta de Crédito", electronic: true },
   tiquet: { label: "Tiquet", electronic: true },
@@ -117,3 +118,13 @@ export function conditionText(c: { name: string | null; arca_kind: string | null
   const n = c.name.trim();
   return n.toLowerCase().startsWith(kind.toLowerCase().slice(0, 8)) ? n : `${kind} — ${n}`;
 }
+
+/** Remito R oficial asociado a la factura (como en "Comprobantes Asociados" de RCEL). */
+export type AssocRemito = { pv: number; number: number; date: string | null };
+export const fmtRemito = (r: AssocRemito) => `${String(r.pv).padStart(5, "0")}-${String(r.number).padStart(8, "0")}`;
+
+/** Datos fijos de facturación (receptor, condición, concepto) y si el remito oficial es obligatorio. */
+export type EInvoiceSettings = {
+  fixed_receiver: boolean; receiver_cuit: string; receiver_name: string; receiver_address: string | null; iva_condition: number;
+  sale_condition_id: string | null; concept: 1 | 2 | 3; require_remito: boolean; remito_pv: number | null;
+};

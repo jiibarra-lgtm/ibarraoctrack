@@ -2,14 +2,14 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertTriangle, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, Loader2, Lock, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/overlays";
 import { Field, Input, NativeSelect } from "@/components/ui/primitives";
 import { formatMoney } from "@/lib/format";
 import { parseArNumber } from "@/lib/money";
-import { addDays, CONCEPTS, computeTotals, guessIvaCondition, installments, IVA_CONDITIONS, PAYMENT_KINDS, type SaleCondition } from "@/lib/einvoice";
-import { emitEInvoice, listSaleConditions, loadOrderForInvoice, lookupCustomerCuit } from "@/app/(app)/facturacion/einvoice-actions";
+import { addDays, CONCEPTS, fmtRemito, type EInvoiceSettings, computeTotals, guessIvaCondition, installments, IVA_CONDITIONS, PAYMENT_KINDS, type SaleCondition } from "@/lib/einvoice";
+import { emitEInvoice, listSaleConditions, loadEInvoiceSettings, loadOrderForInvoice, lookupCustomerCuit } from "@/app/(app)/facturacion/einvoice-actions";
 
 type L = { description: string; quantity: string; unit: string; unit_price: string; vat_rate: number };
 const blank: L = { description: "", quantity: "1", unit: "", unit_price: "", vat_rate: 21 };
@@ -18,6 +18,8 @@ const show = (n: number) => String(n).replace(".", ",");
 const todayAr = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
 const monthBounds = (iso: string) => { const [y, m] = iso.split("-").map(Number); return { from: `${iso.slice(0, 7)}-01`, to: new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10) }; };
 const dmy = (iso: string) => iso.split("-").reverse().join("/");
+type Rem = { pv: string; number: string; date: string };
+const digits = (s: string) => s.replace(/\D/g, "");
 
 /** Factura electrónica con CAE: desde una OC (todo precargado) o suelta. */
 export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?: string; trigger: React.ReactNode }) {
@@ -44,6 +46,10 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
   const [concept, setConcept] = React.useState<1 | 2 | 3>(1);
   const [svcFrom, setSvcFrom] = React.useState(monthBounds(todayAr()).from);
   const [svcTo, setSvcTo] = React.useState(monthBounds(todayAr()).to);
+  // Datos fijos (receptor GCBA, condición "Otra", Productos) y remitos R oficiales cargados a mano
+  const [cfg, setCfg] = React.useState<EInvoiceSettings | null>(null);
+  const [rems, setRems] = React.useState<Rem[]>([{ pv: "", number: "", date: "" }]);
+  const fixed = !!cfg?.fixed_receiver;
   const cond = conds.find((c) => c.id === condId) ?? null;
   const pickCond = (id: string, list = conds) => {
     setCondId(id);
@@ -62,11 +68,21 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
   const load = async () => {
     setConfirm(false);
     setLoading(true);
-    const cr = await listSaleConditions();
+    const [cr, sr] = await Promise.all([listSaleConditions(), loadEInvoiceSettings()]);
     const list = cr.ok ? cr.conditions : [];
+    const st = sr.ok ? sr.settings : null;
     setConds(list);
-    const fallback = list.find((c) => c.is_default) ?? list[0];
+    setCfg(st);
+    setRems([{ pv: st?.remito_pv ? String(st.remito_pv) : "", number: "", date: "" }]);
+    const fallback = (st?.sale_condition_id && list.find((c) => c.id === st.sale_condition_id)) || list.find((c) => c.is_default) || list[0];
     if (fallback) pickCond(fallback.id, list);
+    if (st) setConcept(st.concept);
+    const applyFixed = () => {
+      if (!st?.fixed_receiver) return false;
+      setName(st.receiver_name); setCuit(st.receiver_cuit); setAddress(st.receiver_address ?? ""); setIva(st.iva_condition);
+      return true;
+    };
+    applyFixed();
     if (!purchaseOrderId) { setLoading(false); return; }
     const r = await loadOrderForInvoice(purchaseOrderId);
     setLoading(false);
@@ -75,12 +91,14 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
     setPoLabel(o.label);
     setLeft(o.order_total - o.invoiced);
     setCustomerId(o.customer.id);
-    setName(o.customer.name);
-    setCuit(o.customer.cuit ?? "");
-    setAddress(o.customer.address ?? "");
-    setIva(o.customer.iva_condition ?? guessIvaCondition(o.customer.name, o.customer.cuit));
-    // la condición habitual del cliente, si tiene
-    if (o.customer.sale_condition_id && list.some((c) => c.id === o.customer.sale_condition_id)) pickCond(o.customer.sale_condition_id, list);
+    if (!applyFixed()) {
+      setName(o.customer.name);
+      setCuit(o.customer.cuit ?? "");
+      setAddress(o.customer.address ?? "");
+      setIva(o.customer.iva_condition ?? guessIvaCondition(o.customer.name, o.customer.cuit));
+      // la condición habitual del cliente, si tiene
+      if (o.customer.sale_condition_id && list.some((c) => c.id === o.customer.sale_condition_id)) pickCond(o.customer.sale_condition_id, list);
+    }
     setIncl(true);
     setNotes(`OC ${o.label}`);
     setLines(o.items.length ? o.items.map((i) => ({ description: i.description, quantity: show(i.quantity), unit: i.unit ?? "", unit_price: show(i.unit_price), vat_rate: 21 })) : [{ ...blank }]);
@@ -93,7 +111,9 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
   const cuitOk = /^\d{11}$/.test(cuit.replace(/\D/g, ""));
   const over = totals && left !== null && totals.total > left + 1;
   const svcOk = concept === 1 || (!!svcFrom && !!svcTo && svcFrom <= svcTo);
-  const canEmit = !!totals && totals.total > 0 && cuitOk && name.trim().length >= 2 && !over && !!cond && due >= todayAr() && svcOk;
+  const remParsed = rems.filter((r) => r.pv || r.number).map((r) => ({ pv: Number(digits(r.pv)), number: Number(digits(r.number)), date: r.date || null }));
+  const remsOk = remParsed.every((r) => r.pv >= 1 && r.pv <= 99999 && r.number >= 1 && r.number <= 99999999) && (!cfg?.require_remito || remParsed.length > 0);
+  const canEmit = remsOk && !!totals && totals.total > 0 && cuitOk && name.trim().length >= 2 && !over && !!cond && due >= todayAr() && svcOk;
   const cuotas = cond && totals && cond.days.length > 1 ? installments(todayAr(), cond.days, totals.total) : [];
   const setL = (i: number, k: keyof L) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setLines((xs) => xs.map((x, j) => (j === i ? { ...x, [k]: k === "vat_rate" ? Number(e.target.value) : e.target.value } : x)));
@@ -105,6 +125,7 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
       purchase_order_id: purchaseOrderId ?? null, customer_id: customerId, receiver_name: name.trim(), receiver_cuit: cuit, receiver_address: address.trim() || null,
       iva_condition: iva, prices_include_vat: incl, lines: parsed as never, notes: notes.trim() || null,
       sale_condition_id: condId, payment_due: due, concept, service_from: concept === 1 ? null : svcFrom, service_to: concept === 1 ? null : svcTo,
+      remitos: remParsed,
     });
     setBusy(false);
     if (!r.ok) { toast.error(r.error, { duration: 12000 }); setConfirm(false); return; }
@@ -120,7 +141,18 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
       <DialogContent title={poLabel ? `Facturar OC ${poLabel}` : "Factura electrónica"} description="Se pide el CAE a ARCA. Revisá antes de emitir: una factura emitida sólo se anula con nota de crédito." className="top-[4vh] max-h-[92vh] max-w-3xl overflow-y-auto">
         {loading ? <div className="flex justify-center py-10"><Loader2 className="size-5 animate-spin" /></div> : (
           <div className="mt-4 space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
+            {fixed && (
+              <div className="rounded-xl border border-border bg-field/50 p-3 text-sm">
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-fg-subtle"><Lock className="size-3.5" /> Receptor fijo (como en ARCA) · se cambia en Facturación → Condiciones de venta</p>
+                <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                  <p><span className="text-fg-subtle">Condición frente al IVA:</span> {IVA_CONDITIONS[iva]?.label} → <b>Factura {letter}</b></p>
+                  <p><span className="text-fg-subtle">CUIT:</span> <span className="tabular">{cuit}</span></p>
+                  <p><span className="text-fg-subtle">Razón social:</span> <b>{name}</b></p>
+                  <p><span className="text-fg-subtle">Domicilio comercial:</span> {address}</p>
+                </div>
+              </div>
+            )}
+            <div className={fixed ? "hidden" : "grid gap-3 sm:grid-cols-2"}>
               <Field label="Cliente (razón social)" htmlFor="ei-name"><Input id="ei-name" value={name} onChange={(e) => setName(e.target.value)} /></Field>
               <Field label="CUIT" htmlFor="ei-cuit">
                 <div className="flex gap-2">
@@ -161,6 +193,28 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
               {cuotas.length > 1 && (
                 <p className="text-xs text-fg-muted sm:col-span-3">Cuotas: {cuotas.map((q) => `${dmy(q.due)} ${formatMoney(q.amount)}`).join(" · ")}</p>
               )}
+            </div>
+
+            <div className="rounded-xl border border-border p-3">
+              <p className="text-sm font-medium">Comprobantes asociados · Remito R oficial{cfg?.require_remito && <span className="text-danger"> *</span>}</p>
+              <p className="mb-2 text-xs text-fg-subtle">El número del remito oficial, a mano. Sale impreso en la factura.</p>
+              <div className="space-y-2">
+                {rems.map((r, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-2">
+                    <span className="w-16 text-xs text-fg-muted">Remito R</span>
+                    <Input aria-label="Punto de venta del remito" placeholder="Pto. Vta." value={r.pv} inputMode="numeric" maxLength={5} className="h-8 w-24 tabular"
+                      onChange={(e) => setRems((xs) => xs.map((x, j) => (j === i ? { ...x, pv: digits(e.target.value) } : x)))} />
+                    <span>-</span>
+                    <Input aria-label="Número de remito" placeholder="Comprobante" value={r.number} inputMode="numeric" maxLength={8} className="h-8 w-32 tabular"
+                      onChange={(e) => setRems((xs) => xs.map((x, j) => (j === i ? { ...x, number: digits(e.target.value) } : x)))} />
+                    <Input aria-label="Fecha del remito (opcional)" type="date" value={r.date} className="h-8 w-40"
+                      onChange={(e) => setRems((xs) => xs.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)))} />
+                    <button type="button" className="text-fg-subtle hover:text-danger disabled:opacity-30" disabled={rems.length === 1} onClick={() => setRems((xs) => xs.filter((_, j) => j !== i))}><Trash2 className="size-4" /></button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={() => setRems((xs) => [...xs, { pv: xs[0]?.pv ?? "", number: "", date: "" }])} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-fg-muted hover:text-fg"><Plus className="size-3.5" /> Otro remito</button>
+              {!remsOk && <p className="mt-1 text-xs text-danger">{cfg?.require_remito && !remParsed.length ? "Cargá el número del remito oficial" : "Revisá punto de venta (hasta 5 números) y número (hasta 8)"}</p>}
             </div>
 
             <div className="overflow-x-auto rounded-xl border border-border">
@@ -207,7 +261,7 @@ export function EInvoiceDialog({ purchaseOrderId, trigger }: { purchaseOrderId?:
             ) : (
               <div className="rounded-xl border border-warn/40 bg-warn/10 p-3 text-sm">
                 <p className="flex items-start gap-2"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-warn" />
-                  <span>Vas a emitir <b>Factura {letter}</b> por <b>{formatMoney(totals!.total)}</b> a <b>{name}</b> (CUIT {cuit}), <b>{cond?.name}</b> con vencimiento el <b>{dmy(due)}</b>. Es un comprobante fiscal real: no se puede borrar, sólo anular con nota de crédito.</span></p>
+                  <span>Vas a emitir <b>Factura {letter}</b> por <b>{formatMoney(totals!.total)}</b> a <b>{name}</b> (CUIT {cuit}), <b>{cond?.name}</b> con vencimiento el <b>{dmy(due)}</b>{remParsed.length ? <>, remito R <b>{remParsed.map((r) => fmtRemito(r)).join(", ")}</b></> : ""}. Es un comprobante fiscal real: no se puede borrar, sólo anular con nota de crédito.</span></p>
                 <div className="mt-3 flex justify-end gap-2">
                   <Button variant="ghost" disabled={busy} onClick={() => setConfirm(false)}>Volver</Button>
                   <Button loading={busy} onClick={submit}>Emitir factura</Button>

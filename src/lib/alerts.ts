@@ -2,15 +2,16 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { todayISO, formatDate, formatMoney } from "@/lib/format";
 import { invoiceLabel, type InvoiceBalance, type PoBilling } from "@/lib/billing";
+import { loadIibbYear } from "@/lib/iibb-load";
 
 export type AlertLevel = "danger" | "warn" | "info";
-export type AlertKind = "bac" | "entrega" | "cobranza" | "facturacion" | "documentacion" | "margen" | "pagos" | "importacion" | "cierre";
+export type AlertKind = "bac" | "entrega" | "cobranza" | "facturacion" | "documentacion" | "margen" | "pagos" | "importacion" | "cierre" | "impuestos";
 export type Alert = { id: string; level: AlertLevel; kind: AlertKind; title: string; detail: string; href: string; amount?: string; date?: string | null };
 
 export const KIND_LABEL: Record<AlertKind, string> = {
   bac: "Órdenes sin cargar",
   entrega: "Entregas", cobranza: "Cobranzas", facturacion: "Facturación", documentacion: "Documentación",
-  margen: "Márgenes", pagos: "Pagos a proveedores", importacion: "Importaciones", cierre: "Cierre",
+  margen: "Márgenes", pagos: "Pagos a proveedores", importacion: "Importaciones", cierre: "Cierre", impuestos: "Impuestos",
 };
 
 const ACTIVE = ["recibida", "perfeccionada", "en_ejecucion", "completada"];
@@ -135,6 +136,20 @@ export async function computeAlerts(sb: SupabaseClient, orgId: string): Promise<
   }
 
   const rank: Record<AlertLevel, number> = { danger: 0, warn: 1, info: 2 };
+  // Ingresos Brutos: el sistema calcula cada mes y lo compara con el CM03 presentado
+  try {
+    const ym = today.slice(0, 7);
+    const next = new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 1)).toISOString().slice(0, 7);
+    const { checks } = await loadIibbYear(sb, orgId, ym.slice(0, 4), next);
+    for (const c of checks.filter((x) => x.status === "diferencia"))
+      out.push({ id: `iibb-${c.month}`, level: "danger", kind: "impuestos", title: `Ingresos Brutos ${c.month.slice(5)}/${c.month.slice(0, 4)}: la DDJJ no coincide`,
+        detail: `${c.issues[0] ?? "Difiere de lo calculado"} · diferencia ${formatMoney(Math.abs(c.taxDiff ?? 0))}`, href: `/impuestos/iibb?m=${c.month}`, amount: String(Math.abs(c.taxDiff ?? 0)) });
+    const prev = checks.find((x) => x.month < ym && x.status === "sin_presentar" && x.month === checks.filter((y) => y.month < ym).at(-1)?.month);
+    if (prev && Number(today.slice(8, 10)) >= 15)
+      out.push({ id: `iibb-pend-${prev.month}`, level: "warn", kind: "impuestos", title: `Ingresos Brutos ${prev.month.slice(5)}/${prev.month.slice(0, 4)}: no llegó el CM03`,
+        detail: `El sistema calcula ${formatMoney(prev.calc.totalDue)} a pagar. Mandate el CM03 por mail para controlarlo`, href: `/impuestos/iibb?m=${prev.month}` });
+  } catch { /* sin datos de IIBB */ }
+
   return out.sort((a, b) => rank[a.level] - rank[b.level] || String(a.date ?? "9").localeCompare(String(b.date ?? "9")));
 }
 

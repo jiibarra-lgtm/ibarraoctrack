@@ -11,6 +11,7 @@ import { defaultDeductions, type IibbDeductions, type IibbJur } from "@/lib/iibb
 import { cn } from "@/lib/utils";
 import { Cm03Upload, IibbWorksheet, JurisdictionsForm, MarkPaidButton } from "./ui";
 import { JURISDICTIONS } from "@/lib/iibb";
+import { loadIibbYear } from "@/lib/iibb-load";
 
 export const metadata: Metadata = { title: "Liquidación de Ingresos Brutos" };
 
@@ -36,6 +37,9 @@ export default async function IibbPage({ searchParams }: { searchParams: Promise
     sb.from("iibb_filings").select("month, total_tax, total_due, status, presented_at, paid_at, source").eq("org_id", org).order("month", { ascending: false }).limit(24),
     sb.from("tax_settings").select("iibb_day").eq("org_id", org).maybeSingle(),
   ]);
+  // Control del año: el sistema calcula cada mes solo y lo compara con el CM03 presentado
+  const yy = m.slice(0, 4);
+  const year = await loadIibbYear(sb, org, yy, yy === today.slice(0, 4) ? shift(today.slice(0, 7), 1) : `${Number(yy) + 1}-01`);
   const allJ = ((js ?? []) as { code: number; coefficient: string; rate: string; active: boolean }[]).map((j) => ({ code: Number(j.code), coefficient: N(j.coefficient), rate: N(j.rate), active: j.active }));
   const current: IibbJur[] = allJ.filter((j) => j.active).map(({ code, coefficient, rate }) => ({ code, coefficient, rate }));
   const sales = ((em ?? []) as { net_taxed: string; net_untaxed: string; exempt: string; exchange_rate: string | null; credit_note: boolean }[])
@@ -49,7 +53,10 @@ export default async function IibbPage({ searchParams }: { searchParams: Promise
     ? Object.fromEntries(saved.map((d) => [d.code, { retenciones: N(d.retenciones), percepciones: N(d.percepciones), sircreb: N(d.sircreb) }]))
     : defaultDeductions(active, retIibb, sircreb);
   for (const j of active) defaults[j.code] ??= { retenciones: 0, percepciones: 0, sircreb: 0 };
-  const favorPrev: Record<number, number> = Object.fromEntries(((prev?.detail ?? []) as Det[]).map((d) => [d.code, N(d.favor_next)]));
+  const prevCheck = year.checks.find((c) => c.month === shift(m, -1));
+  const favorPrev: Record<number, number> = prevCheck
+    ? Object.fromEntries((prevCheck.presented?.rows ?? prevCheck.calc.rows).map((d) => [d.code, N(d.favor_next)]))
+    : Object.fromEntries(((prev?.detail ?? []) as Det[]).map((d) => [d.code, N(d.favor_next)]));
   const base = filing ? N(filing.base) : Math.round(sales * 100) / 100;
   const fromArca = filing?.source === "arca";
   const [y, mm] = shift(m, 1).split("-").map(Number);
@@ -71,6 +78,8 @@ export default async function IibbPage({ searchParams }: { searchParams: Promise
         <Stat icon={Calculator} label="A pagar" value={formatMoney(filing?.total_due ?? null)} sub={fromArca ? (filing!.paid_at ? `según el CM03 · pagado el ${filing!.paid_at.split("-").reverse().join("/")}` : Number(filing!.total_due) > 0 ? "según el CM03 · sin pago registrado" : "según el CM03 · nada que pagar") : filing ? (filing.status === "presentada" ? (filing.paid_at ? "presentada y pagada" : "presentada, falta pagar") : "borrador guardado") : "estimado: todavía no hay CM03 de este mes"} tone={filing?.status === "presentada" && !filing.paid_at && Number(filing.total_due) > 0 ? "warn" : undefined} />
         <Stat icon={Percent} label="Vence" value={due.split("-").reverse().join("/")} sub="según el día cargado en Impuestos (estimado)" />
       </div>
+
+      <YearControl checks={year.checks} current={m} />
 
       {fromArca ? (
         <ArcaFiling filing={filing as unknown as ArcaF} sales={sales} current={current} month={m} canEdit={edit} />
@@ -158,6 +167,53 @@ function ArcaFiling({ filing, sales, current, month, canEdit }: { filing: ArcaF;
       </div>
       <p className="px-5 py-3 text-xs text-fg-subtle">* Impuesto del CM03 ÷ (ventas netas de ARCA del mes {formatMoney(sales)} × coeficiente). Si da distinto de la alícuota que te dijeron, la DDJJ se liquidó con otra alícuota o con otra base: consultalo con el contador.</p>
       {canEdit && Number(filing.total_due) > 0 && !filing.paid_at && <div className="flex justify-end px-5 pb-4"><MarkPaidButton month={month} /></div>}
+    </Card>
+  );
+}
+
+const STATUS = { ok: ["accent", "Coincide"], diferencia: ["danger", "Diferencia"], sin_presentar: ["warn", "Falta el CM03"], sin_ventas: ["neutral", "Sin ventas"] } as const;
+
+/** Mes por mes: lo que calcula el sistema solo contra lo presentado en ARCA. */
+function YearControl({ checks, current }: { checks: Awaited<ReturnType<typeof loadIibbYear>>["checks"]; current: string }) {
+  if (!checks.length) return null;
+  const bad = checks.filter((c) => c.status === "diferencia");
+  return (
+    <Card className="mt-5 overflow-hidden">
+      <CardHeader title={`Control ${current.slice(0, 4)}: cálculo del sistema vs. DDJJ presentada`}
+        description="El sistema calcula solo cada mes con tus ventas de ARCA, coeficientes, alícuotas, retenciones y SIRCREB, y lo compara con el CM03 que presentaste. Si algo no cierra, lo marca."
+        action={bad.length ? <Badge tone="danger">{bad.length} {bad.length === 1 ? "mes con diferencia" : "meses con diferencia"}</Badge> : <Badge tone="accent">Sin diferencias</Badge>} />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px] text-sm tabular">
+          <thead className="text-xs text-fg-subtle"><tr className="border-y border-border">
+            <th className="px-5 py-2 text-left font-medium">Mes</th><th className="px-2 text-right font-medium">Ventas netas (ARCA)</th>
+            <th className="px-2 text-right font-medium">Impuesto calculado</th><th className="px-2 text-right font-medium">Impuesto en la DDJJ</th><th className="px-2 text-right font-medium">Diferencia</th>
+            <th className="px-2 text-right font-medium">A pagar calculado</th><th className="px-2 text-right font-medium">A pagar DDJJ</th><th className="px-5 text-right font-medium">Estado</th>
+          </tr></thead>
+          <tbody className="divide-y divide-border">
+            {checks.map((c) => {
+              const [tone, label] = STATUS[c.status];
+              return (
+                <tr key={c.month} className={cn(c.month === current && "bg-field")}>
+                  <td className="px-5 py-2"><Link href={`/impuestos/iibb?m=${c.month}`} className="capitalize hover:underline">{monthLabel(c.month)}</Link></td>
+                  <td className="px-2 text-right">{formatMoney(c.sales)}</td>
+                  <td className="px-2 text-right">{formatMoney(c.calc.totalTax)}</td>
+                  <td className="px-2 text-right">{c.presented ? formatMoney(c.presented.total_tax) : "—"}</td>
+                  <td className={cn("px-2 text-right", c.status === "diferencia" && "font-semibold text-danger")}>{c.taxDiff !== null ? formatMoney(c.taxDiff) : "—"}</td>
+                  <td className="px-2 text-right">{formatMoney(c.calc.totalDue)}</td>
+                  <td className="px-2 text-right">{c.presented ? formatMoney(c.presented.total_due) : "—"}</td>
+                  <td className="px-5 text-right"><Badge tone={tone}>{label}</Badge></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {bad.length > 0 && (
+        <ul className="space-y-1 border-t border-border px-5 py-3 text-sm">
+          {bad.map((c) => c.issues.map((i, n) => <li key={`${c.month}-${n}`} className="text-danger"><b className="capitalize">{monthLabel(c.month)}:</b> {i}. {(c.taxDiff ?? 0) < 0 ? `Se declararon ${formatMoney(-(c.taxDiff ?? 0))} de impuesto de menos.` : `Se declararon ${formatMoney(c.taxDiff)} de más.`}</li>))}
+          <li className="text-xs text-fg-subtle">“A pagar” puede diferir además por percepciones de IIBB y saldos a favor que no llegan al sistema; la alícuota y la base se controlan exacto.</li>
+        </ul>
+      )}
     </Card>
   );
 }

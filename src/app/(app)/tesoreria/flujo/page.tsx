@@ -9,6 +9,7 @@ import { formatDate, formatMoney } from "@/lib/format";
 import { loadBillableOrders } from "@/lib/billing-load";
 import { loadBreakEven } from "@/lib/break-even";
 import { businessDay, IVA_DAY } from "@/lib/taxes";
+import { loadIibbYear } from "@/lib/iibb-load";
 import { cashLedger, chequeOpen, fixedCostDates, projectFlow, type FlowItem } from "@/lib/treasury";
 import { cn } from "@/lib/utils";
 
@@ -81,8 +82,13 @@ export default async function FlujoPage({ searchParams }: { searchParams: Promis
   const [y, mm] = month.split("-").map(Number);
   if (ivaDue > 0) items.push({ date: businessDay(y, mm, IVA_DAY[digit]), amount: ivaDue, dir: "out", group: "impuestos", label: "IVA (estimado)", certain: true });
   const { data: lastIibb } = await sb.from("iibb_filings").select("month, total_due, paid_at").eq("org_id", org).eq("month", prev).maybeSingle().then((r) => r, () => ({ data: null }));
-  const iibbAmt = lastIibb && !lastIibb.paid_at ? Number(lastIibb.total_due) : 0;
-  if (iibbAmt > 0) items.push({ date: businessDay(y, mm, Number(tax?.iibb_day ?? 15)), amount: iibbAmt, dir: "out", group: "impuestos", label: "Ingresos Brutos", certain: true });
+  // Si todavía no hay CM03 del mes pasado, va lo que calcula el sistema solo
+  let iibbAmt = lastIibb ? (!lastIibb.paid_at ? Number(lastIibb.total_due) : 0) : 0;
+  if (!lastIibb) {
+    const { checks } = await loadIibbYear(sb, org, prev.slice(0, 4), month).catch(() => ({ checks: [] as Awaited<ReturnType<typeof loadIibbYear>>["checks"] }));
+    iibbAmt = checks.find((c) => c.month === prev)?.calc.totalDue ?? 0;
+  }
+  if (iibbAmt > 0) items.push({ date: businessDay(y, mm, Number(tax?.iibb_day ?? 15)), amount: iibbAmt, dir: "out", group: "impuestos", label: lastIibb ? "Ingresos Brutos" : "Ingresos Brutos (calculado)", certain: true });
 
   const flow = projectFlow(opening, items, today, weeks, { collectPct, delayDays });
   const min = flow.reduce((a, w) => (w.closing < a.closing ? w : a), flow[0]);

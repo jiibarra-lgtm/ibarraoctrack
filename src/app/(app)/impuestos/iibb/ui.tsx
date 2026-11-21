@@ -2,13 +2,13 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { FileUp, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, NativeSelect } from "@/components/ui/primitives";
 import { formatMoney } from "@/lib/format";
 import { parseArNumber } from "@/lib/money";
 import { coefSum, JURISDICTIONS, liquidateIibb, type IibbDeductions, type IibbJur } from "@/lib/iibb";
-import { markIibbPaid, reopenIibbFiling, saveIibbFiling, saveJurisdictions } from "./actions";
+import { importCm03, markIibbPaid, reopenIibbFiling, saveIibbFiling, saveJurisdictions } from "./actions";
 
 const num = (s: string) => { const n = Number(parseArNumber(s) ?? NaN); return Number.isFinite(n) ? n : 0; };
 const show = (n: number) => String(Math.round(n * 100) / 100).replace(".", ",");
@@ -137,5 +137,46 @@ export function IibbWorksheet({ month, base: base0, jurisdictions, defaults, fav
         </div>
       )}
     </div>
+  );
+}
+
+/** Subir el PDF del CM03 presentado (uno o varios meses). */
+export function Cm03Upload() {
+  const router = useRouter();
+  const ref = React.useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <>
+      <input ref={ref} type="file" accept="application/pdf" multiple hidden onChange={async (e) => {
+        const files = [...(e.target.files ?? [])];
+        e.target.value = "";
+        if (!files.length) return;
+        const fd = new FormData();
+        files.forEach((f) => fd.append("file", f));
+        setBusy(true);
+        const r = await importCm03(fd);
+        setBusy(false);
+        if (!r.ok) return toast.error(r.error, { duration: 10000 });
+        toast.success("CM03 cargado tal cual se presentó");
+        router.push(`/impuestos/iibb?m=${r.month}`);
+        router.refresh();
+      }} />
+      <Button size="sm" variant="secondary" loading={busy} onClick={() => ref.current?.click()}><FileUp /> Subir CM03</Button>
+    </>
+  );
+}
+
+export function MarkPaidButton({ month }: { month: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = React.useState(false);
+  return (
+    <Button size="sm" loading={busy} onClick={async () => {
+      setBusy(true);
+      const r = await markIibbPaid(month, true);
+      setBusy(false);
+      if (!r.ok) return toast.error(r.error);
+      toast.success("Marcada como pagada");
+      router.refresh();
+    }}>Marcar pagada</Button>
   );
 }

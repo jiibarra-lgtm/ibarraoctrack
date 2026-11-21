@@ -24,6 +24,8 @@ export const GMAIL_SOURCES: GmailSource[] = [
   // Ventanas de actualización de precios / incremento de stock de los convenios marco
   { key: "convenios", days: 90, mode: "mail", q: 'from:notificacionesbac@buenosaires.gob.ar subject:"Inicio período"' },
   { key: "facturas", days: 730, mode: "pdf", q: INVOICE_QUERY },
+  // DDJJ de Ingresos Brutos presentadas (CM03 de SIFERE) que te mandás por mail: se cargan tal cual en Impuestos → Liquidación IIBB
+  { key: "cm03", days: 730, mode: "pdf", q: 'has:attachment filename:pdf {subject:cm03 subject:"cm 03" filename:cm03 filename:DDJJ_Mensual "DJ MENSUAL - CM03"}' },
 ];
 
-export const GMAIL_SOURCES_VERSION = "2026-11-20a";
+export const GMAIL_SOURCES_VERSION = "2026-11-21a";

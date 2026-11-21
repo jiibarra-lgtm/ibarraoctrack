@@ -9,7 +9,8 @@ import { formatMoney } from "@/lib/format";
 import { businessDay } from "@/lib/taxes";
 import { defaultDeductions, type IibbDeductions, type IibbJur } from "@/lib/iibb";
 import { cn } from "@/lib/utils";
-import { IibbWorksheet, JurisdictionsForm } from "./ui";
+import { Cm03Upload, IibbWorksheet, JurisdictionsForm, MarkPaidButton } from "./ui";
+import { JURISDICTIONS } from "@/lib/iibb";
 
 export const metadata: Metadata = { title: "Liquidación de Ingresos Brutos" };
 
@@ -30,9 +31,9 @@ export default async function IibbPage({ searchParams }: { searchParams: Promise
     sb.from("iibb_jurisdictions").select("code, coefficient, rate, active").eq("org_id", org).order("code"),
     sb.from("arca_vouchers").select("net_taxed, net_untaxed, exempt, exchange_rate, credit_note").eq("org_id", org).eq("direction", "emitido").gte("issue_date", `${m}-01`).lt("issue_date", `${shift(m, 1)}-01`).limit(5000),
     sb.from("tax_withholdings_monthly").select("ret_iibb, sircreb").eq("org_id", org).eq("month", m).maybeSingle(),
-    sb.from("iibb_filings").select("base, detail, status, paid_at, total_due").eq("org_id", org).eq("month", m).maybeSingle(),
+    sb.from("iibb_filings").select("base, detail, status, paid_at, total_due, total_tax, source, verifier, vep, paid_amount, presented_at").eq("org_id", org).eq("month", m).maybeSingle(),
     sb.from("iibb_filings").select("detail").eq("org_id", org).eq("month", shift(m, -1)).maybeSingle(),
-    sb.from("iibb_filings").select("month, total_tax, total_due, status, presented_at, paid_at").eq("org_id", org).order("month", { ascending: false }).limit(24),
+    sb.from("iibb_filings").select("month, total_tax, total_due, status, presented_at, paid_at, source").eq("org_id", org).order("month", { ascending: false }).limit(24),
     sb.from("tax_settings").select("iibb_day").eq("org_id", org).maybeSingle(),
   ]);
   const allJ = ((js ?? []) as { code: number; coefficient: string; rate: string; active: boolean }[]).map((j) => ({ code: Number(j.code), coefficient: N(j.coefficient), rate: N(j.rate), active: j.active }));
@@ -50,14 +51,16 @@ export default async function IibbPage({ searchParams }: { searchParams: Promise
   for (const j of active) defaults[j.code] ??= { retenciones: 0, percepciones: 0, sircreb: 0 };
   const favorPrev: Record<number, number> = Object.fromEntries(((prev?.detail ?? []) as Det[]).map((d) => [d.code, N(d.favor_next)]));
   const base = filing ? N(filing.base) : Math.round(sales * 100) / 100;
+  const fromArca = filing?.source === "arca";
   const [y, mm] = shift(m, 1).split("-").map(Number);
   const due = businessDay(y, mm, Number(tax?.iibb_day ?? 15));
 
   return (
     <>
       <PageHeader breadcrumb={<Link href="/impuestos" className="hover:text-fg">Impuestos</Link>} title="Liquidación de Ingresos Brutos"
-        description="Convenio Multilateral, mes por mes: la base (ventas netas del mes según ARCA) se reparte por coeficiente, se aplica la alícuota de cada jurisdicción y se restan retenciones, percepciones, SIRCREB y el saldo a favor que viene del mes anterior. Es el borrador del CM03: confirmalo con el contador antes de presentar."
-        actions={<div className="flex gap-2 text-sm">
+        description="Lo presentado sale del CM03 de SIFERE (ARCA), tal cual: se carga solo cuando te mandás el PDF por mail, o lo subís acá. Los meses que todavía no se presentaron muestran una estimación con tus alícuotas, marcada como tal."
+        actions={<div className="flex flex-wrap items-center gap-2 text-sm">
+          {edit && <Cm03Upload />}
           <Link href={`/impuestos/iibb?m=${shift(m, -1)}`} className="rounded-full border border-card-border bg-field px-3 py-1.5 text-fg-muted hover:text-fg">← {monthLabel(shift(m, -1))}</Link>
           {m < today.slice(0, 7) && <Link href={`/impuestos/iibb?m=${shift(m, 1)}`} className="rounded-full border border-card-border bg-field px-3 py-1.5 text-fg-muted hover:text-fg">{monthLabel(shift(m, 1))} →</Link>}
         </div>} />
@@ -65,18 +68,22 @@ export default async function IibbPage({ searchParams }: { searchParams: Promise
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={Receipt} label={`Ventas netas ${monthLabel(m)}`} value={formatMoney(sales)} sub="facturas emitidas menos notas de crédito" />
         <Stat icon={Landmark} label="Retenciones IIBB + SIRCREB" value={formatMoney(retIibb + sircreb)} sub={`retenciones ${formatMoney(retIibb)} · SIRCREB ${formatMoney(sircreb)}`} />
-        <Stat icon={Calculator} label="A pagar" value={formatMoney(filing?.total_due ?? null)} sub={filing ? (filing.status === "presentada" ? (filing.paid_at ? "presentada y pagada" : "presentada, falta pagar") : "borrador guardado") : "guardá la liquidación para fijarla"} tone={filing?.status === "presentada" && !filing.paid_at ? "warn" : undefined} />
+        <Stat icon={Calculator} label="A pagar" value={formatMoney(filing?.total_due ?? null)} sub={fromArca ? (filing!.paid_at ? `según el CM03 · pagado el ${filing!.paid_at.split("-").reverse().join("/")}` : Number(filing!.total_due) > 0 ? "según el CM03 · sin pago registrado" : "según el CM03 · nada que pagar") : filing ? (filing.status === "presentada" ? (filing.paid_at ? "presentada y pagada" : "presentada, falta pagar") : "borrador guardado") : "estimado: todavía no hay CM03 de este mes"} tone={filing?.status === "presentada" && !filing.paid_at && Number(filing.total_due) > 0 ? "warn" : undefined} />
         <Stat icon={Percent} label="Vence" value={due.split("-").reverse().join("/")} sub="según el día cargado en Impuestos (estimado)" />
       </div>
 
+      {fromArca ? (
+        <ArcaFiling filing={filing as unknown as ArcaF} sales={sales} current={current} month={m} canEdit={edit} />
+      ) : (
       <Card className="mt-5 overflow-hidden">
-        <CardHeader title={`Liquidación · ${monthLabel(m)}`} description={`Las retenciones IIBB del mes se proponen en CABA (las retiene el GCBA) y el SIRCREB se reparte por coeficiente. Todo se puede corregir.${Math.abs(base - sales) > 1 ? ` La base guardada (${formatMoney(base)}) es distinta de las ventas de ARCA (${formatMoney(sales)}).` : ""}`}
+        <CardHeader title={`Estimación · ${monthLabel(m)}`} description={`Las retenciones IIBB del mes se proponen en CABA (las retiene el GCBA) y el SIRCREB se reparte por coeficiente. Todo se puede corregir.${Math.abs(base - sales) > 1 ? ` La base guardada (${formatMoney(base)}) es distinta de las ventas de ARCA (${formatMoney(sales)}).` : ""}`}
           action={filing ? <Badge tone={filing.status === "presentada" ? "accent" : "warn"}>{filing.status === "presentada" ? "Presentada" : "Borrador"}</Badge> : undefined} />
         {active.length ? (
           <IibbWorksheet key={`${m}-${filing?.status ?? "n"}-${saved.length}`} month={m} base={base} jurisdictions={active} defaults={defaults} favorPrev={favorPrev}
             status={(filing?.status as "borrador" | "presentada" | undefined) ?? null} paidAt={filing?.paid_at ?? null} canEdit={edit} />
         ) : <p className="px-5 pb-5 text-sm text-fg-subtle">Activá al menos una jurisdicción abajo.</p>}
       </Card>
+      )}
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Card className="self-start">
@@ -84,16 +91,16 @@ export default async function IibbPage({ searchParams }: { searchParams: Promise
           <JurisdictionsForm initial={allJ} canEdit={edit} />
         </Card>
         <Card className="self-start overflow-hidden">
-          <CardHeader title="Liquidaciones anteriores" />
+          <CardHeader title="DDJJ por mes" description="ARCA = cargada del CM03 presentado." />
           {!(history ?? []).length ? <p className="px-5 pb-5 text-sm text-fg-subtle">Todavía no guardaste ninguna.</p> : (
             <table className="w-full text-sm tabular">
               <tbody className="divide-y divide-border">
-                {((history ?? []) as { month: string; total_tax: string; total_due: string; status: string; paid_at: string | null }[]).map((h) => (
+                {((history ?? []) as { month: string; total_tax: string; total_due: string; status: string; paid_at: string | null; source: string }[]).map((h) => (
                   <tr key={h.month} className={cn(h.month === m && "bg-field")}>
                     <td className="px-5 py-2"><Link href={`/impuestos/iibb?m=${h.month}`} className="capitalize hover:underline">{monthLabel(h.month)}</Link></td>
                     <td className="px-2 text-right text-fg-muted">imp. {formatMoney(h.total_tax)}</td>
                     <td className="px-2 text-right font-medium">{formatMoney(h.total_due)}</td>
-                    <td className="px-5 text-right"><Badge tone={h.status !== "presentada" ? "warn" : h.paid_at ? "accent" : "danger"}>{h.status !== "presentada" ? "Borrador" : h.paid_at ? "Pagada" : "Sin pagar"}</Badge></td>
+                    <td className="px-5 text-right">{h.source === "arca" && <Badge tone="info">ARCA</Badge>} <Badge tone={h.status !== "presentada" ? "warn" : h.paid_at || Number(h.total_due) === 0 ? "accent" : "danger"}>{h.status !== "presentada" ? "Borrador" : Number(h.total_due) === 0 ? "Sin saldo" : h.paid_at ? "Pagada" : "Sin pago registrado"}</Badge></td>
                   </tr>
                 ))}
               </tbody>
@@ -102,5 +109,55 @@ export default async function IibbPage({ searchParams }: { searchParams: Promise
         </Card>
       </div>
     </>
+  );
+}
+
+type ArcaRow = { code: number; coefficient: number | null; tax: number; restan: number; favor_next: number; due: number };
+type ArcaF = { detail: ArcaRow[]; total_tax: string; total_due: string; verifier: string | null; vep: string | null; paid_at: string | null; paid_amount: string | null; presented_at: string | null };
+
+/** Mes presentado: los números del CM03, sin recalcular. Al lado, contra qué ventas de ARCA se compara (alícuota efectiva). */
+function ArcaFiling({ filing, sales, current, month, canEdit }: { filing: ArcaF; sales: number; current: IibbJur[]; month: string; canEdit: boolean }) {
+  const rows = filing.detail ?? [];
+  const rateOf = new Map(current.map((j) => [j.code, j]));
+  return (
+    <Card className="mt-5 overflow-hidden">
+      <CardHeader title={`CM03 presentado · ${monthLabel(month)}`}
+        description={`Datos tal cual la DDJJ de SIFERE${filing.verifier ? ` (N° verificador ${filing.verifier})` : ""}${filing.presented_at ? `, presentada el ${filing.presented_at.split("-").reverse().join("/")}` : ""}.${filing.vep ? ` VEP ${filing.vep} pagado el ${filing.paid_at?.split("-").reverse().join("/")} por ${formatMoney(filing.paid_amount)}.` : ""}`}
+        action={<Badge tone="info">ARCA</Badge>} />
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[860px] text-sm tabular">
+          <thead className="text-xs text-fg-subtle"><tr className="border-y border-border">
+            <th className="px-5 py-2 text-left font-medium">Jurisdicción</th><th className="px-2 text-right font-medium">Impuesto determinado</th>
+            <th className="px-2 text-right font-medium">Valores restan</th><th className="px-2 text-right font-medium">A favor contribuyente</th><th className="px-2 text-right font-medium">A pagar</th>
+            <th className="px-2 text-right font-medium">Alícuota efectiva*</th><th className="px-5 text-right font-medium">Con tu alícuota cargada</th>
+          </tr></thead>
+          <tbody className="divide-y divide-border">
+            {rows.map((r) => {
+              const j = rateOf.get(Number(r.code));
+              const coef = r.coefficient ?? j?.coefficient ?? null;
+              const base = coef ? sales * Number(coef) : null;
+              const eff = base ? (Number(r.tax) / base) * 100 : null;
+              const withRate = base && j ? base * j.rate / 100 : null;
+              return (
+                <tr key={r.code}>
+                  <td className="px-5 py-2">{r.code} · {JURISDICTIONS[Number(r.code)]}</td>
+                  <td className="px-2 text-right font-medium">{formatMoney(r.tax)}</td>
+                  <td className="px-2 text-right">{formatMoney(r.restan)}</td>
+                  <td className="px-2 text-right text-accent">{Number(r.favor_next) ? formatMoney(r.favor_next) : "—"}</td>
+                  <td className="px-2 text-right font-semibold">{formatMoney(r.due)}</td>
+                  <td className="px-2 text-right">{eff !== null ? `${eff.toFixed(2).replace(".", ",")}%` : "—"}</td>
+                  <td className={cn("px-5 text-right", withRate !== null && Math.abs(withRate - Number(r.tax)) > Math.max(100, Number(r.tax) * 0.02) && "text-danger")}>
+                    {withRate !== null ? `${formatMoney(withRate)} (${String(j!.rate).replace(".", ",")}%)` : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="font-semibold"><td className="px-5 py-2">Total</td><td className="px-2 text-right">{formatMoney(filing.total_tax)}</td><td /><td /><td className="px-2 text-right">{formatMoney(filing.total_due)}</td><td /><td /></tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="px-5 py-3 text-xs text-fg-subtle">* Impuesto del CM03 ÷ (ventas netas de ARCA del mes {formatMoney(sales)} × coeficiente). Si da distinto de la alícuota que te dijeron, la DDJJ se liquidó con otra alícuota o con otra base: consultalo con el contador.</p>
+      {canEdit && Number(filing.total_due) > 0 && !filing.paid_at && <div className="flex justify-end px-5 pb-4"><MarkPaidButton month={month} /></div>}
+    </Card>
   );
 }

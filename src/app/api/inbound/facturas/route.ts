@@ -4,6 +4,7 @@ import { z } from "zod";
 import { pdfLines } from "@/lib/invoice/pdf-lines";
 import { parseSupplierInvoice } from "@/lib/invoice/supplier-invoice";
 import { invoicePayload } from "@/lib/inbound/supplier-invoices";
+import { parseCm03 } from "@/lib/iibb-cm03";
 
 /**
  * Recibe las facturas de proveedores (PDF adjunto) que manda el script de Gmail.
@@ -46,6 +47,9 @@ export async function POST(req: NextRequest) {
       if (bytes.length < 200 || Buffer.from(bytes.slice(0, 5)).toString() !== "%PDF-") { unreadable++; continue; }
       const pages = await pdfLines(bytes);
       if (pages.flat().join("").replace(/\s/g, "").length < 80) { unreadable++; continue; } // escaneado sin texto
+      // DDJJ de Ingresos Brutos (CM03 de SIFERE): se guarda tal cual la presentada
+      const cm03 = parseCm03(pages.flat());
+      if (cm03) { await sb.rpc("ingest_iibb_cm03", { p_token: raw.token, p_f: cm03 }).then(() => null, () => null); continue; }
       const parsed = parseSupplierInvoice(pages, { subject: inv.subject, filename: inv.filename });
       payloads.push(invoicePayload(parsed, { mail_id: inv.id, mail_from: inv.from, mail_subject: inv.subject, mail_date: inv.date, filename: inv.filename }));
     } catch {

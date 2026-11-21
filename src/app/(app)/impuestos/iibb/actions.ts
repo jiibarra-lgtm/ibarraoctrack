@@ -5,6 +5,8 @@ import { requireOrg } from "@/lib/session";
 import { canBill } from "@/lib/billing";
 import { friendlyDbError } from "@/lib/errors";
 import { coefSum, liquidateIibb, type IibbDeductions } from "@/lib/iibb";
+import { parseCm03 } from "@/lib/iibb-cm03";
+import { pdfLines } from "@/lib/invoice/pdf-lines";
 
 type R = { ok: true } | { ok: false; error: string };
 const fail = (e: unknown): R => ({ ok: false, error: (e as Error).message || "Error inesperado" });
@@ -58,7 +60,8 @@ export async function saveIibbFiling(month: string, base: number, deductions: Re
     const favorPrev: Record<number, number> = {};
     for (const r of ((prev?.detail ?? []) as { code: number; favor_next: number }[])) favorPrev[r.code] = Number(r.favor_next) || 0;
     const l = liquidateIibb(base, jur, ded, favorPrev);
-    const { data: cur } = await s.supabase.from("iibb_filings").select("status").eq("org_id", org).eq("month", month).maybeSingle();
+    const { data: cur } = await s.supabase.from("iibb_filings").select("status, source").eq("org_id", org).eq("month", month).maybeSingle();
+    if (cur?.source === "arca") return { ok: false, error: "Este mes viene del CM03 presentado en ARCA: no se edita a mano" };
     if (cur?.status === "presentada" && status === "borrador") return { ok: false, error: "Ya está presentada" };
     const { error } = await s.supabase.from("iibb_filings").upsert({
       org_id: org, month, base, detail: l.rows, total_tax: l.totalTax, total_due: l.totalDue, status,
@@ -74,6 +77,8 @@ export async function saveIibbFiling(month: string, base: number, deductions: Re
 export async function reopenIibbFiling(month: string): Promise<R> {
   try {
     const s = await guard();
+    const { data: cur } = await s.supabase.from("iibb_filings").select("source").eq("org_id", s.org.org_id).eq("month", month).maybeSingle();
+    if (cur?.source === "arca") return { ok: false, error: "Este mes viene del CM03 presentado en ARCA" };
     const { error } = await s.supabase.from("iibb_filings").update({ status: "borrador", presented_at: null, paid_at: null }).eq("org_id", s.org.org_id).eq("month", month);
     if (error) return { ok: false, error: friendlyDbError(error) };
     revalidatePath("/impuestos/iibb");
@@ -91,4 +96,27 @@ export async function markIibbPaid(month: string, paid: boolean): Promise<R> {
     revalidatePath("/tesoreria/flujo");
     return { ok: true };
   } catch (e) { return fail(e); }
+}
+
+/** Sube el PDF del CM03 (o el que baja de SIFERE con el comprobante del VEP) y lo carga tal cual se presentó. */
+export async function importCm03(form: FormData): Promise<{ ok: true; month: string } | { ok: false; error: string }> {
+  try {
+    const s = await guard();
+    const files = form.getAll("file").filter((f): f is File => f instanceof File && f.size > 0);
+    if (!files.length) return { ok: false, error: "Elegí el PDF del CM03" };
+    let last = "";
+    for (const f of files.slice(0, 12)) {
+      if (f.size > 8_000_000) return { ok: false, error: `${f.name}: muy grande` };
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      if (Buffer.from(bytes.slice(0, 5)).toString() !== "%PDF-") return { ok: false, error: `${f.name}: no es un PDF` };
+      const c = parseCm03((await pdfLines(bytes)).flat());
+      if (!c) return { ok: false, error: `${f.name}: no parece un CM03 de SIFERE` };
+      const { data, error } = await s.supabase.rpc("iibb_import_cm03", { p_org: s.org.org_id, p_f: c });
+      if (error || data !== "ok") return { ok: false, error: error?.message ?? `${f.name}: no se pudo leer` };
+      last = c.month;
+    }
+    revalidatePath("/impuestos/iibb");
+    revalidatePath("/tesoreria/flujo");
+    return { ok: true, month: last };
+  } catch (e) { return fail(e) as { ok: false; error: string }; }
 }

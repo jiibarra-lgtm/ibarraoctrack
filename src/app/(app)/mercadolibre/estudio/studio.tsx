@@ -70,7 +70,7 @@ export function Studio({ ready, video }: { ready: boolean; video: boolean }) {
   if (!ready) return (
     <Card><CardBody className="space-y-2 text-sm">
       <p className="font-medium">Falta conectar la IA de imágenes.</p>
-      <p className="text-fg-muted">Creá una clave en platform.openai.com › API keys (los créditos de tu ChatGPT Pro la cubren) y cargala en Vercel como variable de entorno <code>OPENAI_API_KEY</code>. No la pegues en el chat.</p>
+      <p className="text-fg-muted">Es gratis con Cloudflare Workers AI (unas 90 fotos por día): creá un token con permiso “Workers AI” en dash.cloudflare.com y cargá en Vercel <code>CLOUDFLARE_ACCOUNT_ID</code> y <code>CLOUDFLARE_AI_TOKEN</code>. No los pegues en el chat.</p>
     </CardBody></Card>
   );
 
@@ -135,7 +135,7 @@ export function Studio({ ready, video }: { ready: boolean; video: boolean }) {
           </CardBody>
         </Card>
         ) : (
-          <Card><CardHeader title="3. Video corto (clip)" /><CardBody className="text-sm text-fg-muted">Los videos necesitan Gemini (pago). Las fotos funcionan con tu clave de OpenAI.</CardBody></Card>
+          <Card><CardHeader title="3. Video corto (clip)" /><CardBody className="text-sm text-fg-muted">Los videos necesitan una IA paga (Gemini). Las fotos son gratis con Cloudflare.</CardBody></Card>
         )}
       </div>
 

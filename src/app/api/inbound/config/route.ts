@@ -1,7 +1,7 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 import { runMlTasks } from "@/lib/ml-tasks";
-import { sendPendingPushes } from "@/lib/push";
-import { tokenRpc, tokenStockRpc } from "@/lib/ml-rpc";
+import { pushMlEvents, sendPendingPushes } from "@/lib/push";
+import { tokenProRpc, tokenRpc, tokenStockRpc } from "@/lib/ml-rpc";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { GMAIL_SOURCES, GMAIL_SOURCES_VERSION } from "@/lib/inbound/gmail-sources";
@@ -26,7 +26,8 @@ export async function POST(req: NextRequest) {
   // señal de vida para el vigía de Gmail (aunque no haya mails nuevos)
   await sb.rpc("inbound_heartbeat", { p_token: token }).then(() => null, () => null);
   // Cada corrida del script (10 min): reposición de stock y facturas de Mercado Libre, después de responder
-  after(() => runMlTasks(tokenRpc(token), tokenStockRpc(token), { sync: true }).catch(() => null));
+  after(() => runMlTasks(tokenRpc(token), tokenStockRpc(token), { sync: true, pro: tokenProRpc(token) })
+    .then(() => pushMlEvents(sb, token, tokenProRpc(token))).catch(() => null));
   // Avisos al celular (PWA): ventana de precios de los convenios que abre hoy o cierra mañana
   after(() => sendPendingPushes(sb, token).catch(() => null));
   return NextResponse.json({ version: GMAIL_SOURCES_VERSION, sources: GMAIL_SOURCES });

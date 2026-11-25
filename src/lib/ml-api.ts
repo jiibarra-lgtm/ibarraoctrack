@@ -83,22 +83,22 @@ export function groupPacks(list: MlApiOrder[]): MlApiOrder[] {
   return [...out.values()];
 }
 
-async function listOrders(token: string, role: "buyer" | "seller", userId: number, since: Date) {
+async function listOrders(token: string, role: "buyer" | "seller", userId: number, since: Date, max = 2000) {
   const res: ApiOrder[] = [];
-  for (let offset = 0; offset < 2000; offset += 50) {
+  for (let offset = 0; offset < max; offset += 50) {
     const page = await get<{ results: ApiOrder[]; paging: { total: number } }>(
       `/orders/search?${role}=${userId}&sort=date_desc&limit=50&offset=${offset}`, token);
     res.push(...page.results);
     const last = page.results[page.results.length - 1];
     if (!last || page.results.length < 50 || new Date(last.date_created) < since || offset + 50 >= page.paging.total) break;
   }
-  return res.filter((o) => new Date(o.date_created) >= since);
+  return res.filter((o) => new Date(o.date_created) >= since).slice(0, max);
 }
 
 export type MlRpc = (action: string, data?: Record<string, unknown>) => Promise<Record<string, unknown>>;
 
 /** Token vigente (lo refresca si hace falta) y el usuario de Mercado Libre. */
-async function mlToken(rpc: MlRpc, c?: Record<string, unknown>) {
+export async function mlToken(rpc: MlRpc, c?: Record<string, unknown>) {
   c = c ?? (await rpc("creds"));
   if (!c.connected) {
     if (c.expired) throw new Error("La conexión con Mercado Libre venció. Activá \"Acceso offline\" (offline_access) en tu aplicación de ML y tocá Conectar de nuevo");
@@ -129,7 +129,8 @@ export async function syncMercadoLibre(rpc: MlRpc) {
     if (!t) return { connected: false as const };
     const { token, userId } = t;
     const since = c.last_sync_at ? new Date(new Date(String(c.last_sync_at)).getTime() - 3 * 864e5) : new Date(Date.now() - 185 * 864e5);
-    const [buys, sells] = await Promise.all([listOrders(token, "buyer", userId, since), listOrders(token, "seller", userId, since)]);
+    // Compras: sólo las últimas 100 (para no ocupar lugar); ventas: todas desde la última vez
+    const [buys, sells] = await Promise.all([listOrders(token, "buyer", userId, since, 100), listOrders(token, "seller", userId, since)]);
     const orders = groupPacks([...buys.map((o) => mapOrder(o, "compra")), ...sells.map((o) => mapOrder(o, "venta"))]);
     const r = await rpc("apply", { orders });
     return { connected: true as const, ...r, leidas: orders.length };

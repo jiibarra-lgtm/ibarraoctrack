@@ -1,6 +1,7 @@
 "use server";
 import { requireOrg, canWrite } from "@/lib/session";
-import { geminiImage, geminiVideoStart, geminiVideoStatus } from "@/lib/gemini";
+import { geminiImage, geminiReady, geminiVideoStart, geminiVideoStatus } from "@/lib/gemini";
+import { openaiImage, openaiReady } from "@/lib/openai-images";
 
 type R<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 const fail = (e: unknown) => ({ ok: false as const, error: (e as Error).message || "Error" });
@@ -25,7 +26,8 @@ export async function studioImage(form: FormData): Promise<R<{ images: string[] 
     const prompt = String(form.get("prompt") ?? "").trim().slice(0, 2000);
     if (prompt.length < 5) return { ok: false, error: "Escribí qué querés" };
     const imgs = await files(form);
-    const out = await geminiImage(prompt, imgs);
+    // OpenAI primero (créditos de ChatGPT Pro); Gemini si es la única clave cargada
+    const out = openaiReady() || !geminiReady() ? await openaiImage(prompt, imgs) : await geminiImage(prompt, imgs);
     return { ok: true, images: out.map((x) => `data:${x.mime};base64,${x.b64}`) };
   } catch (e) { return fail(e); }
 }

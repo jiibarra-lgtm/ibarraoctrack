@@ -31,7 +31,7 @@ async function shrink(file: Blob, max = 1600): Promise<File> {
   return new File([b], "foto.jpg", { type: "image/jpeg" });
 }
 
-export function Studio({ ready }: { ready: boolean }) {
+export function Studio({ ready, video }: { ready: boolean; video: boolean }) {
   const [refs, setRefs] = React.useState<{ file: File; url: string }[]>([]);
   const [preset, setPreset] = React.useState(PRESETS[0].k);
   const [prompt, setPrompt] = React.useState(PRESETS[0].p);
@@ -69,8 +69,8 @@ export function Studio({ ready }: { ready: boolean }) {
 
   if (!ready) return (
     <Card><CardBody className="space-y-2 text-sm">
-      <p className="font-medium">Falta conectar Gemini.</p>
-      <p className="text-fg-muted">Sacá una clave en Google AI Studio (aistudio.google.com › Get API key) con la facturación activada (las fotos y videos no están en el nivel gratis) y cargala en Vercel como variable de entorno <code>GEMINI_API_KEY</code>. No la pegues en el chat.</p>
+      <p className="font-medium">Falta conectar la IA de imágenes.</p>
+      <p className="text-fg-muted">Creá una clave en platform.openai.com › API keys (los créditos de tu ChatGPT Pro la cubren) y cargala en Vercel como variable de entorno <code>OPENAI_API_KEY</code>. No la pegues en el chat.</p>
     </CardBody></Card>
   );
 
@@ -112,6 +112,7 @@ export function Studio({ ready }: { ready: boolean }) {
           </CardBody>
         </Card>
 
+        {video ? (
         <Card>
           <CardHeader title="3. Video corto (clip)" description="Tarda 1 a 3 minutos. Sirve para clips de ML y redes." />
           <CardBody className="space-y-3">
@@ -133,6 +134,9 @@ export function Studio({ ready }: { ready: boolean }) {
             )}
           </CardBody>
         </Card>
+        ) : (
+          <Card><CardHeader title="3. Video corto (clip)" /><CardBody className="text-sm text-fg-muted">Los videos necesitan Gemini (pago). Las fotos funcionan con tu clave de OpenAI.</CardBody></Card>
+        )}
       </div>
 
       {results.length > 0 && (

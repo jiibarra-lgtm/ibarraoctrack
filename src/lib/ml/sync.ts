@@ -9,7 +9,13 @@ import { abWinner, inBusinessHours, matchAnswer, personalize, repriceTarget, typ
  */
 type Store = MlRpc;
 const rows = async <T,>(store: Store, table: string) => ((await store("select", { table })).rows ?? []) as T[];
-const upsert = (store: Store, table: string, list: Record<string, unknown>[]) => list.length ? store("upsert", { table, rows: list }) : Promise.resolve({});
+/** La base toma las columnas del primer registro: se agrupan los registros que traen los mismos campos (así no se pierde ninguno). */
+const upsert = async (store: Store, table: string, list: Record<string, unknown>[]) => {
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const r of list) { const k = Object.keys(r).sort().join(","); groups.set(k, [...(groups.get(k) ?? []), r]); }
+  for (const rows of groups.values()) await store("upsert", { table, rows });
+  return {};
+};
 const patch = (store: Store, table: string, list: Record<string, unknown>[]) => list.length ? store("patch", { table, rows: list }) : Promise.resolve({});
 const event = (store: Store, e: { kind: string; title: string; detail?: string; ref?: string; url?: string }) => store("event", e).catch(() => null);
 const hoursAgo = (iso: string | null | undefined, h: number) => !iso || Date.now() - Date.parse(iso) > h * 3600e3;

@@ -12,8 +12,8 @@ const model = () => process.env.CLOUDFLARE_IMAGE_MODEL || "@cf/black-forest-labs
 const explain = (status: number, j: { errors?: { message?: string; code?: number }[] } | null) => {
   const m = j?.errors?.[0]?.message ?? `Error ${status}`;
   if (status === 429 || /neuron|limit|quota/i.test(m)) return "Se terminó el cupo gratis de hoy de Cloudflare (se renueva a las 21 hs de Argentina).";
+  if (/nsfw|safety|flagged/i.test(m)) return "El filtro de seguridad de la IA bloqueó esta foto (suele pasar con productos que asocia a cuerpos o muerte, como bolsas de óbito). Probá con la foto del producto doblado o en su empaque, sin mostrarlo extendido, y una descripción neutra (ej. “bolsa de polietileno negra con cierre”).";
   if (status === 401 || status === 403) return "El token de Cloudflare no es válido o no tiene permiso de Workers AI.";
-  if (/nsfw|safety/i.test(m)) return "Cloudflare bloqueó la imagen por sus reglas de contenido. Probá con otra descripción.";
   return m;
 };
 

@@ -12,22 +12,37 @@ const model = () => process.env.CLOUDFLARE_IMAGE_MODEL || "@cf/black-forest-labs
 const explain = (status: number, j: { errors?: { message?: string; code?: number }[] } | null) => {
   const m = j?.errors?.[0]?.message ?? `Error ${status}`;
   if (status === 429 || /neuron|limit|quota/i.test(m)) return "Se terminó el cupo gratis de hoy de Cloudflare (se renueva a las 21 hs de Argentina).";
-  if (/nsfw|safety|flagged/i.test(m)) return "El filtro de seguridad de la IA bloqueó esta foto (suele pasar con productos que asocia a cuerpos o muerte, como bolsas de óbito). Probá con la foto del producto doblado o en su empaque, sin mostrarlo extendido, y una descripción neutra (ej. “bolsa de polietileno negra con cierre”).";
+  if (/nsfw|safety|flagged/i.test(m)) return "El filtro de seguridad de la IA bloqueó esta foto aunque se probó 3 veces. A veces es un falso positivo: probá con otra foto del producto (más de cerca, fondo liso, sin personas) o con el tipo “Libre” y una descripción corta.";
   if (status === 401 || status === 403) return "El token de Cloudflare no es válido o no tiene permiso de Workers AI.";
   return m;
 };
 
 /** Genera una foto; las fotos de referencia (hasta 4) se achican a 512 px como pide el modelo. Devuelve base64. */
 export async function cloudflareImage(prompt: string, images: { mime: string; b64: string }[]) {
+  const refs: Blob[] = [];
+  for (const img of images.slice(0, 4)) {
+    const small = await sharp(Buffer.from(img.b64, "base64")).rotate().resize(511, 511, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
+    refs.push(new Blob([new Uint8Array(small)], { type: "image/png" }));
+  }
+  const text = `${refs.length ? "Commercial e-commerce product photography. Keep the exact product from the reference image (same shape, colors, label and text). " : "Commercial e-commerce product photography. "}${prompt}`.slice(0, 2000);
+  // el filtro de seguridad a veces bloquea por error: se reintenta con otra variación (semilla) antes de avisar
+  let last: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { return await runOnce(text, refs); } catch (e) {
+      last = e as Error;
+      if (!/flagged|nsfw|safety|filtro de seguridad/i.test(last.message)) throw last;
+    }
+  }
+  throw last!;
+}
+
+async function runOnce(prompt: string, refs: Blob[]) {
   const fd = new FormData();
-  const refs = images.length ? `Usá el producto exacto de la imagen de referencia, sin cambiar su forma, colores ni etiquetas. ` : "";
-  fd.append("prompt", (refs + prompt).slice(0, 2000));
+  fd.append("prompt", prompt);
   fd.append("width", "1024");
   fd.append("height", "1024");
-  for (const [i, img] of images.slice(0, 4).entries()) {
-    const small = await sharp(Buffer.from(img.b64, "base64")).rotate().resize(511, 511, { fit: "inside", withoutEnlargement: true }).png().toBuffer();
-    fd.append(`input_image_${i}`, new Blob([new Uint8Array(small)], { type: "image/png" }), `ref-${i}.png`);
-  }
+  fd.append("seed", String(Math.floor(Math.random() * 2_000_000_000)));
+  refs.forEach((b, i) => fd.append(`input_image_${i}`, b, `ref-${i}.png`));
   const r = await fetch(`https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/ai/run/${model()}`, {
     method: "POST", cache: "no-store", headers: { authorization: `Bearer ${process.env.CLOUDFLARE_AI_TOKEN}` }, body: fd,
   });

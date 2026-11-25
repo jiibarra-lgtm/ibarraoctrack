@@ -9,11 +9,11 @@ import { mlUploadPicture } from "../pro-actions";
 import { studioImage, studioVideoStart, studioVideoStatus } from "./actions";
 
 const PRESETS = [
-  { k: "blanco", label: "Fondo blanco (portada ML)", p: "Usá el producto exacto de la foto, sin cambiar su forma, colores, etiquetas ni textos. Ponelo sobre fondo blanco puro (#FFFFFF), centrado, ocupando el 85 % del cuadro, con luz de estudio suave y una sombra leve. Formato cuadrado 1200x1200. Sin textos, logos ni marcas de agua agregadas." },
-  { k: "ambiente", label: "En uso / ambiente", p: "Usá el producto exacto de la foto, sin cambiarlo. Mostralo en un ambiente real donde se usa (oficina, depósito, hospital o comercio según el producto), foto profesional, luz natural, fondo desenfocado, cuadrado." },
-  { k: "medidas", label: "Infografía con medidas", p: "Usá el producto exacto de la foto sobre fondo blanco y agregá líneas de cota con estas medidas: [ALTO] x [ANCHO] x [PROFUNDIDAD]. Tipografía limpia, gris oscuro, en español. Cuadrado." },
-  { k: "pack", label: "Pack / varias unidades", p: "Usá el producto exacto de la foto y mostrá [N] unidades iguales ordenadas prolijamente sobre fondo blanco, foto de estudio, cuadrado." },
-  { k: "beneficios", label: "Beneficios destacados", p: "Usá el producto exacto de la foto sobre fondo claro y agregá 3 íconos simples con textos cortos en español: [BENEFICIO 1], [BENEFICIO 2], [BENEFICIO 3]. Diseño limpio y profesional, cuadrado." },
+  { k: "blanco", label: "Fondo blanco (portada ML)", p: "Place the product on a pure white background (#FFFFFF), centered, filling about 85% of the frame, soft studio lighting, subtle shadow. Square. No added text, logos or watermarks." },
+  { k: "ambiente", label: "En uso / ambiente", p: "Show the product in a realistic setting where it is used (home, office, warehouse or shop, whichever fits the product), professional photo, natural light, blurred background. Square." },
+  { k: "medidas", label: "Infografía con medidas", p: "Product on a white background with clean dimension lines showing: [ALTO] x [ANCHO] x [PROFUNDIDAD]. Clean dark grey typography. Square." },
+  { k: "pack", label: "Pack / varias unidades", p: "Show [N] identical units of the product neatly arranged on a white background, studio photo. Square." },
+  { k: "beneficios", label: "Beneficios destacados", p: "Product on a light background with 3 simple icons and short Spanish captions: [BENEFICIO 1], [BENEFICIO 2], [BENEFICIO 3]. Clean, professional layout. Square." },
   { k: "libre", label: "Libre", p: "" },
 ];
 const VIDEO = "Video corto de producto, cámara girando lento alrededor del producto exacto de la foto sobre fondo blanco de estudio, luz suave, sin textos ni personas, estilo publicidad de e-commerce.";

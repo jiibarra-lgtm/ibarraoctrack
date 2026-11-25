@@ -30,7 +30,7 @@ export async function listAllItemIds(ml: Ml) {
   for (const status of ["active", "paused", "under_review", "inactive"]) {
     for (let offset = 0; offset < 1000; offset += 100) {
       const r = await ml.get<{ results: string[]; paging: { total: number } }>(`/users/${ml.userId}/items/search?status=${status}&limit=100&offset=${offset}`);
-      if (!r.ok) break;
+      if (!r.ok) { console.warn(`[ml] items/search ${status}: ${r.status} ${r.error ?? ""}`); break; }
       ids.push(...r.data.results);
       if (r.data.results.length < 100 || offset + 100 >= r.data.paging.total) break;
     }
@@ -40,9 +40,21 @@ export async function listAllItemIds(ml: Ml) {
 
 export async function getItems(ml: Ml, ids: string[]) {
   const out: ApiItem[] = [];
-  for (let i = 0; i < ids.length; i += 20) {
-    const r = await ml.get<{ code: number; body: ApiItem }[]>(`/items?ids=${ids.slice(i, i + 20).join(",")}`);
-    if (r.ok) out.push(...r.data.filter((x) => x.code === 200).map((x) => x.body));
+  const valid = ids.filter((id) => /^MLA\d+$/.test(id));
+  for (let i = 0; i < valid.length; i += 20) {
+    const chunk = valid.slice(i, i + 20);
+    let r = await ml.get<{ code: number; body: ApiItem }[]>(`/items?ids=${chunk.join(",")}`);
+    if (!r.ok) r = await ml.get<{ code: number; body: ApiItem }[]>(`/items?ids=${chunk.join(",")}`);
+    const got = r.ok && Array.isArray(r.data) ? r.data.filter((x) => x.code === 200).map((x) => x.body) : [];
+    out.push(...got);
+    // si el lote falló (o vino incompleto), se piden de a una las que faltan
+    const have = new Set(got.map((x) => x.id));
+    const missing = chunk.filter((id) => !have.has(id));
+    if (missing.length) {
+      console.warn(`[ml] multiget incompleto (${r.status} ${r.error ?? ""}): ${missing.length} de ${chunk.length}, se piden de a una`);
+      const one = await pool(missing, 4, (id) => ml.get<ApiItem>(`/items/${id}`));
+      for (const x of one) if (x.ok && x.data?.id) out.push(x.data);
+    }
   }
   return out;
 }
@@ -379,5 +391,6 @@ export async function runMlPro(ml: Ml, store: Store) {
   await step("ab", () => runAbTests(ml, store));
   // de las compras se guarda el detalle sólo de las últimas 100
   await step("compras", () => store("trim_purchases", { keep: 100 }));
+  console.log("[ml] tareas", JSON.stringify(out).slice(0, 1500));
   return out;
 }

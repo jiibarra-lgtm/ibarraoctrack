@@ -13,7 +13,7 @@ import { parseCm03 } from "@/lib/iibb-cm03";
  */
 export const maxDuration = 300;
 
-const Body = z.object({ files: z.array(z.object({ id: z.string().regex(/^[\w-]{20,80}$/), name: z.string().max(300) })).min(1).max(40) });
+const Body = z.object({ files: z.array(z.object({ id: z.string().regex(/^[\w-]{20,80}$/), name: z.string().max(300).optional() })).min(1).max(40) });
 
 function authorized(req: NextRequest) {
   const want = process.env.DRIVE_IMPORT_KEY ?? "";
@@ -27,7 +27,13 @@ async function download(id: string) {
   if (!r.ok) throw new Error(`descarga ${r.status}`);
   const b = new Uint8Array(await r.arrayBuffer());
   if (b.length > 15_000_000) throw new Error("muy grande");
-  return b;
+  // nombre real del archivo (Content-Disposition: filename*=UTF-8''…  o filename="…")
+  const cd = r.headers.get("content-disposition") ?? "";
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(cd)?.[1];
+  const plain = /filename="?([^";]+)"?/i.exec(cd)?.[1];
+  let name: string | null = null;
+  try { name = star ? decodeURIComponent(star) : plain ?? null; } catch { name = plain ?? null; }
+  return { bytes: b, name };
 }
 
 export async function POST(req: NextRequest) {
@@ -36,9 +42,13 @@ export async function POST(req: NextRequest) {
   try { body = Body.parse(await req.json()); } catch { return NextResponse.json({ error: "Formato inválido" }, { status: 400 }); }
 
   const results = [];
-  for (const f of body.files) {
+  type F = { id: string; name: string };
+  for (const f0 of body.files) {
+    const f: F = { id: f0.id, name: f0.name ?? "" };
     try {
-      const bytes = await download(f.id);
+      const dl = await download(f.id);
+      const bytes = dl.bytes;
+      f.name = f.name || dl.name || f.id;
       if (Buffer.from(bytes.slice(0, 5)).toString() !== "%PDF-") { results.push({ id: f.id, name: f.name, status: "no_pdf" }); continue; }
       const pages = await pdfLines(bytes);
       const text = pages.flat().join(" ");

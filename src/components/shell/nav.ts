@@ -52,6 +52,7 @@ export const NAV: NavGroup[] = [
           { href: "/productos", label: "Renglones y costos", simple: true },
           { href: "/precios-stock", label: "Qué bajar / subir", simple: true },
           { href: "/productos/catalogo", label: "Catálogo", simple: true },
+          { href: "/costos-manuales", label: "Costos manuales", simple: true },
         ],
       },
     ],

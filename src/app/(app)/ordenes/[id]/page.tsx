@@ -21,6 +21,7 @@ import { loadProfitability } from "@/lib/profitability";
 import { loadDeliveries, loadDeliveryItems } from "@/lib/delivery-load";
 import { canBill, type CollectionRow, type InvoiceBalance, type PoBilling } from "@/lib/billing";
 import { OrderMercadoLibre } from "./order-ml";
+import { OrderManualCosts } from "./order-manual-costs";
 import type { MlRow } from "@/lib/mercadolibre";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
@@ -154,6 +155,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         collections={collections}
         canBill={canBill(s.org.role)}
       />
+      <OrderManualCosts sb={sb} orgId={s.org.org_id} poId={id} items={(items.data ?? []) as never} canEdit={writable} />
       {!!mlRows?.length && <OrderMercadoLibre rows={mlRows as MlRow[]} />}
     </>
   );

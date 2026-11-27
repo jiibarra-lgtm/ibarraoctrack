@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { classifyMail, parseBacMail } from "@/lib/inbound/bac-mail";
 import { parseConvenioWindow, type ConvenioWindow } from "@/lib/inbound/convenio-window";
-import { sendPendingPushes } from "@/lib/push";
+import { pushMlEvents, sendPendingPushes } from "@/lib/push";
 import { isTaxNoticeMail, parseTaxNotice, type TaxNotice } from "@/lib/inbound/tax-notices";
 import { isCardAlertMail, parseCardAlert, type CardAlert } from "@/lib/inbound/card-alerts";
 import { isCiudadMovementsMail, parseCiudad, type BankBalance, type BankMovement } from "@/lib/inbound/bank-ciudad";
@@ -11,7 +11,7 @@ import { isMercadoLibreMail, parseMercadoLibreMail, parseMlReturnMail, type MlEv
 import { runMlTasks } from "@/lib/ml-tasks";
 import { isBillMail, parseBillMail, type BillEvent } from "@/lib/inbound/bills";
 import { isPaymentMail, parsePaymentMail, type PaymentEvent } from "@/lib/inbound/payments";
-import { tokenRpc, tokenStockRpc } from "@/lib/ml-rpc";
+import { tokenRpc, tokenStockRpc, tokenProRpc } from "@/lib/ml-rpc";
 
 /**
  * Recibe los mails que manda el script de Google de la cuenta del usuario.
@@ -151,6 +151,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: auth ? "Token inválido" : "No se pudo guardar" }, { status: auth ? 401 : 500 });
   }
   // Con mails nuevos de Mercado Libre, se traen los precios por la API (si la cuenta está conectada), después de responder
-  if (mlEvents.length) after(() => runMlTasks(tokenRpc(body.token), tokenStockRpc(body.token)).catch(() => null));
+  // Llegó un mail de Mercado Libre (venta, pregunta…): aviso al celular en el momento, y después sincroniza
+  if (mlEvents.length) after(() => runMlTasks(tokenRpc(body.token), tokenStockRpc(body.token), { sync: true, pro: tokenProRpc(body.token) })
+    .catch(() => null).then(() => pushMlEvents(sb, body.token, tokenProRpc(body.token))).catch(() => null));
   return NextResponse.json({ ok: true, correos: ml.data, avisos: ev.data, banco: bk.data, mercadolibre: me.data, gastos: bl.data, pagos: py.data });
 }

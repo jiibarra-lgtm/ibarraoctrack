@@ -80,21 +80,46 @@ export async function sendPendingPushes(sb: SupabaseClient, token: string) {
   return { sent: sent.length };
 }
 
-/** Avisos de Mercado Libre (venta, pregunta, reclamo, competencia, baja, sin stock) al celular. */
+/**
+ * Avisos de Mercado Libre (venta, pregunta, reclamo, competencia, baja, sin stock) al celular.
+ * Un aviso que no llegó a ningún dispositivo vuelve a quedar pendiente y se reintenta en la próxima pasada (dentro del día).
+ */
 export async function pushMlEvents(sb: SupabaseClient, token: string, pro: (action: string, data?: Record<string, unknown>) => Promise<Record<string, unknown>>) {
   const ev = ((await pro("events_to_push")).rows ?? []) as { id: string; kind: string; title: string; detail: string | null; url: string | null }[];
   if (!ev.length) return { sent: 0 };
-  const { data, error } = await sb.rpc("push_outbox", { p_token: token });
-  if (error) return { error: error.message };
-  const box = data as Outbox;
-  if (!box.public_key || !box.private_key || !box.subscriptions.length) return { sent: 0 };
+  const retry = (ids: string[]) => (ids.length ? pro("patch", { table: "ml_events", rows: ids.map((id) => ({ id, pushed: false })) }).catch(() => null) : null);
+  let { data, error } = await sb.rpc("push_outbox", { p_token: token });
+  if (!error && !(data as Outbox)?.public_key) {
+    const keys = webpush.generateVAPIDKeys();
+    ({ data, error } = await sb.rpc("push_outbox", { p_token: token, p_new_public: keys.publicKey, p_new_private: keys.privateKey }));
+  }
+  const box = data as Outbox | null;
+  if (error || !box?.public_key || !box.private_key || !box.subscriptions.length) {
+    console.warn("[push] avisos de ML sin enviar:", error?.message ?? "no hay dispositivos suscriptos");
+    await retry(ev.map((e) => e.id));
+    return { sent: 0, error: error?.message ?? "sin dispositivos" };
+  }
   webpush.setVapidDetails(SUBJECT, box.public_key, box.private_key);
+  const ok = new Set<string>(), failed = new Set<string>(), gone = new Set<string>(), undelivered: string[] = [];
   let sent = 0;
   for (const e of ev.slice(0, 10)) {
     const payload = JSON.stringify({ title: e.title, body: e.detail ?? "", tag: `ml-${e.id}`, url: e.url ?? "/mercadolibre/panel" });
+    let any = false;
     for (const s of box.subscriptions) {
-      try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 6 * 3600, urgency: "high" }); sent++; } catch { /* suscripción vencida: la limpia el envío general */ }
+      try {
+        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 6 * 3600, urgency: "high" });
+        ok.add(s.endpoint); any = true; sent++;
+      } catch (err) {
+        const code = (err as { statusCode?: number }).statusCode;
+        console.warn(`[push] ${e.kind} no llegó a un dispositivo (${code ?? (err as Error).message})`);
+        if (code === 404 || code === 410) gone.add(s.endpoint); else failed.add(s.endpoint);
+      }
     }
+    if (!any) undelivered.push(e.id);
   }
+  undelivered.push(...ev.slice(10).map((e) => e.id));
+  await retry(undelivered);
+  await sb.rpc("push_mark", { p_token: token, p_sent: [], p_ok: [...ok], p_failed: [...failed].filter((x) => !ok.has(x)), p_gone: [...gone] }).then(() => null, () => null);
+  console.log(`[push] avisos de ML: ${ev.length - undelivered.length} enviados, ${undelivered.length} para reintentar`);
   return { sent };
 }

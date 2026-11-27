@@ -131,8 +131,13 @@ export async function syncMercadoLibre(rpc: MlRpc) {
     const since = c.last_sync_at ? new Date(new Date(String(c.last_sync_at)).getTime() - 3 * 864e5) : new Date(Date.now() - 185 * 864e5);
     // Compras: sólo las últimas 100 (para no ocupar lugar); ventas: todas desde la última vez
     const [buys, sells] = await Promise.all([listOrders(token, "buyer", userId, since, 100), listOrders(token, "seller", userId, since)]);
-    const orders = groupPacks([...buys.map((o) => mapOrder(o, "compra")), ...sells.map((o) => mapOrder(o, "venta"))]);
-    const r = await rpc("apply", { orders });
+    // ventas primero; de a pocas por llamada para no pasar el tiempo máximo de la base (3 s por consulta)
+    const orders = groupPacks([...sells.map((o) => mapOrder(o, "venta")), ...buys.map((o) => mapOrder(o, "compra"))]);
+    const r: Record<string, number> = {};
+    for (let i = 0; i < Math.max(orders.length, 1); i += 8) {
+      const part = (await rpc("apply", { orders: orders.slice(i, i + 8) })) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(part)) if (typeof v === "number") r[k] = (r[k] ?? 0) + v;
+    }
     return { connected: true as const, ...r, leidas: orders.length };
   } catch (e) {
     await rpc("error", { message: (e as Error).message }).catch(() => null);

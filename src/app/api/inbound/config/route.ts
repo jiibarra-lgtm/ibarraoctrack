@@ -25,8 +25,11 @@ export async function POST(req: NextRequest) {
   if (check.error) return NextResponse.json({ error: "Token inválido" }, { status: 401 });
   // señal de vida para el vigía de Gmail (aunque no haya mails nuevos)
   await sb.rpc("inbound_heartbeat", { p_token: token }).then(() => null, () => null);
-  // Cada corrida del script (10 min): reposición de stock y facturas de Mercado Libre, después de responder
+  // Avisos de Mercado Libre pendientes: primero, sin esperar a la sincronización (que puede tardar o fallar)
+  after(() => pushMlEvents(sb, token, tokenProRpc(token)).catch((e) => console.error("[push] ML:", (e as Error).message)));
+  // Cada corrida del script (10 min): reposición de stock y facturas de Mercado Libre, después de responder; y los avisos nuevos que encuentre
   after(() => runMlTasks(tokenRpc(token), tokenStockRpc(token), { sync: true, pro: tokenProRpc(token) })
+    .catch((e) => console.error("[ml] tareas:", (e as Error).message))
     .then(() => pushMlEvents(sb, token, tokenProRpc(token))).catch(() => null));
   // Avisos al celular (PWA): ventana de precios de los convenios que abre hoy o cierra mañana
   after(() => sendPendingPushes(sb, token).catch(() => null));

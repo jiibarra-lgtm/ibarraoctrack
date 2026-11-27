@@ -1,8 +1,7 @@
 "use client";
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { useTheme } from "next-themes";
-import { Menu as MenuIcon, Moon, Sun, LogOut, Check, Building2, Plus, Upload, Monitor, X } from "lucide-react";
+import { Menu as MenuIcon, LogOut, Check, Building2, Plus, Upload, X } from "lucide-react";
 import Link from "next/link";
 import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
@@ -24,7 +23,6 @@ type Props = {
 
 export function Header(p: Props) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
-  const { theme, setTheme } = useTheme();
   const [pending, start] = useTransition();
   const initials = (p.fullName || p.email).split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join("");
 
@@ -58,25 +56,6 @@ export function Header(p: Props) {
       )}
 
       <InstallButton />
-      <Menu>
-        <MenuTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label="Tema">
-            <Sun className="dark:hidden" /><Moon className="hidden dark:block" />
-          </Button>
-        </MenuTrigger>
-        <MenuContent className="min-w-36">
-          {[
-            ["light", "Claro", Sun], ["dark", "Oscuro", Moon], ["system", "Sistema", Monitor],
-          ].map(([v, label, Icon]) => {
-            const I = Icon as React.ElementType;
-            return (
-              <MenuItem key={v as string} onSelect={() => setTheme(v as string)}>
-                <I /> {label as string} {theme === v && <Check className="ml-auto" />}
-              </MenuItem>
-            );
-          })}
-        </MenuContent>
-      </Menu>
 
       <Menu>
         <MenuTrigger asChild>

@@ -33,9 +33,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es-AR" suppressHydrationWarning className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body style={{ ["--font-sans" as string]: "var(--font-geist-sans)", ["--font-mono" as string]: "var(--font-geist-mono)" }}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+        <ThemeProvider attribute="class" forcedTheme="dark" defaultTheme="dark" disableTransitionOnChange>
           {children}
-          <Toaster richColors position="top-right" closeButton />
+          <Toaster richColors theme="dark" position="top-right" closeButton />
           <ServiceWorker />
         </ThemeProvider>
       </body>

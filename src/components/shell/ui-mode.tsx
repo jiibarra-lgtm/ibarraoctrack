@@ -33,7 +33,7 @@ export function ModeSwitch({ className }: { className?: string }) {
       <div className="grid grid-cols-2 gap-1 rounded-xl bg-white/5 p-1" role="radiogroup" aria-label="Modo de vista">
         {(["simple", "completo"] as const).map((m) => (
           <button key={m} type="button" role="radio" aria-checked={mode === m} onClick={() => setMode(m)}
-            className={`rounded-lg px-2 py-1.5 text-xs font-medium capitalize transition-colors ${mode === m ? "bg-brand text-brand-fg" : "text-side-muted hover:text-side-fg"}`}>
+            className={`rounded-lg px-2 py-1.5 text-xs font-medium capitalize transition-colors ${mode === m ? "bg-white text-black" : "text-side-muted hover:text-side-fg"}`}>
             {m}
           </button>
         ))}

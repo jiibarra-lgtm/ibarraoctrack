@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContai
 import { monthLabel } from "@/lib/months";
 
 /** Paleta de series: celeste, azul petróleo, verde, ámbar (validada en claro y oscuro). */
-const COLORS = ["var(--chart)", "oklch(0.45 0.08 240)", "oklch(0.64 0.13 162)", "oklch(0.74 0.14 70)", "oklch(0.6 0.17 25)"];
+const COLORS = ["var(--chart)", "#a1a1aa", "#5fe3a1", "#f5c46b", "#ff8a8a"];
 
 export type Series = { key: string; label: string };
 

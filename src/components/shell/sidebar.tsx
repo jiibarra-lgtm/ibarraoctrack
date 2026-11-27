@@ -8,7 +8,7 @@ import { ModeSwitch, useUiMode } from "./ui-mode";
 export function Brand({ orgName }: { orgName: string }) {
   return (
     <div className="flex items-center gap-2.5 px-2">
-      <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand to-[oklch(0.55_0.12_240)] text-white shadow-md">
+      <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-white text-black">
         <svg viewBox="0 0 24 24" className="size-4.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="M4 7h16M4 12h10M4 17h6" />
           <circle cx="18" cy="16" r="3" />
@@ -44,7 +44,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                     onClick={onNavigate}
                     className={cn(
                       "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
-                      active ? "bg-brand font-medium text-brand-fg shadow-[0_6px_18px_-6px_var(--brand)]" : "text-side-muted hover:bg-white/10 hover:text-side-fg",
+                      active ? "bg-white/[.09] font-medium text-white" : "text-side-muted hover:bg-white/[.05] hover:text-side-fg",
                     )}
                   >
                     <Icon className="size-4 shrink-0" />

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireOrg, canWrite, type AppRole } from "@/lib/session";
 import { friendlyDbError } from "@/lib/errors";
 import { isUuid } from "@/lib/utils";
+import { parseDeliveryNote } from "@/lib/delivery-items";
 
 type R = { ok: true } | { ok: false; error: string };
 const can = (r: AppRole) => canWrite(r) || r === "logistica";
@@ -23,7 +24,7 @@ export async function saveBoardItem(input: z.input<typeof itemSchema>): Promise<
   if (!can(s.org.role)) return { ok: false, error: "Tu rol no permite editar entregas" };
   const p = itemSchema.safeParse(input);
   if (!p.success) return { ok: false, error: p.error.issues[0]?.message ?? "Datos inválidos" };
-  const row = { place: p.data.place, address: p.data.address || null, note: p.data.note || null, oc_text: p.data.oc_text || null };
+  const row = { place: p.data.place, address: p.data.address || null, note: p.data.note || null, oc_text: p.data.oc_text || null, items: parseDeliveryNote(p.data.note) };
   const { error } = p.data.id
     ? await s.supabase.from("delivery_board").update(row).eq("id", p.data.id).eq("org_id", s.org.org_id)
     : await s.supabase.from("delivery_board").insert({ ...row, org_id: s.org.org_id, position: -Math.floor(Date.now() / 1000) });
@@ -60,11 +61,12 @@ export async function addOrderToBoard(poId: string): Promise<R> {
     .eq("id", poId).eq("org_id", s.org.org_id).maybeSingle();
   if (!po) return { ok: false, error: "Orden no encontrada" };
   const { data: items } = await s.supabase.from("purchase_order_items").select("quantity, description_normalized, description_original, line_number")
-    .eq("purchase_order_id", poId).order("line_number").limit(8);
-  const note = (items ?? []).map((i) => `${Number(i.quantity).toLocaleString("es-AR")} ${String(i.description_normalized || i.description_original).split(/[·.(]/)[0].trim().toLowerCase()}`).join(" - ");
+    .eq("purchase_order_id", poId).order("line_number").limit(60);
+  const note = (items ?? []).slice(0, 8).map((i) => `${Number(i.quantity).toLocaleString("es-AR")} ${String(i.description_normalized || i.description_original).split(/[·.(]/)[0].trim().toLowerCase()}`).join(" - ");
   const { error } = await s.supabase.from("delivery_board").insert({
     org_id: s.org.org_id, place: (po.dependencia || po.customer_name || "Sin organismo").slice(0, 200), address: po.delivery_place?.slice(0, 300) ?? null,
     note: note.slice(0, 2000) || null, oc_text: po.bac_number ?? po.display_number, position: -Math.floor(Date.now() / 1000),
+    items: (items ?? []).map((i) => ({ qty: Number(i.quantity), product: String(i.description_normalized || i.description_original).split(/[·(]/)[0].trim().slice(0, 200) })),
   });
   if (error) return { ok: false, error: friendlyDbError(error) };
   done();

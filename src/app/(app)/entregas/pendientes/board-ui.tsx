@@ -12,12 +12,13 @@ import { safeAction } from "@/lib/safe-action";
 import { CopyButton } from "@/components/copy-button";
 import { RemindMeButton } from "@/components/reminders";
 import { cn } from "@/lib/utils";
+import { lineQty, parseDeliveryNote, type DeliveryLine } from "@/lib/delivery-items";
 import { addOrderToBoard, deleteBoardItem, saveBoardItem, setBoardStatus } from "./actions";
 
 export type BoardOrder = { id: string; number: string; customer: string | null; delivered_pct: number | null; status: string; due_date: string | null };
 export type BoardItem = {
   id: string; place: string; address: string | null; note: string | null; oc_text: string | null; oc_refs: string[];
-  status: "pendiente" | "entregado"; delivered_on: string | null; orders: BoardOrder[];
+  status: "pendiente" | "entregado"; delivered_on: string | null; orders: BoardOrder[]; items?: DeliveryLine[] | null;
   missing?: { number: string; in_bac: boolean }[];
 };
 
@@ -78,7 +79,7 @@ export function BoardCard({ item, canEdit }: { item: BoardItem; canEdit: boolean
         </div>
         {!pending && item.delivered_on && <Badge tone="accent">Entregado {formatDate(item.delivered_on)}</Badge>}
       </div>
-      {item.note && <p className="whitespace-pre-line text-sm">{item.note}</p>}
+      {item.items?.length ? <ItemLines lines={item.items} /> : item.note && <p className="whitespace-pre-line text-sm">{item.note}</p>}
       <OrderChips item={item} />
       {canEdit && (
         <div className="flex flex-wrap items-center gap-2">
@@ -106,6 +107,21 @@ export function BoardCard({ item, canEdit }: { item: BoardItem; canEdit: boolean
   );
 }
 
+/** Productos de la entrega, uno por renglón. */
+function ItemLines({ lines, muted }: { lines: DeliveryLine[]; muted?: boolean }) {
+  return (
+    <ul className={cn("divide-y divide-border overflow-hidden rounded-lg border border-border text-sm", muted && "text-xs")}>
+      {lines.map((l, i) => (
+        <li key={i} className="flex items-baseline gap-3 px-3 py-1.5">
+          <span className="w-24 shrink-0 text-right font-medium tabular-nums">{lineQty(l) || "—"}</span>
+          <span className="min-w-0 flex-1">{l.product}</span>
+          {l.note && <span className="shrink-0 text-xs text-fg-subtle">{l.note}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ItemDialog({ item, trigger }: { item?: BoardItem; trigger: React.ReactNode }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
@@ -128,7 +144,9 @@ export function ItemDialog({ item, trigger }: { item?: BoardItem; trigger: React
         <div className="grid gap-3">
           <label className="grid gap-1 text-xs text-fg-muted">Organismo / lugar<Input id="board-place" value={f.place} onChange={(e) => setF({ ...f, place: e.target.value })} placeholder="H. Gral. Agudos Dr. Parmenio Piñero" /></label>
           <label className="grid gap-1 text-xs text-fg-muted">Dirección<Input id="board-address" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} placeholder="Varela 1301" /></label>
-          <label className="grid gap-1 text-xs text-fg-muted">Qué llevar<Textarea id="board-note" rows={3} value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="600 cajas de toallas de papel" /></label>
+          <label className="grid gap-1 text-xs text-fg-muted">Qué llevar<Textarea id="board-note" rows={3} value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder="600 cajas de toallas de papel - 15x5 detergente" />
+            <span className="text-[11px] text-fg-subtle">Separá los productos con « - ». Se guardan uno por renglón:</span></label>
+          {f.note.trim() && <ItemLines lines={parseDeliveryNote(f.note)} muted />}
           <label className="grid gap-1 text-xs text-fg-muted">OC<Input id="board-oc" value={f.oc_text} onChange={(e) => setF({ ...f, oc_text: e.target.value })} placeholder="426-19261-oc26" /></label>
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>

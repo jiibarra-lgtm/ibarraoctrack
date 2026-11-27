@@ -133,6 +133,7 @@ export const NAV: NavGroup[] = [
           { href: "/mercadolibre/estudio", label: "Estudio de fotos" },
           { href: "/mercadolibre/reportes", label: "Reportes" },
           { href: "/mercadolibre/automatizaciones", label: "Automatizaciones" },
+          { href: "/mercadolibre/widget", label: "Widget iPhone", simple: true },
           { href: "/mercadolibre", label: "Operaciones" },
           { href: "/mercadolibre/compras", label: "Gastos, IVA y devoluciones" },
         ],

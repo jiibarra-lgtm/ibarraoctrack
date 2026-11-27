@@ -7,6 +7,7 @@ import { env } from "@/lib/env";
 export async function createClient() {
   const cookieStore = await cookies();
   return createServerClient(env.supabaseUrl, env.supabaseKey, {
+    cookieOptions: { maxAge: 400 * 24 * 60 * 60, sameSite: "lax", secure: true, path: "/" },
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (toSet) => {

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/api/inbound", "/api/cron/reminders", "/api/reminders/act", "/r/"];
+const PUBLIC_PATHS = ["/login", "/auth", "/api/inbound", "/api/cron/reminders", "/api/reminders/act", "/api/widget", "/r/"];
 
 /** Refresca la sesión de Supabase y protege todas las rutas privadas. */
 export async function proxy(request: NextRequest) {
@@ -11,6 +11,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
+      cookieOptions: { maxAge: 400 * 24 * 60 * 60, sameSite: "lax", secure: true, path: "/" },
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll: (toSet) => {

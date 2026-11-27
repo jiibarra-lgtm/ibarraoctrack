@@ -3,8 +3,9 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/primitives";
 import { signIn, type AuthState } from "./actions";
+import { PasskeyLogin } from "@/components/passkey";
 
-export function LoginForm({ next, initialError }: { next?: string; initialError?: string }) {
+export function LoginForm({ next, initialError, passkeys }: { next?: string; initialError?: string; passkeys?: boolean }) {
   const [state, action, pending] = useActionState<AuthState, FormData>(signIn, initialError ? { error: initialError } : null);
 
   return (
@@ -23,6 +24,7 @@ export function LoginForm({ next, initialError }: { next?: string; initialError?
         {state?.error && <p className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>}
         <Button type="submit" size="lg" loading={pending}>Ingresar</Button>
       </form>
+      <PasskeyLogin next={next} enabled={passkeys} />
     </div>
   );
 }

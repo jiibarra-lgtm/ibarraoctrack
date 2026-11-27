@@ -17,7 +17,7 @@ export const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b
 const arDay = (iso: string) => new Date(Date.parse(iso) - 3 * 3600e3).toISOString().slice(0, 10);
 
 /** Órdenes entre dos fechas (hora Argentina), usando el filtro de fecha de la API. */
-async function ordersBetween(ml: Ml, from: string, to: string) {
+export async function ordersBetween(ml: Ml, from: string, to: string) {
   const out: ApiOrder[] = [];
   const f = encodeURIComponent(`${from}T00:00:00.000-03:00`), t = encodeURIComponent(`${to}T23:59:59.999-03:00`);
   for (let offset = 0; offset < 5000; offset += 50) {
@@ -58,6 +58,10 @@ async function visitsBetween(ml: Ml, from: string, to: string) {
   return r.ok ? r.data.results ?? [] : null;
 }
 
+export type ItemAgg = { item_id: string; title: string; units: number; orders: number; sales: number; fees: number; cogs: number; noCost: number };
+/** Ventas por día de la semana (0 = domingo) y hora (hora Argentina). */
+export type Heat = number[][];
+
 /** Arma los días de [from, to] con todo sumado. */
 export async function loadStats(ml: Ml, from: string, to: string, cost: Map<string, number | null>) {
   const [orders, ads, visits] = await Promise.all([
@@ -66,16 +70,27 @@ export async function loadStats(ml: Ml, from: string, to: string, cost: Map<stri
     visitsBetween(ml, from, to).catch(() => null),
   ]);
   const days = new Map<string, DayBase>();
+  const items = new Map<string, ItemAgg>();
+  const heat: Heat = Array.from({ length: 7 }, () => Array(24).fill(0));
   for (let d = from; d <= to; d = addDays(d, 1)) days.set(d, emptyDay(d));
   for (const o of orders) {
     const day = days.get(arDay(o.date_created));
     if (!day) continue;
     if (o.status === "cancelled") { day.cancelled++; continue; }
     day.sales += Number(o.total_amount); day.orders++;
+    const local = new Date(Date.parse(o.date_created) - 3 * 3600e3);
+    heat[local.getUTCDay()][local.getUTCHours()] += 1;
+    const lineSum = o.order_items.reduce((a, it) => a + Number(it.unit_price ?? 0) * it.quantity, 0) || 1;
     for (const it of o.order_items) {
       day.units += it.quantity; day.fees += Number(it.sale_fee ?? 0) * it.quantity;
       const c = cost.get(it.item.id);
       if (c === null || c === undefined) day.noCost += it.quantity; else day.cogs += c * it.quantity;
+      const ag = items.get(it.item.id) ?? { item_id: it.item.id, title: it.item.title ?? it.item.id, units: 0, orders: 0, sales: 0, fees: 0, cogs: 0, noCost: 0 };
+      ag.units += it.quantity; ag.orders += 1;
+      ag.sales += Number(o.total_amount) * ((Number(it.unit_price ?? 0) * it.quantity) / lineSum);
+      ag.fees += Number(it.sale_fee ?? 0) * it.quantity;
+      if (c === null || c === undefined) ag.noCost += it.quantity; else ag.cogs += c * it.quantity;
+      items.set(it.item.id, ag);
     }
   }
   if ("rows" in ads) for (const r of ads.rows) {
@@ -85,7 +100,7 @@ export async function loadStats(ml: Ml, from: string, to: string, cost: Map<stri
     day.clicks += Number(r.clicks ?? 0); day.prints += Number(r.prints ?? 0);
   }
   if (visits) for (const v of visits) { const day = days.get(v.date.slice(0, 10)); if (day) day.visits += Number(v.total ?? 0); }
-  return { days: [...days.values()], adsError: "error" in ads ? ads.error : null, visitsOk: visits !== null };
+  return { days: [...days.values()], items: [...items.values()].sort((a, b) => b.sales - a.sales), heat, adsError: "error" in ads ? ads.error : null, visitsOk: visits !== null };
 }
 
 /** Dólar oficial (venta) para mostrar en USD. */

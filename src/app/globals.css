@@ -123,3 +123,7 @@ main { backdrop-filter: none !important; -webkit-backdrop-filter: none !importan
 :is(input, select, textarea):not(.bg-transparent) { background-color: var(--field); color: var(--fg); }
 ::placeholder { color: var(--fg-subtle); }
 [role="tablist"] a[aria-selected="true"], [role="tablist"] [data-active="true"] { color: var(--fg); border-color: var(--fg); }
+
+/* Mercado Libre a pantalla completa */
+body:has(.ml-wide) main { max-width: none; }
+html[data-ml-menu="hidden"] body:has(.ml-wide) .app-side { display: none; }

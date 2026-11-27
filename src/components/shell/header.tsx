@@ -1,7 +1,9 @@
 "use client";
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { Menu as MenuIcon, LogOut, Check, Building2, Plus, Upload, X } from "lucide-react";
+import { Menu as MenuIcon, LogOut, Check, Building2, Plus, Upload, X, Fingerprint } from "lucide-react";
+import { toast } from "sonner";
+import { createPasskey } from "@/components/passkey";
 import Link from "next/link";
 import { useTransition } from "react";
 import { Button } from "@/components/ui/button";
@@ -78,6 +80,10 @@ export function Header(p: Props) {
           ))}
           <MenuItem asChild><Link href="/onboarding?nueva=1"><Plus /> Nueva empresa</Link></MenuItem>
           <MenuSeparator />
+          <MenuItem onSelect={() => {
+            createPasskey().then(() => toast.success("Llave de acceso creada: la próxima vez entrás con Face ID, huella o Windows Hello."))
+              .catch((e: Error) => { if (e?.name !== "NotAllowedError" && e?.name !== "AbortError") toast.error(e.message); });
+          }}><Fingerprint /> Crear llave de acceso</MenuItem>
           <MenuItem onSelect={() => start(() => signOut())}><LogOut /> Cerrar sesión</MenuItem>
         </MenuContent>
       </Menu>

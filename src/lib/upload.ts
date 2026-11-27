@@ -1,5 +1,5 @@
 "use client";
-import { createClient } from "@/lib/supabase/client";
+import { freshClient } from "@/lib/supabase/client";
 
 export const ACCEPTED_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic"] as const;
 export const MAX_BYTES = 25 * 1024 * 1024;
@@ -27,7 +27,7 @@ export async function uploadPrivate(file: File, orgId: string, folder: string) {
   if (err) throw new Error(err);
   const sha256 = await sha256Hex(file);
   const path = `${orgId}/${folder}/${crypto.randomUUID()}-${safeName(file.name)}`;
-  const supabase = createClient();
+  const supabase = await freshClient();
   const { error } = await supabase.storage.from("documents").upload(path, file, { contentType: file.type, upsert: false });
   if (error) throw new Error(error.message);
   return { path, sha256, size: file.size, mimeType: file.type, title: file.name };

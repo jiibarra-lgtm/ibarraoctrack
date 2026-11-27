@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ClearPageCache } from "@/components/pwa";
 import { LoginForm } from "./login-form";
+import { passkeysEnabled } from "@/lib/passkeys";
 
 export const metadata: Metadata = { title: "Ingresar" };
 
@@ -31,7 +32,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       <section className="flex items-center justify-center px-5 py-12">
         <ClearPageCache />
         <div className="glass w-full max-w-sm rounded-3xl p-7 sm:p-8">
-          <LoginForm next={next} initialError={error} />
+          <LoginForm next={next} initialError={error} passkeys={passkeysEnabled()} />
         </div>
       </section>
     </div>

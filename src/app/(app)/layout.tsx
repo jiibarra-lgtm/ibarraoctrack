@@ -4,12 +4,14 @@ import { Brand, SectionTabs, SidebarNav } from "@/components/shell/sidebar";
 import { BottomNav } from "@/components/shell/bottom-nav";
 import { PushPrompt } from "@/components/push-prompt";
 import { LiveAlerts } from "@/components/live-alerts";
+import { PasskeyPrompt } from "@/components/passkey";
+import { passkeysEnabled } from "@/lib/passkeys";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const s = await requireOrg();
   return (
     <div className="flex min-h-dvh gap-3 p-0 lg:p-3">
-      <aside className="sticky top-3 hidden h-[calc(100dvh-1.5rem)] w-60 shrink-0 flex-col gap-6 overflow-y-auto rounded-2xl border border-side-border bg-side px-3 py-4 text-side-fg shadow-[var(--glass-shadow)] backdrop-blur-2xl lg:flex">
+      <aside className="app-side sticky top-3 hidden h-[calc(100dvh-1.5rem)] w-60 shrink-0 flex-col gap-6 overflow-y-auto rounded-2xl border border-side-border bg-side px-3 py-4 text-side-fg shadow-[var(--glass-shadow)] backdrop-blur-2xl lg:flex">
         <Brand orgName={s.org.org_name} />
         <SidebarNav />
       </aside>
@@ -27,6 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <BottomNav />
         <PushPrompt />
         <LiveAlerts />
+        <PasskeyPrompt enabled={passkeysEnabled()} />
       </div>
     </div>
   );

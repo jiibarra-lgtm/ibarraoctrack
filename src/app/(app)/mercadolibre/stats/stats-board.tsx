@@ -181,27 +181,27 @@ export function StatsBoard({ start, end, today, prevLabel, days, prevDays, adsEr
         {/* contenido */}
         <div className={cn("px-4 pb-4 sm:px-5 sm:pb-5 transition-opacity", pending && "opacity-50")}>
           {view === "chart" ? (
-            <div className="grid grid-cols-1 overflow-hidden rounded-xl border border-white/[.07] sm:grid-cols-2 xl:grid-cols-3 [&>*]:border-white/[.07] [&>*]:border-b [&>*]:sm:border-r">
+            <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-white/[.07] lg:grid-cols-3 [&>*]:border-b [&>*]:border-r [&>*]:border-white/[.07]">
               {shown.map((m) => {
                 const v = m.f(total), p = prevDays.length ? m.f(prevTotal) : null;
                 const delta = v !== null && p !== null && p !== 0 ? ((v - p) / Math.abs(p)) * 100 : null;
                 const good = delta === null ? null : m.lowerIsBetter ? delta <= 0 : delta >= 0;
                 return (
-                  <div key={m.key} className="min-w-0 px-4 pb-3 pt-4">
+                  <div key={m.key} className="min-w-0 px-3 pb-2 pt-3 sm:px-4 sm:pb-3 sm:pt-4">
                     <div className="flex items-center gap-1.5">
-                      <span className="truncate text-sm text-white/60">{m.label}</span>
+                      <span className="truncate text-xs text-white/60 sm:text-sm">{m.label}</span>
                       <span title={m.info} className="cursor-help text-white/40"><Info className="size-3.5" /></span>
                       <span className="ml-auto"><SrcIcon src={m.src} /></span>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2">
-                      <span className="text-[22px] font-semibold tabular-nums tracking-tight text-white">{fmt(v, m.kind)}</span>
+                      <span className="text-lg font-semibold sm:text-[22px] tabular-nums tracking-tight text-white">{fmt(v, m.kind)}</span>
                       {delta !== null && Number.isFinite(delta) && (
                         <span title={`Período anterior (${prevLabel}): ${fmt(p, m.kind)}`} className={cn("rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums", good ? "bg-[#1f3d2e] text-[#5fe3a1]" : "bg-[#3d1f22] text-[#ff8a8a]")}>
                           {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toLocaleString("es-AR", { maximumFractionDigits: 1 })} %
                         </span>
                       )}
                     </div>
-                    <Spark id={m.key} data={cd.map((d) => ({ date: d.date, v: m.f(d) }))} format={(n) => fmt(n, m.kind)} color={m.src === "ads" ? "#e2a93b" : m.src === "visitas" ? "#9b8cff" : "#13a7c9"} />
+                    <Spark id={m.key} data={cd.map((d) => ({ date: d.date, v: m.f(d) }))} format={(n) => fmt(n, m.kind)} color="#0e9fc2" />
                   </div>
                 );
               })}
@@ -244,7 +244,7 @@ function SrcIcon({ src }: { src: Src }) {
 function Spark({ id, data, format, color }: { id: string; data: { date: string; v: number | null }[]; format: (n: number) => string; color: string }) {
   const gid = `g-${id}`;
   return (
-    <div className="mt-3 h-[84px] w-full" style={{ filter: `drop-shadow(0 6px 14px ${color}55)` }}>
+    <div className="mt-3 h-16 w-full sm:h-[84px]" style={{ filter: `drop-shadow(0 6px 14px ${color}55)` }}>
       <ResponsiveContainer>
         <AreaChart data={data} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
           <defs>

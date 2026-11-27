@@ -122,6 +122,7 @@ export const NAV: NavGroup[] = [
         href: "/mercadolibre/panel", label: "Mercado Libre", icon: ShoppingBag,
         tabs: [
           { href: "/mercadolibre/panel", label: "Resumen", simple: true },
+          { href: "/mercadolibre/stats", label: "Stats", simple: true },
           { href: "/mercadolibre/publicaciones", label: "Publicaciones", simple: true },
           { href: "/mercadolibre/ventas", label: "Ventas", simple: true },
           { href: "/mercadolibre/preguntas", label: "Preguntas", simple: true },

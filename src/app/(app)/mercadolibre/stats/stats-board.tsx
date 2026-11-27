@@ -111,7 +111,7 @@ export function StatsBoard({ start, end, today, prevLabel, days, prevDays, adsEr
 
   return (
     <div className="-mx-1 sm:mx-0">
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0d0f12] text-[#e9ecef] shadow-[0_20px_60px_-30px_rgba(0,0,0,.8)]">
+      <div className="overflow-hidden rounded-xl border border-white/[.08] bg-surface text-[#e9ecef] shadow-[0_20px_60px_-30px_rgba(0,0,0,.8)]">
         {/* barra superior */}
         <div className="flex flex-wrap items-center gap-3 border-b border-white/[.06] px-4 py-3 sm:px-5">
           <h1 className="text-[17px] font-semibold tracking-tight">Stats</h1>
@@ -211,19 +211,19 @@ export function StatsBoard({ start, end, today, prevLabel, days, prevDays, adsEr
             <div className="overflow-x-auto rounded-xl border border-white/[.07]">
               <table className="w-full min-w-[640px] text-sm">
                 <thead className="text-left text-xs text-white/50">
-                  <tr className="border-b border-white/[.07]"><th className="sticky left-0 bg-[#0d0f12] px-4 py-2.5 font-medium">Día</th>{shown.map((m) => <th key={m.key} className="whitespace-nowrap px-3 text-right font-medium">{m.label}</th>)}</tr>
+                  <tr className="border-b border-white/[.07]"><th className="sticky left-0 bg-surface px-4 py-2.5 font-medium">Día</th>{shown.map((m) => <th key={m.key} className="whitespace-nowrap px-3 text-right font-medium">{m.label}</th>)}</tr>
                 </thead>
                 <tbody>
                   {[...cd].reverse().map((d) => (
                     <tr key={d.date} className="border-b border-white/[.05] hover:bg-white/[.03]">
-                      <td className="sticky left-0 whitespace-nowrap bg-[#0d0f12] px-4 py-2 text-white/70">{fmtDay(d.date)}</td>
+                      <td className="sticky left-0 whitespace-nowrap bg-surface px-4 py-2 text-white/70">{fmtDay(d.date)}</td>
                       {shown.map((m) => <td key={m.key} className="whitespace-nowrap px-3 text-right tabular-nums">{fmt(m.f(d), m.kind)}</td>)}
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
-                  <tr className="font-semibold"><td className="sticky left-0 bg-[#0d0f12] px-4 py-2.5">Total</td>{shown.map((m) => <td key={m.key} className="whitespace-nowrap px-3 text-right tabular-nums">{fmt(m.f(total), m.kind)}</td>)}</tr>
-                  {prevDays.length > 0 && <tr className="text-white/50"><td className="sticky left-0 bg-[#0d0f12] px-4 pb-3 text-xs">Período anterior</td>{shown.map((m) => <td key={m.key} className="whitespace-nowrap px-3 pb-3 text-right text-xs tabular-nums">{fmt(m.f(prevTotal), m.kind)}</td>)}</tr>}
+                  <tr className="font-semibold"><td className="sticky left-0 bg-surface px-4 py-2.5">Total</td>{shown.map((m) => <td key={m.key} className="whitespace-nowrap px-3 text-right tabular-nums">{fmt(m.f(total), m.kind)}</td>)}</tr>
+                  {prevDays.length > 0 && <tr className="text-white/50"><td className="sticky left-0 bg-surface px-4 pb-3 text-xs">Período anterior</td>{shown.map((m) => <td key={m.key} className="whitespace-nowrap px-3 pb-3 text-right text-xs tabular-nums">{fmt(m.f(prevTotal), m.kind)}</td>)}</tr>}
                 </tfoot>
               </table>
             </div>

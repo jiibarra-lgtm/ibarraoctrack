@@ -30,6 +30,7 @@ export default async function RemitosPage({ searchParams }: { searchParams: Prom
           {k === "emitir" ? "Emitir remito" : "Historial"}
         </Link>
       ))}
+      <Link href="/remitos/escanear" className="rounded-full px-4 py-1.5 text-sm font-medium text-fg-muted hover:text-fg">Escanear</Link>
       <Link href="/remitos/firmar" className="rounded-full px-4 py-1.5 text-sm font-medium text-fg-muted hover:text-fg">Foto firmados</Link>
       <Link href="/remitos/qr" className="rounded-full px-4 py-1.5 text-sm font-medium text-fg-muted hover:text-fg">QR</Link>
     </div>

@@ -51,7 +51,7 @@ export default async function RemitoPage({ params, searchParams }: { params: Pro
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="overflow-x-auto rounded-2xl border border-card-border bg-white shadow-sm">
           <div className="w-[816px] [zoom:0.42] sm:[zoom:0.75] lg:[zoom:1] xl:[zoom:0.9] 2xl:[zoom:1]">
-            <RemitoSheet data={sheet} qrSvg={qrSvg} qrCaption={data.qrCaption} />
+            <RemitoSheet data={sheet} qrSvg={qrSvg} qrCaption={data.qrCaption} barcodeSvg={data.barcodeSvg} />
           </div>
         </div>
 

@@ -27,6 +27,7 @@ export default async function SignRemitosPage() {
       <PageHeader title="Remitos para firmar" description="Sacale una foto al remito firmado y sellado: queda guardado en el remito y en la orden como prueba de entrega." />
       <div className="mb-4 flex gap-2 text-sm">
         <Link href="/remitos" className="text-fg-muted hover:text-fg">← Remitos</Link>
+        <Link href="/remitos/escanear" className="font-medium text-fg hover:underline">Confirmar escaneando el código de barras →</Link>
       </div>
       <Card>
         {!rows.length ? <EmptyState icon={<FileSignature />} title="No hay remitos pendientes de firma" description="Los remitos de los últimos 90 días ya tienen su copia firmada." /> : (

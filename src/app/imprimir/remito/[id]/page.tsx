@@ -37,7 +37,7 @@ export default async function PrintRemito({ params }: { params: Promise<{ id: st
         }
       `}</style>
       <PrintBar id={id} label={data.row.label} />
-      <RemitoSheet data={data.sheet} qrSvg={data.qrSvg} qrCaption={data.qrCaption} />
+      <RemitoSheet data={data.sheet} qrSvg={data.qrSvg} qrCaption={data.qrCaption} barcodeSvg={data.barcodeSvg} />
     </div>
   );
 }

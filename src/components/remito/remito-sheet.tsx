@@ -12,7 +12,7 @@ const yellow = "#fffbe6";
  * Hoja del remito, igual al modelo impreso de Ibarra Insumos (carta, 8,5 x 11 in).
  * Se usa en la vista previa (escalada) y en la impresión / PDF.
  */
-export function RemitoSheet({ data, qrSvg, qrCaption }: { data: RemitoSheetData; qrSvg?: string | null; qrCaption?: string | null }) {
+export function RemitoSheet({ data, qrSvg, qrCaption, barcodeSvg }: { data: RemitoSheetData; qrSvg?: string | null; qrCaption?: string | null; barcodeSvg?: string | null }) {
   const { d, m, y, hm } = baParts(data.issuedAt);
   const it = data.issuer;
   const rows = [...data.items, ...Array.from({ length: Math.max(0, ROWS - data.items.length) }, () => null)];
@@ -115,6 +115,12 @@ export function RemitoSheet({ data, qrSvg, qrCaption }: { data: RemitoSheetData;
           {qrSvg ? <div style={{ width: 82, height: 82, margin: "0 0 3px" }} dangerouslySetInnerHTML={{ __html: qrSvg }} /> : <div style={{ width: 82, height: 82 }} />}
           <div style={{ textAlign: "left", lineHeight: 1.25 }}>{qrCaption ?? "Consultas por WhatsApp"}</div>
         </div>
+        {barcodeSvg && (
+          <div style={{ textAlign: "center", fontSize: 7.5, color: "#666" }}>
+            <div style={{ width: 210 }} className="remito-barcode" dangerouslySetInnerHTML={{ __html: barcodeSvg.replace("<svg ", '<svg width="100%" ') }} />
+            <div style={{ marginTop: 2 }}>Uso interno · escanear al entregar</div>
+          </div>
+        )}
         <div style={{ width: "36%", textAlign: "center", fontSize: 10.5 }}>
           <div style={{ borderTop: "1px solid #333", paddingTop: 6 }}>Recibido — Firma y sello</div>
         </div>

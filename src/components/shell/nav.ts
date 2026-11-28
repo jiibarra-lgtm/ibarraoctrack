@@ -33,6 +33,7 @@ export const NAV: NavGroup[] = [
           { href: "/entregas/pendientes", label: "Pendientes", simple: true },
           { href: "/entregas", label: "Estado por OC", simple: true },
           { href: "/remitos", label: "Remitos" },
+          { href: "/remitos/escanear", label: "Escanear" },
           { href: "/remitos/qr", label: "QR de remitos" },
           { href: "/entregas/remito", label: "Leer remito" },
           { href: "/entregas/flete", label: "Costo de flete" },

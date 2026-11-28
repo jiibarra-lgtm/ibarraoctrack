@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Link2, PackageCheck, Search, ShoppingBag, Truck, Wallet } from "lucide-react";
+import { after } from "next/server";
+import { FileCheck2, Link2, PackageCheck, Search, ShoppingBag, Truck, Wallet } from "lucide-react";
 import { requireOrg, canWrite } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Card, EmptyState, PageHeader } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/stat";
 import { formatMoney } from "@/lib/format";
 import { monthLabel } from "@/lib/months";
-import type { MlRow } from "@/lib/mercadolibre";
+import { INVOICE_STATE, invoiceState, type InvoiceState, type MlRow } from "@/lib/mercadolibre";
 import { cn } from "@/lib/utils";
 import { MlRowItem } from "./ml-row";
 import { MlPublications } from "./publications";
@@ -16,7 +17,8 @@ import { MlSyncButton } from "./sync-button";
 export const metadata: Metadata = { title: "Mercado Libre" };
 
 const FILTERS = {
-  compra: [["todas", "Todas"], ["en_camino", "En camino"], ["entregada", "Llegaron"], ["sin_precio", "Sin precio"], ["sin_vincular", "Sin vincular"], ["vinculadas", "Con OC"]],
+  compra: [["todas", "Todas"], ["en_camino", "En camino"], ["entregada", "Llegaron"], ["sin_precio", "Sin precio"], ["sin_vincular", "Sin vincular"], ["vinculadas", "Con OC"],
+    ["con_factura", "Con factura"], ["sin_factura", "Sin factura"]],
   venta: [["todas", "Todas"], ["sin_vincular", "Sin vincular"], ["vinculadas", "Con OC"]],
 } as const;
 
@@ -37,6 +39,8 @@ export default async function MercadoLibrePage({ searchParams }: { searchParams:
   const f = sp.f ?? "todas";
   const q = sp.q ?? "";
   const s = await requireOrg();
+  // checker de facturas: después de responder, vincula las facturas nuevas que encuentre (mail, Drive, ML, manual)
+  if (canWrite(s.org.role) && t === "compra") after(async () => { await s.supabase.rpc("ml_link_invoices_now", { p_org: s.org.org_id }); });
   const { data } = await s.supabase.from("ml_orders_overview").select("*").eq("org_id", s.org.org_id)
     .order("ordered_at", { ascending: false, nullsFirst: false }).limit(3000);
   const all = (data ?? []) as MlRow[];
@@ -52,6 +56,9 @@ export default async function MercadoLibrePage({ searchParams }: { searchParams:
       : f === "sin_precio" ? !r.unit_value
       : f === "sin_vincular" ? !r.po_item_id
       : f === "vinculadas" ? !!r.po_item_id
+      : f === "con_factura" ? invoiceState(r) === "cargada"
+      : f === "sin_factura" ? ["falta", "esperando"].includes(invoiceState(r) ?? "")
+      : f.startsWith("fac_") ? invoiceState(r) === f.slice(4)
       : r.status === f)
     .filter((r) => !needle || [r.title, r.ml_id, r.counterpart, r.po_number, r.po_item_description].some((x) => x?.toLowerCase().includes(needle)))
     .sort((a, b) => (b.ordered_at ?? b.created_at).localeCompare(a.ordered_at ?? a.created_at));
@@ -66,6 +73,15 @@ export default async function MercadoLibrePage({ searchParams }: { searchParams:
   const enCamino = compras.filter((r) => r.status === "en_camino" || r.status === "comprada").length;
   const linked = all.filter((r) => r.po_item_id).length;
   const writable = canWrite(s.org.role);
+  // checker de facturas de compras (sin canceladas)
+  const inv = (list: MlRow[]) => {
+    const c: Record<InvoiceState, number> = { cargada: 0, no_lleva: 0, esperando: 0, falta: 0, cancelada: 0 };
+    for (const r of list) { const x = invoiceState(r); if (x) c[x]++; }
+    const base = c.cargada + c.esperando + c.falta;
+    return { ...c, base, pct: base ? Math.round((c.cargada / base) * 100) : 100 };
+  };
+  const invAll = inv(compras);
+  const invByMonth = months.map((m) => ({ m, ...inv(compras.filter((r) => ym(r.ordered_at ?? r.created_at) === m)) }));
   const href = (p: Record<string, string>) => `/mercadolibre?${new URLSearchParams({ t, ...(q ? { q } : {}), ...p })}`;
 
   if (sp.t === "publicaciones") {
@@ -93,6 +109,50 @@ export default async function MercadoLibrePage({ searchParams }: { searchParams:
         <Stat icon={Wallet} label="Vendido en el mes" value={formatMoney(cur.vendido)} sub={`${cur.ventas} ventas · ${monthLabel(thisMonth)}`} tone="accent" href="/mercadolibre?t=venta" />
         <Stat icon={Link2} label="Vinculadas a OC" value={String(linked)} sub={`de ${all.length} operaciones`} href={`/mercadolibre?t=${t}&f=vinculadas`} />
       </div>
+
+      {t === "compra" && (
+        <Card className="mt-5 overflow-hidden">
+          <div className="flex flex-col gap-4 px-4 py-4 sm:px-5 lg:flex-row lg:items-center">
+            <div className="min-w-0 lg:w-80">
+              <p className="flex items-center gap-2 text-sm font-semibold"><FileCheck2 className="size-4 text-fg-subtle" /> Checker de facturas</p>
+              <p className="mt-1 text-xs text-fg-muted">Qué compras ya tienen la factura del vendedor cargada en el sistema (bajada de ML, por mail, de Drive o subida a mano) y cuáles no.</p>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-2xl font-semibold tabular">{invAll.pct}%</span>
+                <span className="text-xs text-fg-subtle">{invAll.cargada} de {invAll.base} compras con factura</span>
+              </div>
+              <div className="mt-2 flex h-1.5 overflow-hidden rounded bg-field">
+                <div className="bg-accent" style={{ width: `${invAll.base ? (invAll.cargada / invAll.base) * 100 : 0}%` }} />
+                <div className="bg-warn" style={{ width: `${invAll.base ? (invAll.esperando / invAll.base) * 100 : 0}%` }} />
+                <div className="bg-danger" style={{ width: `${invAll.base ? (invAll.falta / invAll.base) * 100 : 0}%` }} />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {(["cargada", "esperando", "falta", "no_lleva"] as const).map((k) => (
+                  <Link key={k} href={href({ f: `fac_${k}` })} className={cn("rounded-md px-2 py-1 text-[11px] font-medium", INVOICE_STATE[k].tone, f === `fac_${k}` && "ring-1 ring-fg/40")}>
+                    {INVOICE_STATE[k].label} · {invAll[k]}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <div className="min-w-0 flex-1 overflow-x-auto">
+              <table className="w-full min-w-[440px] text-xs">
+                <thead className="text-fg-subtle"><tr><th className="py-1.5 text-left font-medium">Mes</th><th className="text-right font-medium">Compras</th><th className="text-right font-medium">Con factura</th><th className="text-right font-medium">Esperando</th><th className="text-right font-medium">Faltan</th><th className="w-28 pl-3 text-left font-medium">%</th></tr></thead>
+                <tbody className="tabular">
+                  {invByMonth.slice().reverse().map((x) => (
+                    <tr key={x.m} className="border-t border-border">
+                      <td className="py-1.5 capitalize">{monthLabel(x.m)}</td>
+                      <td className="text-right">{x.base}</td>
+                      <td className="text-right text-accent">{x.cargada}</td>
+                      <td className="text-right text-warn">{x.esperando || "—"}</td>
+                      <td className={cn("text-right", x.falta ? "font-semibold text-danger" : "text-fg-subtle")}>{x.falta || "—"}</td>
+                      <td className="pl-3"><div className="flex items-center gap-2"><div className="h-1 w-16 overflow-hidden rounded bg-field"><div className="h-full bg-accent" style={{ width: `${x.pct}%` }} /></div>{x.base ? `${x.pct}%` : "—"}</div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card className="mt-5 overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">

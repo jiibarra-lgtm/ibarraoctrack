@@ -1,7 +1,9 @@
 "use server";
 import { headers } from "next/headers";
-import { requireOrg } from "@/lib/session";
+import { revalidatePath } from "next/cache";
+import { requireOrg, canWrite } from "@/lib/session";
 import { scriptableWidget } from "@/lib/ml/widget-script";
+import { widgetPrefs, type WidgetPrefs } from "@/lib/ml/widget-prefs";
 
 /** Crea (o cambia) la clave del widget y devuelve el script listo para pegar en Scriptable. */
 export async function createWidgetScript(): Promise<{ script?: string; error?: string }> {
@@ -12,4 +14,14 @@ export async function createWidgetScript(): Promise<{ script?: string; error?: s
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "ibarraoctrack.vercel.app";
   return { script: scriptableWidget(`https://${host}/api/widget/ml`, data as string) };
+}
+
+/** Guarda el diseño del widget: el iPhone lo toma en la próxima actualización, sin volver a pegar el script. */
+export async function saveWidgetPrefs(p: WidgetPrefs): Promise<{ ok: true } | { ok: false; error: string }> {
+  const s = await requireOrg();
+  if (!canWrite(s.org.role)) return { ok: false, error: "No tenés permiso para modificar" };
+  const { error } = await s.supabase.from("ml_settings").upsert({ org_id: s.org.org_id, widget_prefs: widgetPrefs(p), updated_at: new Date().toISOString() });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/mercadolibre/widget");
+  return { ok: true };
 }

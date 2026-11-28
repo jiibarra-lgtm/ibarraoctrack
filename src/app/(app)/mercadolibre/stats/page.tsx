@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/ui/primitives";
 import { mlPage, nowAr } from "@/lib/ml/page";
 import { addDays, daysBetween, loadStats, ordersBetween, usdRate } from "@/lib/ml/stats";
+import { profitRules, labelPrefs } from "@/lib/ml/prefs";
 import { NotConnected } from "../pro-shared";
+import { LabelsCard } from "../labels-card";
 import { StatsBoard } from "./stats-board";
-import { StatsExtra, type TopRow } from "./stats-extra";
+import { StatsExtra, type CostTotals, type TopRow } from "./stats-extra";
 
 export const metadata: Metadata = { title: "Mercado Libre · Stats" };
 export const dynamic = "force-dynamic";
@@ -25,24 +27,30 @@ export default async function MlStats({ searchParams }: { searchParams: Promise<
   const len = daysBetween(start, end);
   const prevEnd = addDays(start, -1), prevStart = addDays(prevEnd, -(len - 1));
 
-  const [itemsQ, dailyQ] = await Promise.all([
-    sb.from("ml_items").select("item_id, cost_unit, title, thumbnail, permalink, available, status, sold_30d").eq("org_id", org),
+  const [itemsQ, dailyQ, settingsQ] = await Promise.all([
+    sb.from("ml_items").select("item_id, cost_unit, ship_cost, title, thumbnail, permalink, available, status, sold_30d").eq("org_id", org),
     sb.from("ml_item_daily").select("item_id, visits").eq("org_id", org).gte("day", start).lte("day", end).limit(20000),
+    sb.from("ml_settings").select("profit_rules, label_prefs").eq("org_id", org).maybeSingle(),
   ]);
+  const rules = profitRules(settingsQ.data?.profit_rules);
   const itemRows = itemsQ.data ?? [];
   const cost = new Map(itemRows.map((i) => [i.item_id as string, i.cost_unit as number | null]));
+  const shipCost = new Map(itemRows.map((i) => [i.item_id as string, i.ship_cost as number | null]));
 
   // Mes en curso (para la proyección): si el rango elegido no es este mes, se leen sus ventas aparte
   const monthStart = `${today.slice(0, 7)}-01`;
   const sameMonth = start === monthStart && end === today;
   const [curR, prev, rate, monthOrders] = await Promise.all([
-    loadStats(ml, start, end, cost).then((r) => ({ r, e: null }), (e: Error) => ({ r: null, e: e.message })),
-    loadStats(ml, prevStart, prevEnd, cost).catch(() => null),
+    loadStats(ml, start, end, cost, shipCost, rules).then((r) => ({ r, e: null }), (e: Error) => ({ r: null, e: e.message })),
+    loadStats(ml, prevStart, prevEnd, cost, shipCost, rules).catch(() => null),
     usdRate(),
     sameMonth ? Promise.resolve(null) : ordersBetween(ml, monthStart, today).catch(() => null),
   ]);
   const cur = curR.r, error = curR.e;
 
+  const totals = (days: { sales: number; cogs: number; fees: number; ship: number; extra: number; adProfit: number; noCost: number }[]): CostTotals =>
+    days.reduce((a, d) => ({ sales: a.sales + d.sales, cogs: a.cogs + d.cogs, fees: a.fees + d.fees, ship: a.ship + d.ship, extra: a.extra + d.extra, ads: a.ads + d.adProfit, noCost: a.noCost + d.noCost }),
+      { sales: 0, cogs: 0, fees: 0, ship: 0, extra: 0, ads: 0, noCost: 0 });
   const visits = new Map<string, number>();
   for (const d of dailyQ.data ?? []) visits.set(d.item_id as string, (visits.get(d.item_id as string) ?? 0) + Number(d.visits ?? 0));
   const info = new Map(itemRows.map((i) => [i.item_id as string, i]));
@@ -64,6 +72,7 @@ export default async function MlStats({ searchParams }: { searchParams: Promise<
 
   return (
     <>
+    <div className="mb-4 max-w-xl"><LabelsCard prefs={labelPrefs(settingsQ.data?.label_prefs)} /></div>
     <StatsBoard
       start={start} end={end} today={today} prevLabel={`${prevStart} a ${prevEnd}`}
       days={cur?.days ?? []} prevDays={prev?.days ?? []}
@@ -72,7 +81,8 @@ export default async function MlStats({ searchParams }: { searchParams: Promise<
     />
     {cur && (
       <StatsExtra
-        top={top} heat={cur.heat} stock={stock}
+        top={top} heat={cur.heat} stock={stock} dates={cur.days.map((d) => d.date)} sales={cur.sales}
+        costs={totals(cur.days)} costsPrev={prev ? totals(prev.days) : null}
         month={{ mtd, projected: dayOfMonth ? (mtd / dayOfMonth) * daysInMonth : mtd, day: dayOfMonth, days: daysInMonth, label: today.slice(0, 7) }}
         currency={sp.cur === "USD" && rate ? "USD" : "ARS"} rate={rate}
       />

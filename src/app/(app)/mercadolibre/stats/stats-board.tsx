@@ -14,12 +14,12 @@ type Src = "ventas" | "ads" | "visitas";
 type Metric = { key: string; label: string; info: string; kind: Kind; src: Src; lowerIsBetter?: boolean; f: (b: DayBase) => number | null };
 
 const div = (a: number, b: number) => (b ? a / b : null);
-const profit = (b: DayBase) => b.sales - b.fees - b.cogs - b.adCost;
+const profit = (b: DayBase) => b.sales - b.fees - b.cogs - b.ship - b.extra - b.adProfit;
 
 const METRICS: Metric[] = [
   { key: "adCost", label: "Inversión publicitaria", src: "ads", kind: "money", info: "Lo que gastaste en Product Ads (publicidad de Mercado Libre) en el período.", f: (b) => b.adCost },
   { key: "sales", label: "Facturación", src: "ventas", kind: "money", info: "Total de las ventas no canceladas, con envío incluido si lo pagó el comprador.", f: (b) => b.sales },
-  { key: "profit", label: "Ganancia", src: "ventas", kind: "money", info: "Facturación − comisiones de ML − costo de la mercadería − publicidad. No descuenta envíos a tu cargo ni impuestos.", f: profit },
+  { key: "profit", label: "Ganancia", src: "ventas", kind: "money", info: "Facturación − comisiones de ML − costo de la mercadería − envíos a tu cargo − costos adicionales (cobro, impuestos, embalaje) − publicidad. Las reglas se configuran en Ajustes.", f: profit },
   { key: "roas", label: "ROAS", src: "ads", kind: "x", info: "Ventas atribuidas a la publicidad ÷ inversión publicitaria. Cuántos pesos vendés por cada peso de publicidad.", f: (b) => div(b.adRevenue, b.adCost) },
   { key: "troas", label: "True ROAS", src: "ads", kind: "x", info: "Facturación total ÷ inversión publicitaria. Incluye también las ventas orgánicas.", f: (b) => div(b.sales, b.adCost) },
   { key: "cpa", label: "CPA", src: "ads", kind: "money", lowerIsBetter: true, info: "Costo por venta: inversión publicitaria ÷ cantidad de órdenes.", f: (b) => div(b.adCost, b.orders) },
@@ -28,6 +28,8 @@ const METRICS: Metric[] = [
   { key: "ticket", label: "Ticket promedio", src: "ventas", kind: "money", info: "Facturación ÷ órdenes.", f: (b) => div(b.sales, b.orders) },
   { key: "margin", label: "Margen", src: "ventas", kind: "pct", info: "Ganancia ÷ facturación.", f: (b) => { const v = div(profit(b), b.sales); return v === null ? null : v * 100; } },
   { key: "fees", label: "Comisiones ML", src: "ventas", kind: "money", lowerIsBetter: true, info: "Cargo por venta que cobra Mercado Libre.", f: (b) => b.fees },
+  { key: "ship", label: "Envíos a tu cargo", src: "ventas", kind: "money", lowerIsBetter: true, info: "Estimado: el costo de envío gratis de cada publicación, una vez por venta.", f: (b) => b.ship },
+  { key: "extra", label: "Costos adicionales", src: "ventas", kind: "money", lowerIsBetter: true, info: "Costo de cobro, impuestos sobre la venta y costos fijos por venta o unidad, según tus reglas de Ajustes.", f: (b) => b.extra },
   { key: "cogs", label: "Costo de mercadería", src: "ventas", kind: "money", lowerIsBetter: true, info: "Costo unitario cargado en Precios × unidades vendidas.", f: (b) => b.cogs },
   { key: "acos", label: "ACOS", src: "ads", kind: "pct", lowerIsBetter: true, info: "Inversión ÷ ventas por publicidad. Qué parte de lo vendido con publicidad se fue en publicidad.", f: (b) => { const v = div(b.adCost, b.adRevenue); return v === null ? null : v * 100; } },
   { key: "tacos", label: "TACOS", src: "ads", kind: "pct", lowerIsBetter: true, info: "Inversión ÷ facturación total.", f: (b) => { const v = div(b.adCost, b.sales); return v === null ? null : v * 100; } },
@@ -40,12 +42,12 @@ const METRICS: Metric[] = [
   { key: "cancelled", label: "Canceladas", src: "ventas", kind: "int", lowerIsBetter: true, info: "Órdenes canceladas.", f: (b) => b.cancelled },
 ];
 const DEFAULT = ["adCost", "sales", "profit", "roas", "troas", "cpa", "orders", "ticket", "margin", "acos", "visits", "cvr"];
-const MONEY_KEYS: (keyof DayBase)[] = ["sales", "fees", "cogs", "adCost", "adRevenue"];
+const MONEY_KEYS: (keyof DayBase)[] = ["sales", "fees", "cogs", "ship", "extra", "adProfit", "adCost", "adRevenue"];
 
 const sum = (days: DayBase[]): DayBase => days.reduce((a, d) => {
   for (const k of Object.keys(d) as (keyof DayBase)[]) if (k !== "date") (a[k] as number) += d[k] as number;
   return a;
-}, { date: "", sales: 0, orders: 0, units: 0, fees: 0, cogs: 0, noCost: 0, cancelled: 0, adCost: 0, adRevenue: 0, adUnits: 0, clicks: 0, prints: 0, visits: 0 });
+}, { date: "", sales: 0, orders: 0, units: 0, fees: 0, cogs: 0, noCost: 0, cancelled: 0, ship: 0, extra: 0, adProfit: 0, adCost: 0, adRevenue: 0, adUnits: 0, clicks: 0, prints: 0, visits: 0 });
 
 // ---------------------------------------------------------------------------
 // Preferencias del tablero (sólo en este navegador)

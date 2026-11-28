@@ -9,6 +9,8 @@ import { recentSales } from "@/lib/ml/sync";
 import { accountScore, daysOfStock, nextEvents } from "@/lib/ml/logic";
 import { MarkSeenButton, MlSyncNowButton } from "../pro-ui";
 import { Bar, NotConnected, ago, int, pct } from "../pro-shared";
+import { LabelsCard } from "../labels-card";
+import { labelPrefs } from "@/lib/ml/prefs";
 
 export const metadata: Metadata = { title: "Mercado Libre · Resumen" };
 export const dynamic = "force-dynamic";
@@ -25,7 +27,7 @@ export default async function MlPanel() {
     sb.from("ml_events").select("id, at, kind, title, detail, url, seen").eq("org_id", org).order("at", { ascending: false }).limit(25),
     sb.from("ml_questions").select("id, status, date_created, answered_at").eq("org_id", org).gte("date_created", new Date(nowMs() - 30 * 864e5).toISOString()),
     sb.from("ml_claims").select("id, status").eq("org_id", org).eq("status", "opened"),
-    sb.from("ml_settings").select("goal_sales, goal_units, goal_profit, vacation").eq("org_id", org).maybeSingle(),
+    sb.from("ml_settings").select("goal_sales, goal_units, goal_profit, vacation, label_prefs").eq("org_id", org).maybeSingle(),
     ml.get<{ nickname: string; seller_reputation?: Rep; points?: number }>(`/users/${ml.userId}`),
     recentSales(ml, 31),
   ]);
@@ -85,6 +87,7 @@ export default async function MlPanel() {
     <>
       <PageHeader title={`Mercado Libre · ${me.ok ? me.data.nickname : ""}`} description={`Actualizado ${ago(lastSync)} · se actualiza solo cada 10 minutos.`} actions={<MlSyncNowButton />} />
       {settings?.vacation && <div className="mb-4 rounded-xl border border-warn bg-warn-soft px-4 py-3 text-sm">Estás en <b>modo vacaciones</b>: las publicaciones están pausadas. <Link className="underline" href="/mercadolibre/automatizaciones">Volver</Link></div>}
+      <div className="mb-4 max-w-xl"><LabelsCard prefs={labelPrefs(settings?.label_prefs)} /></div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat icon={ShoppingCart} label="Vendido hoy" value={formatMoney(total(todaySales))} sub={`${todaySales.length} ventas · ${units(todaySales)} u.`} href="/mercadolibre/ventas" />
